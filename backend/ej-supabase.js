@@ -1,0 +1,497 @@
+/* ============================================================
+   Esse Jeffe — Supabase veri katmanı
+   supabase-config.js'den SONRA yüklenmeli.
+   - Supabase client'ı kurar
+   - window.EJData ile ürün verisi sunar
+   - [data-ej-grid] taşıyan kapsayıcıları ürün kartlarıyla doldurur
+   ============================================================ */
+(function () {
+  var cfg = window.EJ_CONFIG || {};
+  if (!cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) {
+    console.warn('[EJ] Supabase yapılandırması eksik — sabit içerik kullanılacak.');
+    return;
+  }
+
+  var client = null;
+
+  // ---- yardımcılar ----
+  function fmt(n) { return (n || 0).toLocaleString('tr-TR') + ' TL'; }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function bySort(a, b) { return (a.sort || 0) - (b.sort || 0); }
+
+  var PH_SVG = '<div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>';
+
+  // satırı (DB) sade ürün nesnesine çevir
+  function normalize(row) {
+    var colors = (row.product_colors || []).slice().sort(bySort);
+    var images = (row.product_images || []).slice().sort(bySort);
+    var primary = (images[0] && images[0].url) || null;
+    if (!primary) {
+      for (var i = 0; i < colors.length; i++) { if (colors[i].image_url) { primary = colors[i].image_url; break; } }
+    }
+    return {
+      slug: row.slug, name: row.name, model_desc: row.model_desc,
+      description: row.description, price: row.price, old_price: row.old_price,
+      badge: row.badge, category: row.category,
+      sizes: row.sizes || ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
+      image: primary, colors: colors, images: images
+    };
+  }
+
+  // ürün kartı (mevcut .card markup'ıyla birebir — sepet & CSS uyumlu)
+  function cardHTML(p) {
+    var tag = p.badge ? '<span class="tag">' + esc(p.badge) + '</span>' : '';
+    var media = p.image
+      ? '<img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">'
+      : PH_SVG;
+    var dots = p.colors.map(function (c) {
+      return '<span style="background:' + esc(c.hex) + '" title="' + esc(c.name) + '"></span>';
+    }).join('');
+    var price = (p.old_price ? '<span class="old">' + fmt(p.old_price) + '</span>' : '') + fmt(p.price);
+    return '<a class="card" href="urun.html?slug=' + encodeURIComponent(p.slug) + '">' +
+      '<div class="frame">' + tag + media + '</div>' +
+      '<div class="meta"><h3>' + esc(p.name) + '</h3>' +
+        '<p class="model-desc">' + esc(p.model_desc || '') + '</p>' +
+        '<div class="dots">' + dots + '</div>' +
+        '<div class="price">' + price + '</div></div></a>';
+  }
+
+  var SELECT = '*, product_colors(name,hex,sort,image_url), product_images(url,sort)';
+
+  // ---- public API ----
+  var EJData = {
+    fmt: fmt,
+    cardHTML: cardHTML,
+    // ürün listesi — opts: {featured, category, limit}
+    products: function (opts) {
+      opts = opts || {};
+      var q = client.from('products').select(SELECT).eq('active', true).order('sort');
+      if (opts.featured) q = q.eq('featured', true);
+      if (opts.category) q = q.eq('category', opts.category);
+      return q.then(function (res) {
+        if (res.error) throw res.error;
+        var list = (res.data || []).map(normalize);
+        if (opts.limit) list = list.slice(0, opts.limit);
+        return list;
+      });
+    },
+    // tek ürün
+    product: function (slug) {
+      return client.from('products').select(SELECT).eq('slug', slug).eq('active', true)
+        .limit(1).maybeSingle().then(function (res) {
+          if (res.error) throw res.error;
+          return res.data ? normalize(res.data) : null;
+        });
+    },
+    // sipariş oluştur — form: teslimat+ödeme, items: sepet kalemleri
+    // RLS misafire insert izni verir; id/order_no client'ta üretilir
+    // (anon kullanıcı satırı geri okuyamaz, o yüzden select etmiyoruz).
+    createOrder: function (form, items) {
+      if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+      if (!items || !items.length) return Promise.reject(new Error('Sepet boş'));
+      var id = uuid();
+      var sub = items.reduce(function (s, it) { return s + (it.price || 0) * (it.qty || 0); }, 0);
+      var shipping = 0;
+      var total = sub + shipping;
+      var orderNo = 'EJ' + dateStamp() + pad5(Math.floor(Math.random() * 100000));
+      // girişliyse user_id ekle → sipariş hesapta görünür; misafirde null
+      return client.auth.getSession().then(function (sr) {
+      var uid = sr.data.session ? sr.data.session.user.id : null;
+      var order = {
+        id: id, order_no: orderNo, status: 'pending', user_id: uid,
+        payment_method: form.payment_method,
+        payment_status: form.payment_method === 'cod' ? 'cod' : 'pending',
+        subtotal: sub, shipping_fee: shipping, total: total,
+        full_name: form.full_name, phone: form.phone, email: form.email || null,
+        city: form.city, district: form.district, address: form.address,
+        postal_code: form.postal_code || null, note: form.note || null
+      };
+      return client.from('orders').insert(order).then(function (res) {
+        if (res.error) throw res.error;
+        var rows = items.map(function (it) {
+          return {
+            order_id: id, product_id: null,
+            product_name: it.name, model_desc: it.desc || null,
+            color: it.color || null, size: it.size || null,
+            unit_price: it.price || 0, qty: it.qty || 0
+          };
+        });
+        return client.from('order_items').insert(rows);
+      }).then(function (res) {
+        if (res.error) throw res.error;
+        return { id: id, order_no: orderNo, total: total };
+      });
+      });
+    },
+    // bülten aboneliği
+    subscribe: function (email) {
+      if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+      return client.from('newsletter_subscribers').insert({ email: email }).then(function (res) {
+        if (res.error) {
+          if (res.error.code === '23505') return { already: true };  // zaten abone
+          throw res.error;
+        }
+        return { ok: true };
+      });
+    },
+    // iletişim mesajı
+    sendMessage: function (d) {
+      if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+      return client.from('contact_messages').insert({
+        name: d.name, email: d.email, phone: d.phone || null,
+        subject: d.subject || null, order_no: d.order_no || null, message: d.message
+      }).then(function (res) { if (res.error) throw res.error; return { ok: true }; });
+    },
+    // ---- üyelik / oturum ----
+    auth: {
+      signUp: function (name, email, password, phone) {
+        if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+        return client.auth.signUp({
+          email: email, password: password,
+          options: { data: { full_name: name, phone: phone || null } }
+        }).then(function (res) { if (res.error) throw res.error; return res.data; });
+      },
+      signIn: function (email, password) {
+        if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+        return client.auth.signInWithPassword({ email: email, password: password })
+          .then(function (res) { if (res.error) throw res.error; return res.data; });
+      },
+      signOut: function () {
+        if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+        return client.auth.signOut();
+      },
+      resetPassword: function (email) {
+        if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+        return client.auth.resetPasswordForEmail(email, {
+          redirectTo: location.origin + '/giris.html'
+        }).then(function (res) { if (res.error) throw res.error; return res.data; });
+      },
+      session: function () {
+        if (!client) return Promise.resolve(null);
+        return client.auth.getSession().then(function (r) { return r.data.session; });
+      },
+      onChange: function (cb) {
+        if (!client) return;
+        return client.auth.onAuthStateChange(cb);
+      }
+    },
+    client: function () { return client; }
+  };
+  window.EJData = EJData;
+
+  function pad5(n) { return ('00000' + n).slice(-5); }
+  function dateStamp() {
+    var d = new Date();
+    return ('' + d.getFullYear()).slice(2) +
+      ('0' + (d.getMonth() + 1)).slice(-2) +
+      ('0' + d.getDate()).slice(-2);
+  }
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  // [data-ej-grid] kapsayıcılarını doldur
+  function renderGrids() {
+    document.querySelectorAll('[data-ej-grid]').forEach(function (el) {
+      var kind = el.getAttribute('data-ej-grid');     // "all" | "featured" | kategori
+      var limit = parseInt(el.getAttribute('data-limit') || '0', 10) || 0;
+      var opts = { limit: limit };
+      if (kind === 'featured') opts.featured = true;
+      else if (kind && kind !== 'all') opts.category = kind;
+      EJData.products(opts).then(function (list) {
+        if (!list.length) return;                      // veri yoksa sabit HTML kalsın
+        el.innerHTML = list.map(cardHTML).join('');
+        el.dispatchEvent(new CustomEvent('ej:grid-rendered', { bubbles: true }));
+      }).catch(function (e) { console.error('[EJ] Ürünler yüklenemedi:', e.message || e); });
+    });
+  }
+
+  // ---- ürün detay sayfasını DB'den doldur ----
+  function applyProduct(p) {
+    document.title = p.name + ' — Esse Jeffe';
+    window.EJ_PRODUCT = p;
+
+    var crumb = document.querySelector('.pd-info .crumb');
+    if (crumb) crumb.innerHTML =
+      '<a href="index.html">Ana Sayfa</a> · <a href="koleksiyon.html">Koleksiyon</a> · ' + esc(p.name);
+
+    var label = document.querySelector('.pd-info .label');
+    if (label) {
+      if (p.badge) { label.textContent = p.badge; label.style.display = ''; }
+      else { label.style.display = 'none'; }
+    }
+    var modelTag = document.querySelector('.model-tag');
+    if (modelTag) {
+      if (p.badge) { modelTag.textContent = p.badge; modelTag.style.display = ''; }
+      else { modelTag.style.display = 'none'; }
+    }
+
+    var h1 = document.querySelector('.pd-info h1');
+    if (h1) h1.innerHTML = esc(p.name) +
+      ' <em style="font-style:normal;display:block;font-family:var(--sans);font-size:clamp(13px,1.2vw,16px);letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:400;margin-top:8px">' +
+      esc(p.model_desc || '') + '</em>';
+
+    var price = document.querySelector('.pd-price');
+    if (price) price.innerHTML =
+      (p.old_price ? '<span class="old">' + fmt(p.old_price) + '</span>' : '') + fmt(p.price);
+
+    var desc = document.querySelector('.pd-desc');
+    if (desc && p.description) desc.textContent = p.description;
+
+    // bedenler
+    var sizesWrap = document.querySelector('.pd-sizes');
+    if (sizesWrap && p.sizes && p.sizes.length) {
+      var defIdx = p.sizes.indexOf('M'); if (defIdx < 0) defIdx = 0;
+      sizesWrap.innerHTML = p.sizes.map(function (s, i) {
+        return '<button type="button"' + (i === defIdx ? ' class="sel"' : '') + '>' + esc(s) + '</button>';
+      }).join('');
+    }
+
+    // renk karuseli kartları
+    var stage = document.getElementById('cstage');
+    if (stage && p.colors && p.colors.length) {
+      stage.innerHTML = p.colors.map(function (c) {
+        return '<button class="ccard" data-name="' + esc(c.name) + '" data-img="' + esc(c.image_url || '') + '" style="--c:' + esc(c.hex) + '">' +
+          '<span class="face"><span class="nm">' + esc(c.name) + '</span></span>' +
+          '<span class="ring"></span>' +
+          '<span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>';
+      }).join('');
+    }
+  }
+
+  function renderProduct() {
+    if (!document.querySelector('.pd')) return;     // ürün sayfası değil
+    var slug = (new URLSearchParams(location.search)).get('slug');
+    var done = function () {
+      window.dispatchEvent(new CustomEvent('ej:product-loaded', { detail: window.EJ_PRODUCT || null }));
+    };
+    if (!slug) { done(); return; }                  // slug yoksa sabit içerik + init
+    EJData.product(slug).then(function (p) {
+      if (p) applyProduct(p);
+      done();
+    }).catch(function (e) { console.error('[EJ] Ürün yüklenemedi:', e.message || e); done(); });
+  }
+
+  // ---- form bağlama (bülten + iletişim) ----
+  function wireForms() {
+    // bülten — .news içindeki form
+    var news = document.querySelector('.news form');
+    if (news && !news.dataset.ejWired) {
+      news.dataset.ejWired = '1';
+      news.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var input = news.querySelector('input[type="email"]') || news.querySelector('input');
+        var btn = news.querySelector('button');
+        var email = ((input && input.value) || '').trim();
+        if (!email || email.indexOf('@') < 0) { newsMsg(news, 'Geçerli bir e-posta girin.'); return; }
+        if (btn) btn.disabled = true;
+        EJData.subscribe(email).then(function (r) {
+          if (input) input.value = '';
+          newsMsg(news, r.already ? 'Zaten abonesiniz — teşekkürler.' : 'Abone olundu, teşekkürler!');
+        }).catch(function (err) {
+          newsMsg(news, 'Bir hata oluştu, tekrar deneyin.');
+          console.error('[EJ] bülten hatası', err);
+        }).then(function () { if (btn) btn.disabled = false; });
+      });
+    }
+
+    // iletişim — #contactForm
+    var cf = document.getElementById('contactForm');
+    if (cf && !cf.dataset.ejWired) {
+      cf.dataset.ejWired = '1';
+      cf.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var sent = document.getElementById('sent');
+        var get = function (id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
+        var data = {
+          name: get('ad'), phone: get('tel'), email: get('mail'),
+          subject: get('konu'), order_no: get('siparis'), message: get('mesaj')
+        };
+        if (!data.name || !data.email) { contactErr(cf, 'Lütfen ad ve e-posta alanlarını doldurun.'); return; }
+        if (!data.message) { contactErr(cf, 'Lütfen mesajınızı yazın.'); return; }
+        var btn = cf.querySelector('button[type="submit"]');
+        if (btn) { btn.disabled = true; btn.dataset.t = btn.textContent; btn.textContent = 'Gönderiliyor...'; }
+        EJData.sendMessage(data).then(function () {
+          cf.reset();
+          if (sent) { sent.textContent = 'Teşekkürler — talebiniz alındı, kısa sürede dönüş yapacağız.'; sent.style.display = 'block'; sent.style.color = 'var(--zeytin)'; }
+        }).catch(function (err) {
+          if (sent) { sent.textContent = 'Gönderilemedi, lütfen tekrar deneyin.'; sent.style.display = 'block'; sent.style.color = '#b03030'; }
+          console.error('[EJ] iletişim hatası', err);
+        }).then(function () {
+          if (btn) { btn.disabled = false; btn.textContent = btn.dataset.t || 'Talebi Gönder'; }
+        });
+      });
+    }
+  }
+  function newsMsg(form, msg) {
+    var p = form.parentElement.querySelector('.news-msg');
+    if (!p) {
+      p = document.createElement('p'); p.className = 'news-msg';
+      p.style.cssText = 'margin-top:16px;font-size:13px;letter-spacing:.06em;color:var(--ink)';
+      form.parentElement.appendChild(p);
+    }
+    p.textContent = msg;
+  }
+  function contactErr(form, msg) {
+    var sent = document.getElementById('sent');
+    if (sent) { sent.textContent = msg; sent.style.display = 'block'; sent.style.color = '#b03030'; }
+  }
+
+  // ---- oturum durumu + auth formları ----
+  var _session = null;
+
+  // admin ise header (.nav) ve mobil menüye "Admin" linki ekle
+  function syncAdminLink(session) {
+    if (!session) { removeAdminLinks(); return; }
+    client.from('profiles').select('is_admin').eq('id', session.user.id).single()
+      .then(function (r) { if (r.data && r.data.is_admin) addAdminLinks(); else removeAdminLinks(); })
+      .catch(function () { removeAdminLinks(); });
+  }
+  function mkAdminLink(text, cls) {
+    var a = document.createElement('a');
+    a.href = 'admin-urunler.html'; a.textContent = text; a.className = 'ej-admin-link ' + cls;
+    return a;
+  }
+  function addAdminLinks() {
+    // masaüstü: logo ile sağ araç çubuğunun ortasına (header-in'de mutlak konum)
+    var hin = document.querySelector('.header .header-in');
+    if (hin && !hin.querySelector('.ej-admin-top')) hin.appendChild(mkAdminLink('Admin', 'ej-admin-top'));
+    // mobil menü
+    var mm = document.getElementById('mobileMenu');
+    if (mm && !mm.querySelector('.ej-admin-mm')) mm.appendChild(mkAdminLink('Admin Paneli', 'ej-admin-mm'));
+  }
+  function removeAdminLinks() {
+    Array.prototype.forEach.call(document.querySelectorAll('.ej-admin-link'), function (el) { el.remove(); });
+  }
+
+  function applyAuthState(session) {
+    _session = session;
+    var inAuth = !!session;
+    document.body.classList.toggle('is-auth', inAuth);
+    document.body.classList.toggle('is-guest', !inAuth);
+    syncAdminLink(session);
+
+    var bagAuth = document.querySelector('.bag-auth');
+    if (bagAuth) {
+      var as = bagAuth.querySelectorAll('a');
+      if (as.length >= 2) {
+        if (inAuth) {
+          as[0].textContent = 'Hesabım'; as[0].href = 'hesap.html'; as[0].onclick = null;
+          as[1].textContent = 'Çıkış Yap'; as[1].href = '#';
+          as[1].onclick = function (e) { e.preventDefault(); EJData.auth.signOut().then(function () { location.href = 'index.html'; }); };
+        } else {
+          as[0].textContent = 'Giriş Yap'; as[0].href = 'giris.html'; as[0].onclick = null;
+          as[1].textContent = 'Üye Ol'; as[1].href = 'kayit.html'; as[1].onclick = null;
+        }
+      }
+    }
+  }
+
+  function aVal(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
+  function authMsg(msg, isErr) {
+    var el = document.getElementById('authMsg');
+    if (el) { el.textContent = msg; el.style.display = 'block'; el.style.color = isErr ? '#b03030' : 'var(--zeytin)'; }
+  }
+  function setBtn(btn, busy, txt) {
+    if (!btn) return;
+    if (busy) { btn.disabled = true; btn.dataset.t = btn.textContent; btn.textContent = txt; }
+    else { btn.disabled = false; btn.textContent = btn.dataset.t || btn.textContent; }
+  }
+  function authErr(err) {
+    var m = (err && err.message) || '';
+    if (/already registered|already exists|User already/i.test(m)) return 'Bu e-posta zaten kayıtlı. Giriş yapmayı deneyin.';
+    if (/Invalid login credentials/i.test(m)) return 'E-posta veya şifre hatalı.';
+    if (/Email not confirmed/i.test(m)) return 'E-postanızı doğrulamanız gerekiyor. Gelen kutunuzu kontrol edin.';
+    if (/Password should be at least|at least 6/i.test(m)) return 'Şifre çok kısa.';
+    return m || 'Bir hata oluştu, tekrar deneyin.';
+  }
+
+  function handleRegister(e) {
+    e.preventDefault();
+    var name = aVal('regName'), email = aVal('regEmail'), pass = aVal('regPass');
+    var phone = aVal('regPhone');
+    var kvkk = document.getElementById('regKvkk');
+    if (!name || !email || !pass) return authMsg('Lütfen tüm zorunlu alanları doldurun.', true);
+    if (pass.length < 8) return authMsg('Şifre en az 8 karakter olmalı.', true);
+    if (kvkk && !kvkk.checked) return authMsg('Devam etmek için Gizlilik Politikası onayı gerekli.', true);
+    var btn = e.target.querySelector('button[type="submit"]'); setBtn(btn, true, 'Kaydediliyor...');
+    EJData.auth.signUp(name, email, pass, phone).then(function (data) {
+      if (data.session) { location.href = 'hesap.html'; }     // e-posta onayı kapalıysa otomatik giriş
+      else {
+        authMsg('Hesabınız oluşturuldu! E-postanıza gönderdiğimiz doğrulama linkine tıklayın, sonra giriş yapın.', false);
+        setBtn(btn, false);
+      }
+    }).catch(function (err) { authMsg(authErr(err), true); setBtn(btn, false); });
+  }
+
+  function handleLogin(e) {
+    e.preventDefault();
+    var email = aVal('logEmail'), pass = aVal('logPass');
+    if (!email || !pass) return authMsg('E-posta ve şifre gerekli.', true);
+    var btn = e.target.querySelector('button[type="submit"]'); setBtn(btn, true, 'Giriş yapılıyor...');
+    EJData.auth.signIn(email, pass).then(function () {
+      var to = new URLSearchParams(location.search).get('next') || 'hesap.html';
+      location.href = to;
+    }).catch(function (err) { authMsg(authErr(err), true); setBtn(btn, false); });
+  }
+
+  function handleForgot(e) {
+    e.preventDefault();
+    var email = aVal('logEmail');
+    if (!email) return authMsg('Önce e-posta adresinizi yazın, sonra "Şifremi unuttum"a basın.', true);
+    EJData.auth.resetPassword(email).then(function () {
+      authMsg('Şifre sıfırlama linki e-postanıza gönderildi.', false);
+    }).catch(function (err) { authMsg(authErr(err), true); });
+  }
+
+  function wireAuthUI() {
+    var acc = document.querySelector('.tools .icon[aria-label="Hesap"]');
+    if (acc && !acc.dataset.ejWired) {
+      acc.dataset.ejWired = '1';
+      acc.addEventListener('click', function () { location.href = _session ? 'hesap.html' : 'giris.html'; });
+    }
+    var rf = document.getElementById('registerForm');
+    if (rf && !rf.dataset.ejWired) { rf.dataset.ejWired = '1'; rf.addEventListener('submit', handleRegister); }
+    var lf = document.getElementById('loginForm');
+    if (lf && !lf.dataset.ejWired) { lf.dataset.ejWired = '1'; lf.addEventListener('submit', handleLogin); }
+    var fp = document.getElementById('forgotLink');
+    if (fp && !fp.dataset.ejWired) { fp.dataset.ejWired = '1'; fp.addEventListener('click', handleForgot); }
+  }
+
+  function renderAll() {
+    renderGrids(); renderProduct(); wireForms(); wireAuthUI();
+    EJData.auth.session().then(applyAuthState);
+  }
+
+  function init() {
+    if (!window.supabase || !window.supabase.createClient) {
+      console.error('[EJ] Supabase SDK bulunamadı.');
+      return;
+    }
+    client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
+    window.ejSupabase = client;
+    // oturum değişiminde (giriş/çıkış) arayüzü güncelle
+    EJData.auth.onChange(function (event, session) { applyAuthState(session); });
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', renderAll);
+    } else { renderAll(); }
+  }
+
+  // supabase-js (UMD) CDN'den yükle, sonra başlat
+  if (window.supabase && window.supabase.createClient) { init(); }
+  else {
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    s.onload = init;
+    s.onerror = function () { console.error('[EJ] Supabase SDK yüklenemedi (internet?).'); };
+    document.head.appendChild(s);
+  }
+})();

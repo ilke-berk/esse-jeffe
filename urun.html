@@ -1,0 +1,572 @@
+﻿<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pera — Esse Jeffe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/fonts/fonts.css">
+<link rel="stylesheet" href="ej.css?v=5">
+<style>
+/* ---------- product detail ---------- */
+.pd{display:grid;grid-template-columns:0.92fr 1.08fr;gap:0;align-items:flex-start;padding:0;max-width:1280px;margin:0 auto}
+
+/* product gallery — dikey dizili foto yığını (sayfayla kayar) */
+.pd-gallery-outer{position:relative}
+.pd-gallery{width:100%;display:flex;flex-direction:column;gap:4px}
+.pd-gallery::-webkit-scrollbar{display:none}
+.pg-dots{display:none}
+.pg-dot{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.5);border:none;padding:0;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.22);transition:background .3s,transform .3s}
+.pg-dot.active{background:rgba(255,255,255,.95);transform:scale(1.5)}
+.pg-item{position:relative;width:100%;aspect-ratio:3/4;overflow:hidden;background:#f0ece8;flex-shrink:0}
+.pg-item img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;transition:opacity .4s ease}
+.pg-item .img-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transition:background .4s ease}
+.pg-item .img-ph svg{width:40px;height:40px;opacity:.18;stroke:var(--ink);fill:none}
+.pd-info{padding:26px 38px 40px 50px;position:sticky;top:var(--hh,60px);align-self:start}
+.model-tag{position:absolute;left:16px;top:16px;z-index:4;font-size:10px;letter-spacing:.16em;text-transform:uppercase;background:var(--bg);color:var(--ink);padding:6px 11px}
+.model-swatch{position:absolute;right:16px;bottom:16px;z-index:4;display:flex;align-items:center;gap:9px;background:rgba(250,249,246,.92);padding:8px 13px 8px 9px;backdrop-filter:blur(4px)}
+.model-swatch i{width:18px;height:18px;border-radius:50%;border:1px solid rgba(0,0,0,.15)}
+.model-swatch span{font-size:11px;letter-spacing:.14em;text-transform:uppercase}
+
+/* info */
+.pd-info .crumb{margin-bottom:12px}
+.pd-info .label{display:block;margin-bottom:14px}
+.pd-info h1{font-family:var(--serif);font-weight:300;font-size:clamp(30px,3vw,44px);line-height:1.04;letter-spacing:.005em}
+.pd-price{margin-top:10px;font-size:18px;letter-spacing:.04em}
+.pd-price .old{color:var(--muted);text-decoration:line-through;margin-right:12px}
+.pd-desc{color:var(--soft);font-size:14px;line-height:1.6;max-width:460px;margin-top:12px}
+
+.pd-color-label{margin-top:18px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.pd-color-label b{color:var(--ink);font-weight:500;margin-left:6px}
+
+/* ---------- 3D cylinder / ferris carousel ---------- */
+.carousel{display:flex;align-items:center;gap:8px;margin-top:8px;user-select:none}
+.ferris{position:relative;flex:1;height:168px;perspective:1150px;perspective-origin:50% 46%;overflow:hidden}
+.cstage{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .65s cubic-bezier(.22,.75,.25,1)}
+.ccard{position:absolute;left:50%;top:50%;width:132px;height:176px;margin:-88px 0 0 -66px;border:none;padding:0;cursor:pointer;background:none;
+  transform-style:preserve-3d;will-change:transform,opacity;transition:opacity .35s ease}
+.ccard .face{position:absolute;inset:0;background:var(--c);box-shadow:inset 0 0 0 1px rgba(255,255,255,.10),0 16px 34px rgba(20,18,15,.22);
+  display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden}
+.ccard .face::before{content:"";position:absolute;inset:0;background:linear-gradient(150deg,rgba(255,255,255,.22),rgba(255,255,255,0) 42%,rgba(0,0,0,.28))}
+.ccard .nm{position:relative;z-index:2;color:#fff;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;padding:12px;text-align:left;text-shadow:0 1px 3px rgba(0,0,0,.4)}
+.ccard .ring{position:absolute;inset:0;outline:0 solid var(--ink);outline-offset:5px;transition:outline-width .3s}
+.ccard.active .ring{outline-width:2px}
+.ccard .chk{position:absolute;top:10px;right:10px;z-index:3;width:22px;height:22px;border-radius:50%;background:var(--bg);color:var(--ink);display:grid;place-items:center;opacity:0;transform:scale(.6);transition:opacity .3s,transform .3s}
+.ccard.active .chk{opacity:1;transform:scale(1)}
+.ccard .chk svg{width:12px;height:12px;stroke:currentColor;stroke-width:2;fill:none}
+
+.cbtn{flex-shrink:0;width:46px;height:46px;border-radius:50%;border:1px solid var(--line-strong);background:var(--bg);color:var(--ink);cursor:pointer;display:grid;place-items:center;transition:background .25s,color .25s,border-color .25s}
+.cbtn:hover{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.cbtn svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.4;fill:none}
+
+.pd-actions{display:flex;gap:12px;margin-top:18px;flex-wrap:wrap}
+.pd-actions .btn{padding:16px 36px}
+.pd-meta{list-style:none;display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
+.pd-meta li{font-size:12px;letter-spacing:.04em;color:var(--soft);display:flex;align-items:center;gap:8px}
+.pd-meta li::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ink)}
+
+@media(max-width:900px){
+  .pd{grid-template-columns:1fr;gap:0;padding:0}
+  .pd-info{position:static}
+  .ferris{height:200px}
+}
+@media(max-width:560px){
+  .ccard{width:138px;height:184px;margin:-92px 0 0 -69px}
+}
+/* size guide drawer */
+.sg-overlay{position:fixed;inset:0;background:rgba(20,18,15,.38);z-index:200;opacity:0;visibility:hidden;transition:opacity .35s,visibility .35s}
+.sg-overlay.open{opacity:1;visibility:visible}
+.sg-drawer{position:fixed;top:0;right:0;bottom:0;width:min(480px,100vw);background:var(--bg);z-index:201;transform:translateX(100%);transition:transform .42s cubic-bezier(.22,.75,.25,1);overflow-y:auto;display:flex;flex-direction:column}
+.sg-drawer.open{transform:translateX(0)}
+.sg-head{display:flex;justify-content:space-between;align-items:center;padding:22px 28px;border-bottom:1px solid var(--line);flex-shrink:0}
+.sg-head h2{font-family:var(--serif);font-weight:300;font-size:22px;letter-spacing:.01em}
+.sg-close{background:none;border:none;color:var(--ink);cursor:pointer;display:grid;place-items:center;width:36px;height:36px}
+.sg-close svg{width:20px;height:20px;stroke:currentColor;stroke-width:1.3;fill:none}
+.sg-body{padding:28px;flex:1}
+.sg-body p{font-size:13.5px;color:var(--soft);line-height:1.75;margin-bottom:20px}
+.sg-body h4{font-family:var(--sans);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:28px 0 12px}
+.sg-table{width:100%;border-collapse:collapse;font-size:13px}
+.sg-table th{font-family:var(--sans);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;font-weight:500}
+.sg-table td{padding:9px 10px;border-bottom:1px solid var(--line);color:var(--ink);font-size:13px}
+.sg-table tr:last-child td{border-bottom:none}
+.sg-table tr:hover td{background:var(--bg-warm,#f5f5f5)}
+.sg-table td:first-child{font-weight:500;letter-spacing:.06em}
+.sg-tips{list-style:none;display:flex;flex-direction:column;gap:12px;margin-top:4px}
+.sg-tips li{font-size:13px;color:var(--soft);line-height:1.6;display:flex;gap:10px;align-items:flex-start}
+.sg-tips li::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ink);flex-shrink:0;margin-top:7px}
+.size-guide-btn{background:none;border:none;font-family:var(--sans);font-size:11px;letter-spacing:.1em;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:0}
+.pd-size-label{margin-top:16px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.pd-size-label a{font-size:11px;letter-spacing:.1em;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
+.pd-sizes{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.pd-sizes button{font-family:var(--sans);font-size:11.5px;letter-spacing:.08em;min-width:50px;padding:10px 12px;border:1px solid var(--line-strong);background:none;color:var(--ink);cursor:pointer;transition:background .2s,border-color .2s,color .2s}
+.pd-sizes button:hover{border-color:var(--ink)}
+.pd-sizes button.sel{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+/* accordion */
+.pd-accordion{margin-top:28px;border-top:1px solid var(--line)}
+.pd-acc-item{border-bottom:1px solid var(--line)}
+.pd-acc-btn{width:100%;display:flex;justify-content:space-between;align-items:center;padding:14px 0;background:none;border:none;cursor:pointer;font-family:var(--sans);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink);text-align:left}
+.pd-acc-btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5;transition:transform .3s;flex-shrink:0}
+.pd-acc-btn[aria-expanded="true"] svg{transform:rotate(180deg)}
+.pd-acc-body{max-height:0;overflow:hidden;transition:max-height .35s ease}
+.pd-acc-body.open{max-height:400px}
+.pd-acc-body p,.pd-acc-body ul{font-size:13.5px;color:var(--soft);line-height:1.75;padding-bottom:16px;margin:0}
+.pd-acc-body ul{padding-left:18px;list-style:disc}
+.pd-acc-body li{margin-bottom:4px}
+/* related + recently viewed */
+.sec-related{padding:64px 40px}
+.sec-related .sec-head{max-width:1280px;margin:0 auto 36px}
+.rel-track{display:flex;gap:20px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;padding:0 40px 8px;max-width:1280px;margin:0 auto}
+.rel-track::-webkit-scrollbar{display:none}
+.rel-track .card{flex:0 0 260px;scroll-snap-align:start}
+</style>
+</head>
+<body>
+
+
+
+<header class="header">
+  <div class="header-in">
+    <nav class="nav">
+      <a href="index.html">Ana Sayfa</a>
+      <a href="koleksiyon.html">Koleksiyon</a>
+      <a href="atolye.html">Hakkımızda</a>
+    <a href="iletisim.html">İletişim</a>
+    </nav>
+    <a class="brand" href="index.html">ESSE JEFFE</a>
+    <div class="tools">
+      <div class="name-ticker" aria-hidden="true"><span class="t-item"></span></div>
+      <button class="icon" aria-label="Ara"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></button>
+      <button class="icon" aria-label="Hesap"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M5 21c0-3.9 3.1-7 7-7s7 3.1 7 7"></path></svg></button>
+      <button class="icon bag" aria-label="Sepet"><svg viewBox="0 0 24 24"><path d="M6 8h12l-1 13H7L6 8z"></path><path d="M9 8V6a3 3 0 0 1 6 0v2"></path></svg><span class="count" style="display:none">0</span></button>
+    </div>
+  </div>
+</header>
+
+<section class="pd" data-screen-label="Ürün">
+  <!-- ürün görselleri — dikey scroll -->
+  <div class="pd-gallery-outer">
+  <div class="pd-gallery" id="pdGallery">
+    <div class="pg-item" id="pgMain">
+      <span class="model-tag">Çok Satan</span>
+      <img id="pgMainImg" alt="Pera" style="opacity:0">
+      <div class="img-ph" id="pgMainPh" style="background:#6e2c2c">
+        <svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </div>
+      <div class="model-swatch"><i id="swDot" style="background:#6e2c2c"></i><span id="swName">Bordo</span></div>
+    </div>
+    <div class="pg-item"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div>
+    <div class="pg-item"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div>
+    <div class="pg-item"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div>
+  </div>
+  <div class="pg-dots" id="pgDots">
+    <button class="pg-dot active" data-idx="0" aria-label="Görsel 1"></button>
+    <button class="pg-dot" data-idx="1" aria-label="Görsel 2"></button>
+    <button class="pg-dot" data-idx="2" aria-label="Görsel 3"></button>
+    <button class="pg-dot" data-idx="3" aria-label="Görsel 4"></button>
+  </div>
+  </div>
+
+  <!-- info + atlıkarınca -->
+  <div class="pd-info">
+    <p class="crumb"><a href="index.html">Ana Sayfa</a> · <a href="koleksiyon.html">Koleksiyon</a> · Pera</p>
+    <span class="label">Çok Satan</span>
+    <h1>Pera <em style="font-style:normal;display:block;font-family:var(--sans);font-size:clamp(13px,1.2vw,16px);letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:400;margin-top:8px">Uzun Yırtmaçlı Krep Abiye</em></h1>
+    <div class="pd-price"><span class="old">2.199 TL</span>1.699 TL</div>
+    <p class="pd-desc">Uzun yırtmaç detayı ve dökümlü krep kumaşıyla güçlü, zarif bir siluet. Aşağıdaki atlıkarıncadan rengi seçin — model üzerinde anında görün.</p>
+
+    <p class="pd-color-label">Renk —<b id="colorName">Bordo</b></p>
+
+    <div class="carousel">
+      <button class="cbtn" id="prevBtn" aria-label="Önceki renk"><svg viewBox="0 0 24 24"><polyline points="15 5 8 12 15 19"/></svg></button>
+      <div class="ferris">
+        <div class="cstage" id="cstage">
+          <button class="ccard" data-name="Bordo"   data-model="m-bordo"   data-img=""                            style="--c:#6e2c2c"><span class="face"><span class="nm">Bordo</span></span><span class="ring"></span><span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>
+          <button class="ccard" data-name="Yeşil"   data-model="m-yesil"   data-img="img/yesil-yirtmacli.jpg"   style="--c:#1d3b2a"><span class="face"><span class="nm">Yeşil</span></span><span class="ring"></span><span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>
+          <button class="ccard" data-name="Siyah"   data-model="m-siyah"   data-img="img/siyah-yirtmacli.jpg"   style="--c:#111111"><span class="face"><span class="nm">Siyah</span></span><span class="ring"></span><span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>
+          <button class="ccard" data-name="Kırmızı" data-model="m-kirmizi" data-img="img/kirmizi-yirtmacli.jpg" style="--c:#9e2b2b"><span class="face"><span class="nm">Kırmızı</span></span><span class="ring"></span><span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>
+          <button class="ccard" data-name="Mavi"    data-model="m-mavi"    data-img=""                            style="--c:#26384a"><span class="face"><span class="nm">Mavi</span></span><span class="ring"></span><span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>
+        </div>
+      </div>
+      <button class="cbtn" id="nextBtn" aria-label="Sonraki renk"><svg viewBox="0 0 24 24"><polyline points="9 5 16 12 9 19"/></svg></button>
+    </div>
+
+    <p class="pd-size-label">Beden <button class="size-guide-btn" id="sizeGuideBtn" type="button">Beden Rehberi →</button></p>
+    <div class="pd-sizes">
+      <button type="button">XS</button>
+      <button type="button">S</button>
+      <button type="button" class="sel">M</button>
+      <button type="button">L</button>
+      <button type="button">XL</button>
+      <button type="button">2XL</button>
+      <button type="button">3XL</button>
+    </div>
+
+    <div class="pd-actions">
+      <button class="btn btn-solid" type="button">Sepete Ekle</button>
+      <a class="btn" href="iletisim.html">WhatsApp'tan Sor</a>
+    </div>
+
+    <ul class="pd-meta">
+      <li>Ücretsiz & aynı gün kargo</li>
+      <li>Kapıda ödeme</li>
+      <li>14 gün içinde kolay değişim</li>
+    </ul>
+    <div class="pd-accordion">
+      <div class="pd-acc-item">
+        <button class="pd-acc-btn" aria-expanded="false">Ürün Detayları<svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="pd-acc-body"><ul><li>%100 Polyester Krep Kumaş</li><li>Dolu astar</li><li>Uzun yırtmaç detay</li><li>El yıkama önerilir, 30°C'de ütülenebilir</li></ul></div>
+      </div>
+      <div class="pd-acc-item">
+        <button class="pd-acc-btn" aria-expanded="false">Kargo & Teslimat<svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="pd-acc-body"><p>Siparişler aynı gün kargoya verilir. Türkiye genelinde 1–3 iş günü teslimat. Kargo ücretsizdir. Kapıda ödeme seçeneği mevcuttur.</p></div>
+      </div>
+      <div class="pd-acc-item">
+        <button class="pd-acc-btn" aria-expanded="false">İade & Değişim<svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="pd-acc-body"><p>Teslim tarihinden itibaren 14 gün içinde beden veya renk değişimi yapabilirsiniz. Ürün kullanılmamış ve etiketli olmalıdır.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="sec-related" data-screen-label="Bunları da beğenebilirsin">
+  <div class="sec-head"><span class="label">Öneriler</span><h2>Bunları da beğenebilirsin</h2></div>
+  <div class="rel-track">
+    <a class="card" href="koleksiyon.html"><div class="frame"><span class="tag">Yeni</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Asos</h3><p class="model-desc">Fakir Kol V Yaka Davet</p><div class="dots"><span style="background:#6e2c2c"></span><span style="background:#1b1a17"></span><span style="background:#3c4a3a"></span><span style="background:#26384a"></span></div><div class="price">1.399 TL</div></div></a>
+    <a class="card" href="koleksiyon.html"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Efes</h3><p class="model-desc">Kruvaze Drapeli Krep Abiye</p><div class="dots"><span style="background:#b03030"></span><span style="background:#6e2c2c"></span><span style="background:#3c4a3a"></span><span style="background:#1b1a17"></span><span style="background:#26384a"></span></div><div class="price">1.499 TL</div></div></a>
+    <a class="card" href="koleksiyon.html"><div class="frame"><span class="tag">İndirim</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Karya</h3><p class="model-desc">V Yaka Fırfırlı Kol Abiye</p><div class="dots"><span style="background:#26384a"></span><span style="background:#b03030"></span><span style="background:#1b1a17"></span><span style="background:#6e2c2c"></span><span style="background:#3c4a3a"></span></div><div class="price"><span class="old">1.599 TL</span>1.299 TL</div></div></a>
+    <a class="card" href="koleksiyon.html"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Likya</h3><p class="model-desc">Kruvaze Drapeli Askılı Abiye</p><div class="dots"><span style="background:#1b1a17"></span><span style="background:#3c4a3a"></span><span style="background:#b03030"></span><span style="background:#26384a"></span></div><div class="price">1.599 TL</div></div></a>
+    <a class="card" href="koleksiyon.html"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Side</h3><p class="model-desc">Diz Üstü Ön Drape Detaylı</p><div class="dots"><span style="background:#b03030"></span><span style="background:#3c4a3a"></span><span style="background:#26384a"></span></div><div class="price">1.399 TL</div></div></a>
+  </div>
+</section>
+
+<section class="sec-related" id="recentSection" style="display:none" data-screen-label="Son incelediklerin">
+  <div class="sec-head"><span class="label">Geçmiş</span><h2>Son incelediklerin</h2></div>
+  <div class="rel-track" id="recentTrack"></div>
+</section>
+
+<div class="sg-overlay" id="sgOverlay"></div>
+<aside class="sg-drawer" id="sgDrawer" aria-label="Beden Rehberi">
+  <div class="sg-head">
+    <h2>Beden Rehberi</h2>
+    <button class="sg-close" id="sgClose" aria-label="Kapat"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+  </div>
+  <div class="sg-body">
+    <p>Krep kumaşlarımız vücudu sarar; kendi ölçülerinizi alarak aşağıdaki tabloyla karşılaştırın. Sınırda iseniz bir büyük bedeni tercih edin.</p>
+
+    <svg viewBox="0 0 240 340" width="100%" style="display:none" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <!-- Baş -->
+      <path d="M104,55 C102,44 108,30 120,27 C132,30 138,44 136,55"/>
+      <path d="M104,55 C107,64 108,72 111,80"/>
+      <path d="M136,55 C133,64 132,72 129,80"/>
+      <!-- Sol vücut -->
+      <path d="M111,80 C90,83 62,94 46,118 C40,130 42,145 56,162 C52,176 50,190 46,210 C43,228 48,248 62,266 L64,310"/>
+      <!-- Sağ vücut -->
+      <path d="M129,80 C150,83 178,94 194,118 C200,130 198,145 184,162 C188,176 190,190 194,210 C197,228 192,248 178,266 L176,310"/>
+      <!-- Sol kol -->
+      <path d="M46,118 C40,140 38,172 40,208 C40,224 42,242 44,256"/>
+      <!-- Sağ kol -->
+      <path d="M194,118 C200,140 202,172 200,208 C200,224 198,242 196,256"/>
+      <!-- Bacak iç çizgileri -->
+      <path d="M64,310 C68,322 70,332 70,340"/>
+      <path d="M176,310 C172,322 170,332 170,340"/>
+
+      <!-- 1: Göğüs ~y=132 -->
+      <text x="12" y="137" font-size="12" font-family="sans-serif" stroke="none" fill="currentColor" font-weight="500">1</text>
+      <line x1="24" y1="132" x2="46" y2="132" stroke-dasharray="3,3"/>
+      <line x1="46" y1="132" x2="194" y2="132"/>
+      <line x1="194" y1="132" x2="216" y2="132" stroke-dasharray="3,3"/>
+      <path d="M210,127 L217,132 L210,137" stroke-width="1"/>
+
+      <!-- 2: Bel ~y=168 -->
+      <text x="12" y="173" font-size="12" font-family="sans-serif" stroke="none" fill="currentColor" font-weight="500">2</text>
+      <line x1="24" y1="168" x2="55" y2="168" stroke-dasharray="3,3"/>
+      <line x1="55" y1="168" x2="185" y2="168"/>
+      <line x1="185" y1="168" x2="216" y2="168" stroke-dasharray="3,3"/>
+      <path d="M210,163 L217,168 L210,173" stroke-width="1"/>
+
+      <!-- 3: Basen ~y=210 -->
+      <text x="12" y="215" font-size="12" font-family="sans-serif" stroke="none" fill="currentColor" font-weight="500">3</text>
+      <line x1="24" y1="210" x2="46" y2="210" stroke-dasharray="3,3"/>
+      <line x1="46" y1="210" x2="194" y2="210"/>
+      <line x1="194" y1="210" x2="216" y2="210" stroke-dasharray="3,3"/>
+      <path d="M210,205 L217,210 L210,215" stroke-width="1"/>
+    </svg>
+    <h4>Ölçü Tablosu (cm)</h4>
+    <table class="sg-table">
+      <thead><tr><th>Beden</th><th>Göğüs</th><th>Bel</th><th>Kalça</th><th>Boy</th></tr></thead>
+      <tbody>
+        <tr><td>XS</td><td>80–84</td><td>62–66</td><td>88–92</td><td>158–162</td></tr>
+        <tr><td>S</td><td>84–88</td><td>66–70</td><td>92–96</td><td>160–164</td></tr>
+        <tr><td>M</td><td>88–92</td><td>70–74</td><td>96–100</td><td>162–166</td></tr>
+        <tr><td>L</td><td>92–96</td><td>74–78</td><td>100–104</td><td>164–168</td></tr>
+        <tr><td>XL</td><td>96–100</td><td>78–82</td><td>104–108</td><td>166–170</td></tr>
+        <tr><td>2XL</td><td>100–106</td><td>82–88</td><td>108–114</td><td>168–172</td></tr>
+        <tr><td>3XL</td><td>106–114</td><td>88–96</td><td>114–122</td><td>168–174</td></tr>
+      </tbody>
+    </table>
+    <img src="uploads/pasted-1782096909978-0.png" alt="Ölçü alma rehberi" style="display:block;width:100%;max-width:220px;margin:24px auto 8px">
+    <h4>Nasıl Ölçülür?</h4>
+    <ul class="sg-tips">
+      <li><b>1. Göğüs —</b> Sırt çevresini ve kol altından geçerek göğsün en geniş noktasını ölçün.</li>
+      <li><b>2. Bel —</b> Kalça kemiğinin hemen üzerinden belin en ince noktasını ölçün.</li>
+      <li><b>3. Basen —</b> Bacaklarınız kapalıyken kalçanın en geniş noktasının çevresini ölçün.</li>
+    </ul>
+    <p style="margin-top:24px">Kararsızsanız WhatsApp'tan yazın, doğru bedeni birlikte bulalım.</p>
+    <a class="btn btn-solid" href="https://api.whatsapp.com/send?phone=%2B908502551237" style="display:inline-flex;margin-top:4px">WhatsApp'tan Sor</a>
+  </div>
+</aside>
+
+<!-- footer -->
+<footer class="footer">
+  <div class="footer-in">
+    <div>
+      <div class="brand-f">ESSE JEFFE</div>
+      <p>Modern kadınlar için özgün tasarım abiye ve davet elbiseleri. Kaliteli kumaş, güçlü siluet, uygun fiyat.</p>
+      <div class="socials"><a href="https://www.instagram.com/esse_jeffe/">Instagram</a><a href="https://www.tiktok.com/@esse_jeffe">TikTok</a><a href="https://www.facebook.com/essejeffe.tr">Facebook</a></div>
+    </div>
+    <div><h4>Koleksiyon</h4><ul><li><a href="koleksiyon.html">Tüm Abiyeler</a></li><li><a href="koleksiyon.html">Yeni Gelenler</a></li><li><a href="koleksiyon.html">Çok Satanlar</a></li><li><a href="koleksiyon.html">İndirimdekiler</a></li></ul></div>
+    <div><h4>Yardım</h4><ul><li><a href="hizmetler.html">Kargo & Değişim</a></li><li><a href="odeme.html">Ödeme Yöntemleri</a></li><li><a href="beden-rehberi.html">Beden Rehberi</a></li><li><a href="sss.html">SSS</a></li></ul></div>
+    <div><h4>Kurumsal</h4><ul><li><a href="kvkk.html">KVKK</a></li><li><a href="gizlilik.html">Gizlilik & Güvenlik</a></li><li><a href="cerez-politikasi.html">Çerez Politikası</a><span class="soon">yakında</span></li><li><a href="mesafeli-satis.html">Mesafeli Satış Sözleşmesi</a></li><li><a href="on-bilgilendirme.html">Ön Bilgilendirme Formu</a><span class="soon">yakında</span></li></ul></div>
+    <div><h4>İletişim</h4><ul><li><a href="mailto:info@essejeffe.com">info@essejeffe.com</a></li><li><a href="https://api.whatsapp.com/send?phone=%2B908502551237">WhatsApp: 0850 255 12 37</a></li><li><a href="https://www.instagram.com/esse_jeffe/">Instagram @esse_jeffe</a></li></ul></div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 Esse Jeffe · Tüm hakları saklıdır. <span style="opacity:.5;letter-spacing:.12em">by tragic</span></span>
+    <span><a href="gizlilik.html">Gizlilik</a> · <a href="mesafeli-satis.html">Mesafeli Satış</a> · <a href="kvkk.html">KVKK</a></span>
+  </div>
+</footer>
+
+<script src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
+<script src="backend/supabase-config.js"></script>
+<script src="backend/ej-supabase.js?v=6"></script>
+<script>
+function ejInitFerris(){
+  if (window.__ferrisInited) return;
+  var stage   = document.getElementById('cstage');
+  if (!stage || !stage.querySelector('.ccard')) return;
+  window.__ferrisInited = true;
+  var cards   = Array.prototype.slice.call(stage.querySelectorAll('.ccard'));
+  var N       = cards.length;
+  var step    = 360 / N;
+  var ferris  = stage.parentElement;
+  var pgMainImg = document.getElementById('pgMainImg');
+  var pgMainPh  = document.getElementById('pgMainPh');
+  var colorName = document.getElementById('colorName');
+  var swName = document.getElementById('swName');
+  var swDot  = document.getElementById('swDot');
+
+  var radius = 250, angle = 0, cur = 0;
+
+  function computeRadius(){
+    var w = ferris.clientWidth || 520;
+    radius = Math.max(190, Math.min(260, Math.round(w * 0.40)));
+  }
+
+  function apply(){
+    stage.style.transform = 'translateZ(-' + radius + 'px) rotateY(' + angle + 'deg)';
+    cards.forEach(function(c,i){
+      c.style.transform = 'rotateY(' + (i*step) + 'deg) translateZ(' + radius + 'px)';
+      var world = (((angle + i*step) % 360) + 360) % 360;
+      var facing = Math.cos(world * Math.PI/180);          // 1 = front, -1 = back
+      c.style.opacity = (0.18 + 0.82 * Math.max(0, facing)).toFixed(3);
+      c.style.zIndex = Math.round(facing * 100) + 200;
+      c.classList.toggle('active', i === cur);
+      c.style.pointerEvents = facing > -0.2 ? 'auto' : 'none';
+    });
+    var act = cards[cur];
+    var name = act.getAttribute('data-name');
+    var col  = act.style.getPropertyValue('--c').trim();
+    colorName.textContent = name;
+    swName.textContent = name;
+    swDot.style.background = col;
+    var imgSrc = act.getAttribute('data-img') || '';
+    if(imgSrc){
+      pgMainImg.src = imgSrc; pgMainImg.style.opacity = '1';
+      pgMainPh.style.opacity = '0';
+    } else {
+      pgMainImg.style.opacity = '0';
+      pgMainPh.style.background = col;
+      pgMainPh.style.opacity = '1';
+    }
+  }
+
+  function rotateTo(j){
+    var diff = j - cur;
+    diff = ((diff % N) + N) % N;          // 0..N-1
+    if (diff > N/2) diff -= N;            // shortest path
+    angle -= diff * step;
+    cur = j;
+    apply();
+  }
+
+  document.getElementById('prevBtn').addEventListener('click', function(){ rotateTo((cur - 1 + N) % N); });
+  document.getElementById('nextBtn').addEventListener('click', function(){ rotateTo((cur + 1) % N); });
+  cards.forEach(function(c,i){ c.addEventListener('click', function(){ rotateTo(i); }); });
+  document.addEventListener('keydown', function(e){
+    if(e.key==='ArrowLeft'){ rotateTo((cur - 1 + N) % N); }
+    if(e.key==='ArrowRight'){ rotateTo((cur + 1) % N); }
+  });
+
+  // drag / swipe to spin
+  var down=false, sx=0, moved=false;
+  ferris.addEventListener('pointerdown', function(e){ down=true; moved=false; sx=e.clientX; });
+  window.addEventListener('pointermove', function(e){
+    if(!down) return;
+    if(Math.abs(e.clientX - sx) > 48){
+      if(e.clientX < sx){ rotateTo((cur + 1) % N); } else { rotateTo((cur - 1 + N) % N); }
+      sx = e.clientX; moved=true;
+    }
+  });
+  window.addEventListener('pointerup', function(){ down=false; setTimeout(startAuto, 800); });
+
+  window.addEventListener('resize', function(){ computeRadius(); apply(); });
+  computeRadius();
+  apply();
+
+  // Auto-rotate — smooth, seçili kart değişmez
+  var autoAF = null;
+  var isAuto = false;
+  function startAuto(){
+    if(isAuto) return;
+    isAuto = true;
+    stage.style.transition = 'none';
+    function tick(){
+      if(!isAuto) return;
+      angle += 0.12;
+      apply();
+      autoAF = requestAnimationFrame(tick);
+    }
+    if(autoAF) cancelAnimationFrame(autoAF);
+    autoAF = requestAnimationFrame(tick);
+  }
+  function stopAuto(){
+    isAuto = false;
+    if(autoAF){ cancelAnimationFrame(autoAF); autoAF = null; }
+    stage.style.transition = '';
+  }
+
+  ferris.addEventListener('pointerdown', stopAuto);
+  ferris.addEventListener('mouseenter', stopAuto);
+  ferris.addEventListener('mouseleave', startAuto);
+
+  startAuto();
+}
+// Supabase varsa ürün DB'den yüklenince başlat; yoksa hemen.
+if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
+  window.addEventListener('ej:product-loaded', ejInitFerris, { once:true });
+  setTimeout(ejInitFerris, 2500);   // emniyet: SDK gecikirse/yüklenmezse
+} else {
+  ejInitFerris();
+}
+</script>
+
+<!-- Sepet overlay + panel -->
+<div class="bag-overlay" id="bagOverlay"></div>
+<aside class="bag-panel" id="bagPanel" aria-label="Sepetim">
+  <div class="bag-head">
+    <span class="bag-title">Sepetim</span>
+    <button class="bag-close" id="bagClose" aria-label="Kapat">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </button>
+  </div>
+  <div class="bag-empty-state">
+    <p>Sepetinize henüz ürün eklemediniz.</p>
+  </div>
+  <div class="bag-auth">
+    <a href="#">Giriş Yap</a>
+    <a href="#">Üye Ol</a>
+  </div>
+</aside>
+<script>
+// gallery dots
+(function(){
+  var gallery = document.getElementById('pdGallery');
+  var dots    = Array.prototype.slice.call(document.querySelectorAll('.pg-dot'));
+  var items   = Array.prototype.slice.call(gallery.querySelectorAll('.pg-item'));
+  if(!gallery || !dots.length) return;
+  function updateDots(){
+    var mid = gallery.scrollTop + gallery.clientHeight / 2;
+    var best = 0;
+    items.forEach(function(el, i){
+      if(el.offsetTop <= mid) best = i;
+    });
+    dots.forEach(function(d, i){ d.classList.toggle('active', i === best); });
+  }
+  gallery.addEventListener('scroll', updateDots, {passive:true});
+  dots.forEach(function(dot){
+    dot.addEventListener('click', function(){
+      var idx = parseInt(dot.getAttribute('data-idx'),10);
+      if(items[idx]) gallery.scrollTo({top:items[idx].offsetTop, behavior:'smooth'});
+    });
+  });
+  updateDots();
+})();
+// size guide drawer
+(function(){
+  var btn=document.getElementById('sizeGuideBtn'),
+      drawer=document.getElementById('sgDrawer'),
+      overlay=document.getElementById('sgOverlay'),
+      close=document.getElementById('sgClose');
+  function open(){ drawer.classList.add('open'); overlay.classList.add('open'); document.body.style.overflow='hidden'; }
+  function shut(){ drawer.classList.remove('open'); overlay.classList.remove('open'); document.body.style.overflow=''; }
+  if(btn) btn.addEventListener('click', open);
+  if(close) close.addEventListener('click', shut);
+  if(overlay) overlay.addEventListener('click', shut);
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape') shut(); });
+})();
+// accordion
+document.querySelectorAll('.pd-acc-btn').forEach(function(btn){
+  btn.addEventListener('click',function(){
+    var exp = btn.getAttribute('aria-expanded')==='true';
+    btn.setAttribute('aria-expanded',String(!exp));
+    btn.nextElementSibling.classList.toggle('open',!exp);
+  });
+});
+// size selector (delegasyon — dinamik bedenlerde de çalışır)
+document.addEventListener('click',function(e){
+  var b = e.target.closest('.pd-sizes button');
+  if(!b) return;
+  document.querySelectorAll('.pd-sizes button').forEach(function(x){ x.classList.remove('sel'); });
+  b.classList.add('sel');
+});
+// recently viewed
+function ejRecent(){
+  var p = window.EJ_PRODUCT;
+  var fmtTL = function(n){ return (n||0).toLocaleString('tr-TR')+' TL'; };
+  var CUR = p ? {
+      id: p.slug, name: p.name, desc: p.model_desc||'',
+      price: fmtTL(p.price), oldPrice: p.old_price?fmtTL(p.old_price):'',
+      href: 'urun.html?slug='+encodeURIComponent(p.slug)
+    } : {
+      id:'pera', name:'Pera', desc:'Uzun Yırtmaçlı Krep Abiye',
+      price:'1.699 TL', oldPrice:'2.199 TL', href:'urun.html?slug=pera'
+    };
+  var KEY='ej_recent',MAX=6;
+  function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||'[]'); }catch(e){ return []; } }
+  function save(a){ try{ localStorage.setItem(KEY,JSON.stringify(a)); }catch(e){} }
+  var list=load().filter(function(p){ return p.id!==CUR.id; });
+  list.unshift(CUR);
+  if(list.length>MAX) list=list.slice(0,MAX);
+  save(list);
+  var recent=list.filter(function(p){ return p.id!==CUR.id; });
+  if(recent.length){
+    var sec=document.getElementById('recentSection'),track=document.getElementById('recentTrack');
+    recent.forEach(function(p){
+      var a=document.createElement('a'); a.className='card'; a.href=p.href;
+      a.innerHTML='<div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>'+p.name+'</h3><p class="model-desc">'+p.desc+'</p><div class="price">'+(p.oldPrice?'<span class="old">'+p.oldPrice+'</span>':'')+p.price+'</div></div>';
+      track.appendChild(a);
+    });
+    sec.style.display='';
+  }
+}
+if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
+  window.addEventListener('ej:product-loaded', ejRecent, { once:true });
+} else {
+  ejRecent();
+}
+</script>
+<script src="ej.js?v=5"></script>
+<script src="ej-chat.js?v=6"></script>
+</body>
+</html>

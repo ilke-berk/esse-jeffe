@@ -1,0 +1,15 @@
+# Yerel araç / state dosyaları
+.image-slots.state.json
+.thumbnail
+_ds/
+.claude/
+.mcp.json
+
+# Geliştirme çıktıları
+screenshots/
+uploads/
+
+# OS / editör
+Thumbs.db
+.DS_Store
+desktop.ini

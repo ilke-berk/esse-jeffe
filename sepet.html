@@ -1,0 +1,386 @@
+﻿<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sepet & Ödeme — Esse Jeffe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/fonts/fonts.css">
+<link rel="stylesheet" href="ej.css?v=5">
+<style>
+.checkout{display:grid;grid-template-columns:1.15fr .85fr;gap:64px;align-items:start;max-width:1180px;margin:0 auto}
+.checkout h2{font-family:var(--serif);font-weight:400;font-size:22px;margin-bottom:20px;letter-spacing:.01em}
+.checkout h2:not(:first-child){margin-top:42px}
+/* ödeme yöntemleri */
+.pay-opts{display:flex;flex-direction:column;gap:12px}
+.pay-opt{display:flex;align-items:flex-start;gap:13px;border:1px solid var(--line);padding:16px 18px;cursor:pointer;transition:border-color .2s,background .2s}
+.pay-opt:hover{border-color:var(--ink)}
+.pay-opt input{margin-top:3px;accent-color:var(--ink);width:16px;height:16px;flex-shrink:0}
+.pay-opt.sel{border-color:var(--ink);background:var(--bg-warm)}
+.pay-opt .pt b{display:block;font-size:13px;letter-spacing:.04em;margin-bottom:3px}
+.pay-opt .pt span{font-size:12px;color:var(--soft);line-height:1.5}
+.pay-opt.disabled{opacity:.5;cursor:not-allowed}
+.pay-note{font-size:12.5px;color:var(--soft);line-height:1.7;background:var(--bg-warm);border:1px solid var(--line);padding:14px 16px;margin-top:4px;display:none}
+.pay-note.show{display:block}
+/* sipariş özeti */
+.order-summary{border:1px solid var(--line);padding:26px 24px;position:sticky;top:90px;background:#fff}
+.order-summary .os-title{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-bottom:18px}
+.os-item{display:grid;grid-template-columns:54px 1fr auto;gap:12px;padding:13px 0;border-bottom:1px solid var(--line);align-items:center}
+.os-item .os-img{width:54px;height:72px;background:var(--bg-warm);display:block;object-fit:cover}
+.os-item .os-nm{font-family:var(--serif);font-size:14px;font-weight:500;line-height:1.2}
+.os-item .os-meta{font-size:11px;color:var(--soft);margin-top:3px;line-height:1.5}
+.os-item .os-price{font-size:12.5px;letter-spacing:.02em;white-space:nowrap}
+.os-row{display:flex;justify-content:space-between;font-size:13px;color:var(--soft);padding:9px 0}
+.os-total{display:flex;justify-content:space-between;align-items:baseline;padding:16px 0 6px;border-top:1px solid var(--line);margin-top:8px}
+.os-total span:first-child{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.os-total span:last-child{font-family:var(--serif);font-size:24px;font-weight:500}
+.checkout-submit{margin-top:10px;width:100%;text-align:center;padding:17px}
+.form-err{color:#b03030;font-size:13px;margin-top:6px;display:none}
+.form-err.show{display:block}
+/* boş & başarı */
+.cart-empty,.order-done{text-align:center;max-width:520px;margin:0 auto;padding:40px 24px}
+.cart-empty h2,.order-done h2{font-family:var(--serif);font-weight:300;font-size:clamp(26px,3vw,38px);line-height:1.15;margin-bottom:16px}
+.cart-empty p,.order-done p{color:var(--soft);font-size:15px;line-height:1.75;margin-bottom:28px}
+.order-done .check{width:64px;height:64px;border-radius:50%;border:1.5px solid var(--zeytin);color:var(--zeytin);display:grid;place-items:center;margin:0 auto 24px}
+.order-done .check svg{width:30px;height:30px;stroke:currentColor;stroke-width:1.6;fill:none}
+.order-done .ono{font-family:var(--sans);font-size:13px;letter-spacing:.1em;background:var(--bg-warm);border:1px solid var(--line);display:inline-block;padding:10px 18px;margin-bottom:24px}
+.order-done .ono b{letter-spacing:.04em}
+@media(max-width:860px){.checkout{grid-template-columns:1fr;gap:40px}.order-summary{position:static;order:-1}}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-in">
+    <nav class="nav">
+      <a href="index.html">Ana Sayfa</a>
+      <a href="koleksiyon.html">Koleksiyon</a>
+      <a href="atolye.html">Hakkımızda</a>
+    <a href="iletisim.html">İletişim</a>
+    </nav>
+    <a class="brand" href="index.html">ESSE JEFFE</a>
+    <div class="tools">
+      <div class="name-ticker" aria-hidden="true"><span class="t-item"></span></div>
+      <button class="icon" aria-label="Ara"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></button>
+      <button class="icon" aria-label="Hesap"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M5 21c0-3.9 3.1-7 7-7s7 3.1 7 7"></path></svg></button>
+      <button class="icon bag" aria-label="Sepet"><svg viewBox="0 0 24 24"><path d="M6 8h12l-1 13H7L6 8z"></path><path d="M9 8V6a3 3 0 0 1 6 0v2"></path></svg><span class="count" style="display:none">0</span></button>
+    </div>
+  </div>
+</header>
+
+<section class="phead" data-screen-label="Sepet & Ödeme">
+  <div class="phead-in">
+    <p class="crumb"><a href="index.html">Ana Sayfa</a> · Sepet & Ödeme</p>
+    <h1>Sepet & <em>Ödeme</em></h1>
+    <p>Teslimat bilgilerini gir, ödeme yöntemini seç ve siparişini tamamla. Kargo ücretsiz.</p>
+  </div>
+</section>
+
+<section class="sec wrap">
+  <!-- boş sepet -->
+  <div class="cart-empty" id="cartEmpty" style="display:none">
+    <h2>Sepetin boş</h2>
+    <p>Henüz ürün eklemedin. Koleksiyonumuza göz at, beğendiğin abiyeleri sepete ekle.</p>
+    <a class="btn btn-solid" href="koleksiyon.html">Koleksiyona Git</a>
+  </div>
+
+  <!-- sipariş tamamlandı -->
+  <div class="order-done" id="orderDone" style="display:none">
+    <div class="check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <h2>Siparişin alındı!</h2>
+    <div class="ono">Sipariş No: <b id="doneNo">—</b></div>
+    <p id="doneMsg">Teşekkürler. Siparişin en kısa sürede hazırlanıp kargoya verilecek.</p>
+    <a class="btn" href="koleksiyon.html">Alışverişe Devam Et</a>
+  </div>
+
+  <!-- checkout -->
+  <div class="checkout" id="checkout" style="display:none">
+    <form class="ej-form" id="checkoutForm" novalidate>
+      <div>
+        <h2 style="margin-top:0">Teslimat Bilgileri</h2>
+        <div class="field two">
+          <div class="field"><label for="ad">Ad Soyad *</label><input id="ad" type="text" placeholder="Adınız Soyadınız" required></div>
+          <div class="field"><label for="tel">Telefon *</label><input id="tel" type="tel" placeholder="0 5__ ___ __ __" required></div>
+        </div>
+        <div class="field"><label for="mail">E-posta</label><input id="mail" type="email" placeholder="ornek@eposta.com"></div>
+        <div class="field two">
+          <div class="field"><label for="il">İl *</label><input id="il" type="text" placeholder="İstanbul" required></div>
+          <div class="field"><label for="ilce">İlçe *</label><input id="ilce" type="text" placeholder="Esenler" required></div>
+        </div>
+        <div class="field"><label for="adres">Açık Adres *</label><textarea id="adres" placeholder="Mahalle, sokak, bina no, daire..." required style="min-height:90px"></textarea></div>
+        <div class="field two">
+          <div class="field"><label for="posta">Posta Kodu</label><input id="posta" type="text" placeholder="34000"></div>
+          <div class="field"><label for="not">Sipariş Notu</label><input id="not" type="text" placeholder="Eklemek istedikleriniz"></div>
+        </div>
+      </div>
+
+      <div>
+        <h2>Ödeme Yöntemi</h2>
+        <div class="pay-opts" id="payOpts">
+          <label class="pay-opt sel"><input type="radio" name="pay" value="cod" checked><span class="pt"><b>Kapıda Ödeme</b><span>Ürünü teslim alırken nakit veya kartla öde.</span></span></label>
+          <label class="pay-opt"><input type="radio" name="pay" value="transfer"><span class="pt"><b>Havale / EFT</b><span>Sipariş sonrası iletilecek hesaba ödeme yap.</span></span></label>
+          <label class="pay-opt"><input type="radio" name="pay" value="card"><span class="pt"><b>Kredi / Banka Kartı</b><span>Güvenli PayTR ekranında kartınla öde. Kart bilgilerin Esse Jeffe'ye iletilmez.</span></span></label>
+        </div>
+        <div class="pay-note" id="payNoteTransfer">Havale/EFT bilgileri (IBAN) siparişin onaylandıktan sonra e-posta veya WhatsApp ile iletilecektir. Ödeme alınınca siparişin hazırlanır.</div>
+        <div class="pay-note" id="payNoteCard">"Siparişi Ver"e bastığında PayTR'nin güvenli ödeme ekranı açılır; kart bilgini orada girersin. Kart ödemesi için <b>e-posta adresi zorunludur</b>.</div>
+      </div>
+
+      <div>
+        <button class="btn btn-solid checkout-submit" type="submit" id="submitBtn">Siparişi Ver</button>
+        <p class="form-err" id="formErr"></p>
+      </div>
+    </form>
+
+    <!-- PayTR güvenli ödeme iframe'i (kart seçilince açılır) -->
+    <div id="paytrWrap" style="display:none;grid-column:1/-1;max-width:760px;margin:0 auto;width:100%">
+      <h2 style="font-family:var(--serif);font-weight:400;font-size:22px;margin-bottom:8px">Güvenli Ödeme</h2>
+      <p style="color:var(--soft);font-size:13px;line-height:1.7;margin-bottom:20px">Kart bilgilerini aşağıdaki PayTR güvenli ekranına gir. İşlem tamamlanınca otomatik olarak siparişine yönlendirileceksin. Kart bilgilerin bize iletilmez.</p>
+      <iframe id="paytriframe" frameborder="0" scrolling="no" style="width:100%;min-height:540px;border:0"></iframe>
+    </div>
+
+    <aside class="order-summary" id="orderSummary">
+      <div class="os-title">Sipariş Özeti</div>
+      <div id="osItems"></div>
+      <div class="os-row"><span>Ara Toplam</span><span id="osSub">—</span></div>
+      <div class="os-row"><span>Kargo</span><span>Ücretsiz</span></div>
+      <div class="os-total"><span>Toplam</span><span id="osTotal">—</span></div>
+    </aside>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="footer-in">
+    <div>
+      <div class="brand-f">ESSE JEFFE</div>
+      <p>Modern kadınlar için özgün tasarım abiye ve davet elbiseleri. Kaliteli kumaş, güçlü siluet, uygun fiyat.</p>
+      <div class="socials"><a href="https://www.instagram.com/esse_jeffe/">Instagram</a><a href="https://www.tiktok.com/@esse_jeffe">TikTok</a><a href="https://www.facebook.com/essejeffe.tr">Facebook</a></div>
+    </div>
+    <div><h4>Koleksiyon</h4><ul><li><a href="koleksiyon.html">Tüm Abiyeler</a></li><li><a href="koleksiyon.html">Yeni Gelenler</a></li><li><a href="koleksiyon.html">Çok Satanlar</a></li><li><a href="koleksiyon.html">İndirimdekiler</a></li></ul></div>
+    <div><h4>Yardım</h4><ul><li><a href="hizmetler.html">Kargo & Değişim</a></li><li><a href="odeme.html">Ödeme Yöntemleri</a></li><li><a href="beden-rehberi.html">Beden Rehberi</a></li><li><a href="sss.html">SSS</a></li></ul></div>
+    <div><h4>Kurumsal</h4><ul><li><a href="kvkk.html">KVKK</a></li><li><a href="gizlilik.html">Gizlilik & Güvenlik</a></li><li><a href="mesafeli-satis.html">Mesafeli Satış Sözleşmesi</a></li></ul></div>
+    <div><h4>İletişim</h4><ul><li><a href="mailto:info@essejeffe.com">info@essejeffe.com</a></li><li><a href="https://api.whatsapp.com/send?phone=%2B908502551237">WhatsApp: 0850 255 12 37</a></li><li><a href="https://www.instagram.com/esse_jeffe/">Instagram @esse_jeffe</a></li></ul></div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 Esse Jeffe · Tüm hakları saklıdır. <span style="opacity:.5;letter-spacing:.12em">by tragic</span></span>
+    <span><a href="gizlilik.html">Gizlilik</a> · <a href="mesafeli-satis.html">Mesafeli Satış</a> · <a href="kvkk.html">KVKK</a></span>
+  </div>
+</footer>
+
+<!-- Sepet overlay + panel -->
+<div class="bag-overlay" id="bagOverlay"></div>
+<aside class="bag-panel" id="bagPanel" aria-label="Sepetim">
+  <div class="bag-head">
+    <span class="bag-title">Sepetim</span>
+    <button class="bag-close" id="bagClose" aria-label="Kapat">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </button>
+  </div>
+  <div class="bag-empty-state">
+    <p>Sepetinize henüz ürün eklemediniz.</p>
+  </div>
+  <div class="bag-auth">
+    <a href="#">Giriş Yap</a>
+    <a href="#">Üye Ol</a>
+  </div>
+</aside>
+
+<script src="backend/supabase-config.js"></script>
+<script src="backend/ej-supabase.js?v=6"></script>
+<script src="ej.js?v=5"></script>
+<script src="ej-chat.js?v=6"></script>
+<script>
+(function(){
+  function fmt(n){ return (n||0).toLocaleString('tr-TR') + ' TL'; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  var elEmpty   = document.getElementById('cartEmpty');
+  var elDone    = document.getElementById('orderDone');
+  var elCheckout= document.getElementById('checkout');
+
+  function items(){ return (window.EJCart ? window.EJCart.load() : []); }
+
+  function renderSummary(){
+    var list = items();
+    var wrap = document.getElementById('osItems');
+    wrap.innerHTML = list.map(function(it){
+      var meta = [];
+      if(it.color) meta.push(esc(it.color));
+      if(it.size)  meta.push('Beden: '+esc(it.size));
+      var media = it.img
+        ? '<img class="os-img" src="'+esc(it.img)+'" alt="">'
+        : '<span class="os-img" style="background:'+(it.color_hex||'#e7e1da')+'"></span>';
+      return '<div class="os-item">'+media+
+        '<div><div class="os-nm">'+esc(it.name)+'</div>'+
+        (meta.length?'<div class="os-meta">'+meta.join(' · ')+'</div>':'')+
+        '<div class="os-meta">Adet: '+it.qty+'</div></div>'+
+        '<div class="os-price">'+fmt((it.price||0)*(it.qty||0))+'</div></div>';
+    }).join('');
+    var sub = list.reduce(function(s,it){ return s+(it.price||0)*(it.qty||0); },0);
+    document.getElementById('osSub').textContent = fmt(sub);
+    document.getElementById('osTotal').textContent = fmt(sub);
+  }
+
+  function show(which){
+    elEmpty.style.display    = which==='empty'    ? '' : 'none';
+    elDone.style.display     = which==='done'     ? '' : 'none';
+    elCheckout.style.display = (which==='checkout'||which==='pay') ? '' : 'none';
+    document.getElementById('checkoutForm').style.display = which==='checkout' ? '' : 'none';
+    document.getElementById('orderSummary').style.display = which==='checkout' ? '' : 'none';
+    document.getElementById('paytrWrap').style.display    = which==='pay' ? '' : 'none';
+  }
+
+  // PayTR güvenli ödeme iframe'ini aç
+  function openPaytr(token){
+    show('pay');
+    var ifr = document.getElementById('paytriframe');
+    ifr.src = 'https://www.paytr.com/odeme/guvenli/' + token;
+    window.scrollTo({top:0,behavior:'smooth'});
+    function size(){ try{ window.iFrameResize({}, '#paytriframe'); }catch(e){} }
+    if(window.iFrameResize){ size(); }
+    else {
+      var s = document.createElement('script');
+      s.src = 'https://www.paytr.com/js/iframeResizer.min.js';
+      s.onload = size;
+      document.body.appendChild(s);
+    }
+  }
+
+  // Edge Function hata gövdesini ({error:"..."}) çöz
+  function invokeError(error){
+    if(error && error.context && typeof error.context.json==='function'){
+      return error.context.json().then(function(b){ return (b&&b.error)||error.message; })
+        .catch(function(){ return error.message||'İşlem başarısız'; });
+    }
+    return Promise.resolve((error&&error.message)||'İşlem başarısız');
+  }
+
+  function init(){
+    var params = new URLSearchParams(location.search);
+    var pr = params.get('paytr');
+    if(pr){
+      // PayTR ok/fail yönlendirmesi iframe içinde geldiyse üst pencereyi taşı
+      if(window.top !== window.self){
+        try{ window.top.location.replace(location.href); }catch(e){ location.replace(location.href); }
+        return;
+      }
+      if(pr==='ok'){
+        if(window.EJCart) window.EJCart.clear();
+        document.getElementById('doneNo').textContent = params.get('no') || '—';
+        document.getElementById('doneMsg').textContent =
+          'Teşekkürler. Ödemen alındı, siparişin hazırlanıp kargoya verilecek.';
+        show('done');
+        return;
+      }
+      // fail / iptal
+      if(!items().length){ show('empty'); return; }
+      show('checkout'); renderSummary();
+      var err = document.getElementById('formErr');
+      err.textContent = 'Ödeme tamamlanamadı veya iptal edildi. Tekrar deneyebilir ya da başka bir ödeme yöntemi seçebilirsin.';
+      err.classList.add('show');
+      return;
+    }
+    if(!items().length){ show('empty'); return; }
+    show('checkout');
+    renderSummary();
+  }
+
+  // ödeme yöntemi seçimi
+  document.getElementById('payOpts').addEventListener('change', function(){
+    document.querySelectorAll('.pay-opt').forEach(function(o){
+      var r = o.querySelector('input');
+      o.classList.toggle('sel', r.checked && !r.disabled);
+    });
+    var v = (document.querySelector('input[name="pay"]:checked')||{}).value;
+    document.getElementById('payNoteTransfer').classList.toggle('show', v==='transfer');
+    document.getElementById('payNoteCard').classList.toggle('show', v==='card');
+  });
+
+  // gönder
+  document.getElementById('checkoutForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var err = document.getElementById('formErr');
+    err.classList.remove('show');
+    var list = items();
+    if(!list.length){ show('empty'); return; }
+
+    var data = {
+      full_name: document.getElementById('ad').value.trim(),
+      phone:     document.getElementById('tel').value.trim(),
+      email:     document.getElementById('mail').value.trim(),
+      city:      document.getElementById('il').value.trim(),
+      district:  document.getElementById('ilce').value.trim(),
+      address:   document.getElementById('adres').value.trim(),
+      postal_code: document.getElementById('posta').value.trim(),
+      note:      document.getElementById('not').value.trim(),
+      payment_method: (document.querySelector('input[name="pay"]:checked')||{}).value || 'cod'
+    };
+    if(!data.full_name || !data.phone || !data.city || !data.district || !data.address){
+      err.textContent = 'Lütfen yıldızlı (*) alanları doldurun.';
+      err.classList.add('show');
+      return;
+    }
+    if(!window.EJData || !window.EJData.createOrder){
+      err.textContent = 'Bağlantı hazırlanıyor, birkaç saniye sonra tekrar deneyin.';
+      err.classList.add('show');
+      return;
+    }
+
+    var btn = document.getElementById('submitBtn');
+
+    // --- KART: PayTR güvenli ödeme akışı ---
+    if(data.payment_method==='card'){
+      if(!data.email){
+        err.textContent='Kart ödemesi için geçerli bir e-posta adresi gerekli.';
+        err.classList.add('show'); return;
+      }
+      var client = window.EJData.client && window.EJData.client();
+      if(!client || !client.functions){
+        err.textContent='Ödeme servisi hazır değil, birkaç saniye sonra tekrar deneyin.';
+        err.classList.add('show'); return;
+      }
+      btn.disabled=true; btn.textContent='Güvenli ödemeye yönlendiriliyor...';
+      client.functions.invoke('paytr-token', {
+        body: { form: data, items: list, origin: location.origin }
+      }).then(function(r){
+        if(r.error){ return invokeError(r.error).then(function(m){ throw new Error(m); }); }
+        var d = r.data || {};
+        if(d.error) throw new Error(d.error);
+        if(!d.token) throw new Error('Ödeme başlatılamadı (token alınamadı).');
+        openPaytr(d.token);   // sepet ödeme onayında (paytr=ok) temizlenir
+      }).catch(function(e2){
+        btn.disabled=false; btn.textContent='Siparişi Ver';
+        err.textContent='Ödeme başlatılamadı: ' + (e2.message||e2);
+        err.classList.add('show');
+        console.error('[EJ] paytr-token', e2);
+      });
+      return;
+    }
+
+    // --- KAPIDA ÖDEME / HAVALE: doğrudan sipariş ---
+    btn.disabled = true; btn.textContent = 'Gönderiliyor...';
+
+    window.EJData.createOrder(data, list).then(function(res){
+      window.EJCart.clear();
+      document.getElementById('doneNo').textContent = res.order_no;
+      document.getElementById('doneMsg').textContent =
+        data.payment_method==='transfer'
+          ? 'Teşekkürler. Havale/EFT bilgileri kısa sürede sana iletilecek; ödemen alınınca siparişin hazırlanır.'
+          : 'Teşekkürler. Siparişin hazırlanıp kargoya verilecek, ödemeyi teslimatta yapacaksın.';
+      show('done');
+      window.scrollTo({top:0,behavior:'smooth'});
+    }).catch(function(e2){
+      btn.disabled = false; btn.textContent = 'Siparişi Ver';
+      err.textContent = 'Sipariş kaydedilemedi: ' + (e2.message||e2) + '. Lütfen tekrar deneyin.';
+      err.classList.add('show');
+      console.error('[EJ] sipariş hatası', e2);
+    });
+  });
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+</body>
+</html>
