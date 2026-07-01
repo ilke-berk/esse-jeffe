@@ -45,7 +45,13 @@ Supabase paneli → **Edge Functions → Secrets** (veya Project Settings → Ed
 | `PAYTR_MERCHANT_KEY` | (mağaza parola) |
 | `PAYTR_MERCHANT_SALT` | (gizli anahtar) |
 | `PAYTR_TEST_MODE` | `1` (test) — canlıya geçince `0` |
+| `PAYTR_ALLOWED_ORIGINS` | ok/fail yönlendirmesi için izinli origin(ler), virgülle. Ör: `https://essejeffe.com,https://www.essejeffe.com` |
 
+> `PAYTR_ALLOWED_ORIGINS` girilmezse `SITE_URL`, o da yoksa yerleşik prod alan adı
+> kullanılır. Client'ın gönderdiği `origin` **yalnızca bu listedeyse** kabul edilir
+> (yerelde `localhost/127.0.0.1` otomatik) — böylece ödeme sonrası yönlendirme
+> başka bir siteye kaçırılamaz.
+>
 > `SUPABASE_URL` ve `SUPABASE_SERVICE_ROLE_KEY` otomatik gelir, girmene gerek yok.
 > Bu anahtarlar **asla** frontend'e / git'e konmaz; yalnızca Edge Function secret'ında durur.
 

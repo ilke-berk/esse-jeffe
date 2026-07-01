@@ -9,10 +9,35 @@
 //  Gerekli secret'lar (Supabase → Edge Functions → Secrets):
 //    PAYTR_MERCHANT_ID, PAYTR_MERCHANT_KEY, PAYTR_MERCHANT_SALT
 //    PAYTR_TEST_MODE   (opsiyonel, '1' = test, '0' = canlı; varsayılan '1')
-//    SITE_URL          (opsiyonel, ok/fail yönlendirme tabanı; body.origin önceliklidir)
+//    PAYTR_ALLOWED_ORIGINS (opsiyonel, ok/fail yönlendirmesi için izinli origin
+//                           listesi, virgülle. Yoksa SITE_URL, o da yoksa prod alan adı.)
+//    SITE_URL          (opsiyonel, ok/fail yönlendirme tabanı / tek izinli origin)
 //  SUPABASE_URL ve SUPABASE_SERVICE_ROLE_KEY platform tarafından otomatik gelir.
+//
+//  NOT: ok/fail yönlendirme origin'i client'tan (body.origin) gelir ama YALNIZCA
+//  allowlist'teyse kullanılır; değilse ilk izinli origin'e sabitlenir. Böylece
+//  kötü niyetli bir client kullanıcıyı başka bir siteye yönlendiremez.
 // ============================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+// ok/fail yönlendirmesi için izinli origin'ler (client kontrolüne bırakılmaz)
+const ALLOWED_ORIGINS = (Deno.env.get("PAYTR_ALLOWED_ORIGINS") ||
+  Deno.env.get("SITE_URL") ||
+  "https://essejeffe.com,https://www.essejeffe.com")
+  .split(",").map((s) => s.trim().replace(/\/+$/, "")).filter(Boolean);
+
+function isAllowedOrigin(o: string): boolean {
+  if (!o) return false;
+  if (ALLOWED_ORIGINS.includes(o)) return true;
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o); // yerel geliştirme
+}
+
+// Client'ın gönderdiği origin allowlist'teyse onu, değilse ilk izinli origin'i döndür.
+function resolveOrigin(clientOrigin: unknown): string {
+  const o = String(clientOrigin || "").trim().replace(/\/+$/, "");
+  if (isAllowedOrigin(o)) return o;
+  return ALLOWED_ORIGINS[0] || "";
+}
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -83,7 +108,7 @@ Deno.serve(async (req) => {
   }
   const form = payload?.form ?? {};
   const items = Array.isArray(payload?.items) ? payload.items : [];
-  const origin = (payload?.origin || Deno.env.get("SITE_URL") || "").replace(/\/+$/, "");
+  const origin = resolveOrigin(payload?.origin);
 
   // --- temel doğrulama ---
   if (!items.length) return json({ error: "Sepet boş" }, 400);
@@ -94,7 +119,7 @@ Deno.serve(async (req) => {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return json({ error: "Kart ödemesi için geçerli bir e-posta gerekli." }, 400);
   }
-  if (!origin) return json({ error: "origin eksik (ok/fail yönlendirmesi kurulamıyor)." }, 400);
+  if (!origin) return json({ error: "İzinli origin tanımlı değil (PAYTR_ALLOWED_ORIGINS/SITE_URL)." }, 500);
 
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -143,6 +168,32 @@ Deno.serve(async (req) => {
   const total = subtotal + shipping; // TL (tam sayı)
   const paymentAmount = Math.round(total * 100); // PayTR: kuruş
 
+  // --- stok ayır (GÜVENLİK: aşırı satışı önle) ---
+  // Kart siparişinde stok, ödeme başlarken (pending) ayrılır; ödeme
+  // başarısız/iptal olursa paytr-callback stoğu geri ekler. Aşağıda token
+  // alınamazsa da hemen iade edilir.
+  const reserveItems = orderItems.map((r) => ({
+    product_id: r.product_id,
+    color: r.color || "",
+    size: r.size || "",
+    qty: r.qty,
+  }));
+  const restoreStock = () =>
+    admin.rpc("restore_stock_bulk", { p_items: reserveItems })
+      .then(({ error }) => { if (error) console.error("[paytr-token] stok iadesi:", error.message); })
+      .catch((e) => console.error("[paytr-token] stok iadesi:", (e as Error).message));
+
+  const { data: reserve, error: rErr } = await admin.rpc("reserve_stock_bulk", {
+    p_items: reserveItems,
+  });
+  if (rErr) return json({ error: "Stok kontrol edilemedi: " + rErr.message }, 500);
+  if (reserve && reserve.ok === false) {
+    return json(
+      { error: "Üzgünüz, seçtiğiniz üründen yeterli stok kalmadı.", out_of_stock: reserve },
+      409,
+    );
+  }
+
   // --- siparişi oluştur (pending) ---
   const oid = orderNo();
   const { error: oErr } = await admin.from("orders").insert({
@@ -163,7 +214,10 @@ Deno.serve(async (req) => {
     postal_code: form.postal_code || null,
     note: form.note || null,
   });
-  if (oErr) return json({ error: "Sipariş oluşturulamadı: " + oErr.message }, 500);
+  if (oErr) {
+    await restoreStock();
+    return json({ error: "Sipariş oluşturulamadı: " + oErr.message }, 500);
+  }
 
   const { data: orderRow } = await admin.from("orders").select("id").eq("order_no", oid).single();
   if (orderRow?.id) {
@@ -214,10 +268,13 @@ Deno.serve(async (req) => {
     });
     ptr = await res.json();
   } catch (e) {
+    await admin.from("orders").update({ payment_status: "failed" }).eq("order_no", oid);
+    await restoreStock(); // ödeme başlatılamadı → stoğu geri ver
     return json({ error: "PayTR'ye ulaşılamadı: " + (e as Error).message }, 502);
   }
   if (ptr?.status !== "success") {
     await admin.from("orders").update({ payment_status: "failed" }).eq("order_no", oid);
+    await restoreStock(); // ödeme başlatılamadı → stoğu geri ver
     return json({ error: "PayTR token hatası: " + (ptr?.reason || "bilinmiyor") }, 400);
   }
 

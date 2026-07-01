@@ -87,64 +87,73 @@
           return res.data ? normalize(res.data) : null;
         });
     },
-    // sipariş oluştur — form: teslimat+ödeme, items: sepet kalemleri
-    // RLS misafire insert izni verir; id/order_no client'ta üretilir
-    // (anon kullanıcı satırı geri okuyamaz, o yüzden select etmiyoruz).
+    // sipariş oluştur (kapıda ödeme / havale) — form: teslimat+ödeme, items: sepet kalemleri
+    // GÜVENLİK: fiyat client'tan gelmez. Sipariş, tutarı slug'lara göre DB'den
+    // yeniden hesaplayan create-order Edge Function'ı üzerinden oluşturulur
+    // (aynen kart akışındaki paytr-token gibi). RLS artık doğrudan client
+    // insert'ine izin vermez; yazma yalnızca service_role ile bu fonksiyonda olur.
     createOrder: function (form, items) {
       if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+      if (!client.functions) return Promise.reject(new Error('Sipariş servisi hazır değil'));
       if (!items || !items.length) return Promise.reject(new Error('Sepet boş'));
-      var id = uuid();
-      var sub = items.reduce(function (s, it) { return s + (it.price || 0) * (it.qty || 0); }, 0);
-      var shipping = 0;
-      var total = sub + shipping;
-      var orderNo = 'EJ' + dateStamp() + pad5(Math.floor(Math.random() * 100000));
-      // girişliyse user_id ekle → sipariş hesapta görünür; misafirde null
-      return client.auth.getSession().then(function (sr) {
-      var uid = sr.data.session ? sr.data.session.user.id : null;
-      var order = {
-        id: id, order_no: orderNo, status: 'pending', user_id: uid,
-        payment_method: form.payment_method,
-        payment_status: form.payment_method === 'cod' ? 'cod' : 'pending',
-        subtotal: sub, shipping_fee: shipping, total: total,
-        full_name: form.full_name, phone: form.phone, email: form.email || null,
-        city: form.city, district: form.district, address: form.address,
-        postal_code: form.postal_code || null, note: form.note || null
-      };
-      return client.from('orders').insert(order).then(function (res) {
-        if (res.error) throw res.error;
-        var rows = items.map(function (it) {
-          return {
-            order_id: id, product_id: null,
-            product_name: it.name, model_desc: it.desc || null,
-            color: it.color || null, size: it.size || null,
-            unit_price: it.price || 0, qty: it.qty || 0
-          };
-        });
-        return client.from('order_items').insert(rows);
-      }).then(function (res) {
-        if (res.error) throw res.error;
-        return { id: id, order_no: orderNo, total: total };
-      });
+      return client.functions.invoke('create-order', {
+        body: { form: form, items: items }
+      }).then(function (r) {
+        // non-2xx → gerçek hata mesajı yanıt gövdesinde (context.json)
+        if (r.error) return invokeErr(r.error).then(function (m) { throw new Error(m); });
+        var d = r.data || {};
+        if (d.error) throw new Error(d.error);
+        if (!d.order_no) throw new Error('Sipariş oluşturulamadı.');
+        return { order_no: d.order_no, total: d.total };
       });
     },
-    // bülten aboneliği
-    subscribe: function (email) {
+    // misafir sipariş takibi — track-order Edge Function üzerinden.
+    // order_no + telefon İKİSİ de eşleşirse sipariş özetini döner. RLS,
+    // misafirin siparişini doğrudan okumasına izin vermez; bu yüzden
+    // service_role ile bu fonksiyonda okunur (bkz. track-order/index.ts).
+    trackOrder: function (orderNo, phone) {
       if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
-      return client.from('newsletter_subscribers').insert({ email: email }).then(function (res) {
-        if (res.error) {
-          if (res.error.code === '23505') return { already: true };  // zaten abone
-          throw res.error;
-        }
-        return { ok: true };
+      if (!client.functions) return Promise.reject(new Error('Takip servisi hazır değil'));
+      return client.functions.invoke('track-order', {
+        body: { order_no: orderNo, phone: phone }
+      }).then(function (r) {
+        if (r.error) return invokeErr(r.error).then(function (m) { throw new Error(m); });
+        var d = r.data || {};
+        if (d.error) throw new Error(d.error);
+        if (!d.order) throw new Error('Sipariş bulunamadı.');
+        return d.order;
       });
     },
-    // iletişim mesajı
+    // bülten aboneliği — submit-form Edge Function üzerinden (honeypot + IP hız sınırı).
+    // RLS artık doğrudan client insert'ine izin vermez; yazma yalnız service_role ile.
+    subscribe: function (email, hp) {
+      if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+      if (!client.functions) return Promise.reject(new Error('Servis hazır değil'));
+      return client.functions.invoke('submit-form', {
+        body: { kind: 'newsletter', email: email, hp: hp || '' }
+      }).then(function (r) {
+        if (r.error) return invokeErr(r.error).then(function (m) { throw new Error(m); });
+        var d = r.data || {};
+        if (d.error) throw new Error(d.error);
+        return { ok: true, already: !!d.already };
+      });
+    },
+    // iletişim mesajı — submit-form Edge Function üzerinden (honeypot + IP hız sınırı).
     sendMessage: function (d) {
       if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
-      return client.from('contact_messages').insert({
-        name: d.name, email: d.email, phone: d.phone || null,
-        subject: d.subject || null, order_no: d.order_no || null, message: d.message
-      }).then(function (res) { if (res.error) throw res.error; return { ok: true }; });
+      if (!client.functions) return Promise.reject(new Error('Servis hazır değil'));
+      return client.functions.invoke('submit-form', {
+        body: {
+          kind: 'contact', hp: d.hp || '',
+          name: d.name, email: d.email, phone: d.phone || null,
+          subject: d.subject || null, order_no: d.order_no || null, message: d.message
+        }
+      }).then(function (r) {
+        if (r.error) return invokeErr(r.error).then(function (m) { throw new Error(m); });
+        var res = r.data || {};
+        if (res.error) throw new Error(res.error);
+        return { ok: true };
+      });
     },
     // ---- üyelik / oturum ----
     auth: {
@@ -183,19 +192,39 @@
   };
   window.EJData = EJData;
 
-  function pad5(n) { return ('00000' + n).slice(-5); }
-  function dateStamp() {
-    var d = new Date();
-    return ('' + d.getFullYear()).slice(2) +
-      ('0' + (d.getMonth() + 1)).slice(-2) +
-      ('0' + d.getDate()).slice(-2);
+  // Edge Function hata mesajını (non-2xx) yanıt gövdesinden çöz
+  function invokeErr(error) {
+    if (error && error.context && typeof error.context.json === 'function') {
+      return error.context.json()
+        .then(function (b) { return (b && b.error) || error.message || 'İşlem başarısız'; })
+        .catch(function () { return (error && error.message) || 'İşlem başarısız'; });
+    }
+    return Promise.resolve((error && error.message) || 'İşlem başarısız');
   }
-  function uuid() {
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
+
+  // ---- mega menü kartı (ej.js'in .mega-card markup'ıyla birebir) ----
+  function megaCardHTML(p) {
+    var tag = p.badge ? '<span class="mega-tag-sm">' + esc(p.badge) + '</span>' : '';
+    var media = p.image
+      ? '<img src="' + esc(p.image) + '" alt="' + esc(p.name) + '">'
+      : '<div class="mega-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>';
+    var price = (p.old_price ? '<span class="old">' + fmt(p.old_price) + '</span>' : '') + fmt(p.price);
+    return '<a class="mega-card" href="urun.html?slug=' + encodeURIComponent(p.slug) + '">' +
+      '<div class="mf">' + tag + media + '</div>' +
+      '<div class="mt"><div class="mn">' + esc(p.name) + '</div>' +
+        '<div class="md">' + esc(p.model_desc || '') + '</div>' +
+        '<div class="mp">' + price + '</div></div></a>';
+  }
+
+  // Header mega menüsünü canlı katalogla doldur (ej.js statik kartları üzerine yazılır).
+  // Kutu ej.js tarafından body'ye eklenir; bu yüzden var olup olmadığını kontrol et.
+  function renderMega() {
+    var box = document.getElementById('megaProducts');
+    if (!box) return;
+    EJData.products().then(function (list) {
+      if (!list.length) return;                        // veri yoksa statik kartlar kalsın
+      box.innerHTML = list.map(megaCardHTML).join('');
+    }).catch(function (e) { console.error('[EJ] Mega menü yüklenemedi:', e.message || e); });
   }
 
   // [data-ej-grid] kapsayıcılarını doldur
@@ -291,9 +320,11 @@
         var input = news.querySelector('input[type="email"]') || news.querySelector('input');
         var btn = news.querySelector('button');
         var email = ((input && input.value) || '').trim();
+        var hpEl = news.querySelector('input[name="website"]');
+        var hp = hpEl ? hpEl.value : '';
         if (!email || email.indexOf('@') < 0) { newsMsg(news, 'Geçerli bir e-posta girin.'); return; }
         if (btn) btn.disabled = true;
-        EJData.subscribe(email).then(function (r) {
+        EJData.subscribe(email, hp).then(function (r) {
           if (input) input.value = '';
           newsMsg(news, r.already ? 'Zaten abonesiniz — teşekkürler.' : 'Abone olundu, teşekkürler!');
         }).catch(function (err) {
@@ -311,9 +342,11 @@
         e.preventDefault();
         var sent = document.getElementById('sent');
         var get = function (id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
+        var hpEl = cf.querySelector('input[name="website"]');
         var data = {
           name: get('ad'), phone: get('tel'), email: get('mail'),
-          subject: get('konu'), order_no: get('siparis'), message: get('mesaj')
+          subject: get('konu'), order_no: get('siparis'), message: get('mesaj'),
+          hp: hpEl ? hpEl.value : ''
         };
         if (!data.name || !data.email) { contactErr(cf, 'Lütfen ad ve e-posta alanlarını doldurun.'); return; }
         if (!data.message) { contactErr(cf, 'Lütfen mesajınızı yazın.'); return; }
@@ -467,7 +500,7 @@
   }
 
   function renderAll() {
-    renderGrids(); renderProduct(); wireForms(); wireAuthUI();
+    renderGrids(); renderMega(); renderProduct(); wireForms(); wireAuthUI();
     EJData.auth.session().then(applyAuthState);
   }
 

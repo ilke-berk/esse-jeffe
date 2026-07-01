@@ -80,7 +80,13 @@ otomatik yönetir. Şifre tarayıcıda **saklanmaz** — sadece bu geçici jeton
 
 - ✅ **E-posta doğrulama:** kayıt sonrası Supabase doğrulama maili gönderir;
   doğrulanmadan giriş engellenebilir (sahte hesapları azaltır).
-- ✅ **Güçlü şifre kuralı:** en az 8 karakter (Supabase panelinden ayarlanır).
+- ✅ **Güçlü şifre kuralı:** en az 8 karakter. Frontend bunu zaten dayatır
+  (`ej-supabase.js` → `handleRegister`, `pass.length < 8`). **ÖNEMLİ —** frontend
+  doğrulaması yalnızca tarayıcıyı korur; Supabase Auth API'sine doğrudan istek atan
+  biri panel ayarı 6 ise 6 karakterle kayıt olabilir. Bu yüzden panelden de 8 yap:
+  **Supabase → Authentication → Sign In / Providers → Email → "Minimum password
+  length" = 8** (bazı panellerde: Authentication → Policies / Password) → Save.
+  (İstenirse aynı ekranda "Password Requirements" ile harf+rakam zorunluluğu da açılabilir.)
 - ✅ **Şifremi unuttum:** `resetPasswordForEmail` ile güvenli sıfırlama maili.
 - ✅ **Brute-force koruması:** Supabase Auth'ta hız sınırlama (rate limit) yerleşik.
 - ⚠️ **2FA (iki adımlı doğrulama):** ileride eklenebilir (şart değil).

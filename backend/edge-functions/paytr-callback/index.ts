@@ -12,6 +12,7 @@
 //  verify_jwt = false (PayTR JWT göndermez; kimlik doğrulama hash ile).
 // ============================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendOrderEmails } from "../_shared/order-email.ts";
 
 async function hmacB64(message: string, key: string): Promise<string> {
   const k = await crypto.subtle.importKey(
@@ -58,16 +59,18 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // siparişi bul
+  // siparişi bul (onay e-postası için tüm alanları çek)
   const { data: order, error } = await admin
     .from("orders")
-    .select("id, payment_status")
+    .select(
+      "id, order_no, payment_status, payment_method, full_name, phone, email, city, district, address, postal_code, note, subtotal, shipping_fee, total",
+    )
     .eq("order_no", merchantOid)
     .maybeSingle();
   if (error) return fail("db: " + error.message);
   if (!order) return fail("sipariş bulunamadı: " + merchantOid);
 
-  // idempotent: zaten işlenmişse tekrar dokunma
+  // idempotent: zaten işlenmişse tekrar dokunma (mail de tekrar gitmesin)
   if (order.payment_status === "paid") return ok();
 
   if (status === "success") {
@@ -80,11 +83,55 @@ Deno.serve(async (req) => {
         payment_ref: paymentType || null,
       })
       .eq("id", order.id);
+
+    // --- ödeme onaylandı → onay e-postası (fail-soft, callback'i bozmaz) ---
+    const { data: its } = await admin
+      .from("order_items")
+      .select("product_name, model_desc, color, size, unit_price, qty")
+      .eq("order_id", order.id);
+    await sendOrderEmails({
+      order_no: order.order_no,
+      payment_method: order.payment_method,
+      full_name: order.full_name,
+      phone: order.phone,
+      email: order.email,
+      city: order.city,
+      district: order.district,
+      address: order.address,
+      postal_code: order.postal_code,
+      note: order.note,
+      subtotal: order.subtotal,
+      shipping_fee: order.shipping_fee,
+      total: order.total,
+      items: its || [],
+    }).catch((e) => console.error("[paytr-callback] mail:", (e as Error).message));
   } else {
     await admin
       .from("orders")
       .update({ payment_status: "failed", payment_ref: failReason || null })
       .eq("id", order.id);
+
+    // Ödeme başarısız/iptal → paytr-token'da ayrılan stoğu geri ver.
+    // Yalnızca ilk geçişte (pending → failed) iade et; PayTR aynı bildirimi
+    // tekrar gönderirse status artık 'failed' olur, buraya girilmez (çift iade yok).
+    if (order.payment_status === "pending") {
+      const { data: its } = await admin
+        .from("order_items")
+        .select("product_id, color, size, qty")
+        .eq("order_id", order.id);
+      const restore = (its || [])
+        .filter((r: any) => r.product_id)
+        .map((r: any) => ({
+          product_id: r.product_id,
+          color: r.color || "",
+          size: r.size || "",
+          qty: r.qty,
+        }));
+      if (restore.length) {
+        const { error: rErr } = await admin.rpc("restore_stock_bulk", { p_items: restore });
+        if (rErr) console.error("[paytr-callback] stok iadesi:", rErr.message);
+      }
+    }
   }
 
   return ok(); // PayTR'ye "aldım" — yoksa tekrar gönderir

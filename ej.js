@@ -46,6 +46,37 @@
   });
 })();
 
+// ── Paylaşılan katalog + yardımcılar ─────────────────────
+// Supabase kapalıyken mega menü ve aramanın tek veri kaynağı.
+// Supabase açıkken ej-supabase.js canlı DB verisiyle üzerine yazar.
+// (schema.sql tohum verisiyle birebir; slug'lar urun.html?slug= ile eşleşir)
+var EJ_CATALOG = [
+  { slug: 'pera',  name: 'Pera',  md: 'Uzun Yırtmaçlı Krep Abiye',          price: 1699, old: 2199, tag: 'Çok Satan' },
+  { slug: 'asos',  name: 'Asos',  md: 'Fakir Kol V Yaka Davet Elbisesi',    price: 1399, old: 0,    tag: 'Yeni' },
+  { slug: 'efes',  name: 'Efes',  md: 'Kruvaze Drapeli Krep Abiye',         price: 1499, old: 0,    tag: '' },
+  { slug: 'karya', name: 'Karya', md: 'V Yaka Fırfırlı Kol Krep Abiye',     price: 1299, old: 1599, tag: 'İndirim' },
+  { slug: 'likya', name: 'Likya', md: 'Kruvaze Drapeli Askılı Krep Abiye',  price: 1599, old: 0,    tag: '' },
+  { slug: 'side',  name: 'Side',  md: 'Diz Üstü Ön Drape Detaylı Abiye',    price: 1399, old: 0,    tag: 'Yeni' },
+  { slug: 'truva', name: 'Truva', md: 'Dekolte Detaylı Krep Abiye',         price: 1299, old: 0,    tag: '' },
+  { slug: 'milet', name: 'Milet', md: 'Yarasa Kol Kruvaze Drapeli Abiye',   price: 1499, old: 0,    tag: '' },
+  { slug: 'lidya', name: 'Lidya', md: 'Ön Fırfır Bodycone Fermuarlı Abiye', price: 1299, old: 0,    tag: '' }
+];
+
+var EJ_PH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+
+function ejFmt(n) { return (n || 0).toLocaleString('tr-TR') + ' TL'; }
+function ejEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
+}
+// Türkçe + aksan duyarsız normalizasyon (arama eşleşmesi için)
+function ejNorm(s) {
+  return String(s || '').toLocaleLowerCase('tr')
+    .replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u').replace(/ö/g, 'o').replace(/ç/g, 'c');
+}
+
 // ── Koleksiyon mega panel ────────────────────────────────
 (function () {
   // Header yüksekliğini --hh CSS değişkenine yaz
@@ -75,17 +106,7 @@
         '</div>',
         '<div class="mega-scroll-wrap">',
           '<button class="mega-arr mega-arr-l" id="megaArrL" aria-label="Önceki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><polyline points="15,18 9,12 15,6"/></svg></button>',
-          '<div class="mega-products" id="megaProducts">',
-            '<a class="mega-card" href="urun.html"><div class="mf"><span class="mega-tag-sm">Çok Satan</span><div class="mega-ph"></div></div><div class="mt"><div class="mn">Pera</div><div class="md">Uzun Yırtmaçlı Krep Abiye</div><div class="mp"><span class="old">2.199 TL</span>1.699 TL</div></div></a>',
-            '<a class="mega-card" href="koleksiyon.html"><div class="mf"><span class="mega-tag-sm">Yeni</span><div class="mega-ph"></div></div><div class="mt"><div class="mn">Asos</div><div class="md">Fakir Kol V Yaka Davet</div><div class="mp">1.399 TL</div></div></a>',
-            '<a class="mega-card" href="koleksiyon.html"><div class="mf"><span class="mega-tag-sm">İndirim</span><div class="mega-ph"></div></div><div class="mt"><div class="mn">Karya</div><div class="md">V Yaka Fırfırlı Kol Abiye</div><div class="mp"><span class="old">1.599 TL</span>1.299 TL</div></div></a>',
-            '<a class="mega-card" href="koleksiyon.html"><div class="mf"><div class="mega-ph"></div></div><div class="mt"><div class="mn">Efes</div><div class="md">Kruvaze Drapeli Krep Abiye</div><div class="mp">1.499 TL</div></div></a>',
-            '<a class="mega-card" href="koleksiyon.html"><div class="mf"><div class="mega-ph"></div></div><div class="mt"><div class="mn">Likya</div><div class="md">Kruvaze Drapeli Askılı</div><div class="mp">1.599 TL</div></div></a>',
-            '<a class="mega-card" href="koleksiyon.html"><div class="mf"><span class="mega-tag-sm">Yeni</span><div class="mega-ph"></div></div><div class="mt"><div class="mn">Side</div><div class="md">Diz Üstü Ön Drape Detaylı</div><div class="mp">1.399 TL</div></div></a>',
-            '<a class="mega-card" href="koleksiyon.html"><div class="mf"><div class="mega-ph"></div></div><div class="mt"><div class="mn">Truva</div><div class="md">Dekolte Detaylı Krep Abiye</div><div class="mp">1.299 TL</div></div></a>',
-            '<a class="mega-card" href="koleksiyon.html"><div class="mf"><div class="mega-ph"></div></div><div class="mt"><div class="mn">Milet</div><div class="md">Yarasa Kol Kruvaze Abiye</div><div class="mp">1.499 TL</div></div></a>',
-            '<a class="mega-card" href="koleksiyon.html"><div class="mf"><div class="mega-ph"></div></div><div class="mt"><div class="mn">Lidya</div><div class="md">Ön Fırfır Bodycone Abiye</div><div class="mp">1.299 TL</div></div></a>',
-          '</div>',
+          '<div class="mega-products" id="megaProducts"></div>',
           '<button class="mega-arr mega-arr-r" id="megaArrR" aria-label="Sonraki"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="16" height="16"><polyline points="9,18 15,12 9,6"/></svg></button>',
         '</div>',
         '<div class="mega-foot"><a href="koleksiyon.html" class="btn btn-solid">Tümünü Gör</a></div>',
@@ -94,6 +115,21 @@
     '<div class="mega-overlay" id="megaOverlay"></div>'
   ].join('');
   while (wrap.firstChild) document.body.appendChild(wrap.firstChild);
+
+  // Kartları statik katalogdan üret (Supabase açıksa ej-supabase.js üzerine yazar).
+  // Böylece menü katalogla tek kaynaktan senkron ve her kart kendi ürününe gider.
+  var megaBox = document.getElementById('megaProducts');
+  if (megaBox) {
+    megaBox.innerHTML = EJ_CATALOG.map(function (p) {
+      var tag = p.tag ? '<span class="mega-tag-sm">' + ejEsc(p.tag) + '</span>' : '';
+      var price = (p.old ? '<span class="old">' + ejFmt(p.old) + '</span>' : '') + ejFmt(p.price);
+      return '<a class="mega-card" href="urun.html?slug=' + encodeURIComponent(p.slug) + '">' +
+        '<div class="mf">' + tag + '<div class="mega-ph">' + EJ_PH_SVG + '</div></div>' +
+        '<div class="mt"><div class="mn">' + ejEsc(p.name) + '</div>' +
+        '<div class="md">' + ejEsc(p.md) + '</div>' +
+        '<div class="mp">' + price + '</div></div></a>';
+    }).join('');
+  }
 
   var megaPanel   = document.getElementById('megaPanel');
   var megaOverlay = document.getElementById('megaOverlay');
@@ -170,6 +206,106 @@
   document.getElementById('mmClose').addEventListener('click', closeMenu);
   overlay.addEventListener('click', closeMenu);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeMenu(); });
+})();
+
+// ── Arama (search) ───────────────────────────────────────
+// Header'daki büyüteç ikonunu çalışır hale getirir. Veri kaynağı:
+// Supabase açıksa canlı katalog (EJData.products), yoksa EJ_CATALOG.
+(function () {
+  var searchBtn = document.querySelector('.tools .icon[aria-label="Ara"]');
+  if (!searchBtn) return;
+
+  // Panel + overlay
+  var wrap = document.createElement('div');
+  wrap.innerHTML =
+    '<div class="search-overlay" id="ejSearchOverlay"></div>' +
+    '<div class="search-panel" id="ejSearchPanel" role="dialog" aria-modal="true" aria-label="Ürün ara">' +
+      '<div class="search-in">' +
+        '<div class="search-bar">' +
+          '<svg viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg>' +
+          '<input type="search" id="ejSearchInput" placeholder="Ürün ara — isim veya model" autocomplete="off" enterkeyhint="search" aria-label="Ürün ara">' +
+          '<button class="search-close" id="ejSearchClose" type="button" aria-label="Kapat"><svg viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>' +
+        '</div>' +
+        '<div class="search-results" id="ejSearchResults" role="listbox"></div>' +
+      '</div>' +
+    '</div>';
+  while (wrap.firstChild) document.body.appendChild(wrap.firstChild);
+
+  var panel   = document.getElementById('ejSearchPanel');
+  var overlay = document.getElementById('ejSearchOverlay');
+  var input   = document.getElementById('ejSearchInput');
+  var results = document.getElementById('ejSearchResults');
+  var closeBtn = document.getElementById('ejSearchClose');
+
+  // Katalog: canlı veri gelirse önbelleğe al; gelmezse statik (önbelleksiz → sonra tekrar dener)
+  var catalogCache = null;
+  function loadCatalog() {
+    if (catalogCache) return Promise.resolve(catalogCache);
+    if (window.EJData && typeof window.EJData.products === 'function') {
+      return window.EJData.products().then(function (list) {
+        if (list && list.length) {
+          catalogCache = list.map(function (p) {
+            return { slug: p.slug, name: p.name, md: p.model_desc || '',
+                     price: p.price, old: p.old_price || 0, tag: p.badge || '', img: p.image || '' };
+          });
+          return catalogCache;
+        }
+        return EJ_CATALOG;
+      }).catch(function () { return EJ_CATALOG; });
+    }
+    return Promise.resolve(EJ_CATALOG);
+  }
+
+  function rowHTML(p) {
+    var media = p.img
+      ? '<span class="sr-ph"><img src="' + ejEsc(p.img) + '" alt=""></span>'
+      : '<span class="sr-ph">' + EJ_PH_SVG + '</span>';
+    var price = (p.old ? '<span class="old">' + ejFmt(p.old) + '</span>' : '') + ejFmt(p.price);
+    return '<a class="search-row" role="option" href="urun.html?slug=' + encodeURIComponent(p.slug) + '">' +
+      media +
+      '<span class="sr-info"><span class="sr-name">' + ejEsc(p.name) + '</span>' +
+      '<span class="sr-md">' + ejEsc(p.md) + '</span></span>' +
+      '<span class="sr-price">' + price + '</span></a>';
+  }
+
+  function renderResults() {
+    var q = ejNorm(input.value.trim());
+    loadCatalog().then(function (cat) {
+      var list = q
+        ? cat.filter(function (p) { return ejNorm(p.name + ' ' + p.md).indexOf(q) >= 0; })
+        : cat;
+      if (!list.length) {
+        results.innerHTML = '<p class="search-empty">“' + ejEsc(input.value.trim()) + '” için sonuç bulunamadı.</p>';
+        return;
+      }
+      results.innerHTML = list.map(rowHTML).join('');
+    });
+  }
+
+  var isOpen = false;
+  function openSearch() {
+    isOpen = true;
+    panel.classList.add('open');
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    renderResults();
+    setTimeout(function () { input.focus(); }, 60);
+  }
+  function closeSearch() {
+    isOpen = false;
+    panel.classList.remove('open');
+    overlay.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  searchBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    isOpen ? closeSearch() : openSearch();
+  });
+  closeBtn.addEventListener('click', closeSearch);
+  overlay.addEventListener('click', closeSearch);
+  input.addEventListener('input', renderResults);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && isOpen) closeSearch(); });
 })();
 
 // ── Sepet (cart) ─────────────────────────────────────────

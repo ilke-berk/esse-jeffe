@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="tr">
 <head>
 <meta charset="utf-8">
@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/fonts/fonts.css">
-<link rel="stylesheet" href="ej.css?v=5">
+<link rel="stylesheet" href="ej.css?v=6">
 <style>
 .checkout{display:grid;grid-template-columns:1.15fr .85fr;gap:64px;align-items:start;max-width:1180px;margin:0 auto}
 .checkout h2{font-family:var(--serif);font-weight:400;font-size:22px;margin-bottom:20px;letter-spacing:.01em}
@@ -92,6 +92,7 @@
     <h2>Siparişin alındı!</h2>
     <div class="ono">Sipariş No: <b id="doneNo">—</b></div>
     <p id="doneMsg">Teşekkürler. Siparişin en kısa sürede hazırlanıp kargoya verilecek.</p>
+    <p style="font-size:13px;color:var(--muted);margin-top:-6px">Sipariş numaranı not al. Durumunu istediğin zaman <a id="doneTrack" href="siparis-takip.html" style="text-decoration:underline">Sipariş Takibi</a> sayfasından, sipariş no + telefonunla sorgulayabilirsin.</p>
     <a class="btn" href="koleksiyon.html">Alışverişe Devam Et</a>
   </div>
 
@@ -158,7 +159,7 @@
       <div class="socials"><a href="https://www.instagram.com/esse_jeffe/">Instagram</a><a href="https://www.tiktok.com/@esse_jeffe">TikTok</a><a href="https://www.facebook.com/essejeffe.tr">Facebook</a></div>
     </div>
     <div><h4>Koleksiyon</h4><ul><li><a href="koleksiyon.html">Tüm Abiyeler</a></li><li><a href="koleksiyon.html">Yeni Gelenler</a></li><li><a href="koleksiyon.html">Çok Satanlar</a></li><li><a href="koleksiyon.html">İndirimdekiler</a></li></ul></div>
-    <div><h4>Yardım</h4><ul><li><a href="hizmetler.html">Kargo & Değişim</a></li><li><a href="odeme.html">Ödeme Yöntemleri</a></li><li><a href="beden-rehberi.html">Beden Rehberi</a></li><li><a href="sss.html">SSS</a></li></ul></div>
+    <div><h4>Yardım</h4><ul><li><a href="siparis-takip.html">Sipariş Takibi</a></li><li><a href="hizmetler.html">Kargo & Değişim</a></li><li><a href="odeme.html">Ödeme Yöntemleri</a></li><li><a href="beden-rehberi.html">Beden Rehberi</a></li><li><a href="sss.html">SSS</a></li></ul></div>
     <div><h4>Kurumsal</h4><ul><li><a href="kvkk.html">KVKK</a></li><li><a href="gizlilik.html">Gizlilik & Güvenlik</a></li><li><a href="mesafeli-satis.html">Mesafeli Satış Sözleşmesi</a></li></ul></div>
     <div><h4>İletişim</h4><ul><li><a href="mailto:info@essejeffe.com">info@essejeffe.com</a></li><li><a href="https://api.whatsapp.com/send?phone=%2B908502551237">WhatsApp: 0850 255 12 37</a></li><li><a href="https://www.instagram.com/esse_jeffe/">Instagram @esse_jeffe</a></li></ul></div>
   </div>
@@ -187,9 +188,9 @@
 </aside>
 
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=6"></script>
-<script src="ej.js?v=5"></script>
-<script src="ej-chat.js?v=6"></script>
+<script src="backend/ej-supabase.js?v=8"></script>
+<script src="ej.js?v=6"></script>
+<script src="ej-chat.js?v=12"></script>
 <script>
 (function(){
   function fmt(n){ return (n||0).toLocaleString('tr-TR') + ' TL'; }
@@ -232,7 +233,11 @@
   }
 
   // PayTR güvenli ödeme iframe'ini aç
-  function openPaytr(token){
+  function openPaytr(token, oid){
+    // Bu tarayıcı oturumunda GERÇEKTEN ödeme başlattığımızı işaretle.
+    // ?paytr=ok dönüşünde yalnızca bu no ile eşleşirse "başarılı" ekranı + sepet temizliği yapılır
+    // (URL'i elle ?paytr=ok yazan biri sahte başarı görüp sepetini kaybetmesin).
+    try{ sessionStorage.setItem('ej_paytr_oid', oid || ''); }catch(e){}
     show('pay');
     var ifr = document.getElementById('paytriframe');
     ifr.src = 'https://www.paytr.com/odeme/guvenli/' + token;
@@ -266,11 +271,25 @@
         return;
       }
       if(pr==='ok'){
-        if(window.EJCart) window.EJCart.clear();
-        document.getElementById('doneNo').textContent = params.get('no') || '—';
-        document.getElementById('doneMsg').textContent =
-          'Teşekkürler. Ödemen alındı, siparişin hazırlanıp kargoya verilecek.';
-        show('done');
+        var okNo = params.get('no') || '';
+        var startedNo = '';
+        try{ startedNo = sessionStorage.getItem('ej_paytr_oid') || ''; }catch(e){}
+        // Yalnızca bu oturumda başlatılan ve no'su eşleşen ödemede başarı göster + sepeti temizle.
+        // (Gerçek ödeme onayı zaten server-side paytr-callback'ten gelir; bu ekran sadece UX.)
+        if(startedNo && okNo && startedNo === okNo){
+          try{ sessionStorage.removeItem('ej_paytr_oid'); }catch(e){}
+          if(window.EJCart) window.EJCart.clear();
+          document.getElementById('doneNo').textContent = okNo;
+          var trkOk = document.getElementById('doneTrack');
+          if(trkOk) trkOk.href = 'siparis-takip.html?no=' + encodeURIComponent(okNo);
+          document.getElementById('doneMsg').textContent =
+            'Teşekkürler. Ödemen alındı, siparişin hazırlanıp kargoya verilecek.';
+          show('done');
+          return;
+        }
+        // Bu tarayıcıda başlatılmış eşleşen ödeme yok (ör. URL elle yazıldı) → sepeti KORU
+        if(!items().length){ show('empty'); return; }
+        show('checkout'); renderSummary();
         return;
       }
       // fail / iptal
@@ -348,7 +367,7 @@
         var d = r.data || {};
         if(d.error) throw new Error(d.error);
         if(!d.token) throw new Error('Ödeme başlatılamadı (token alınamadı).');
-        openPaytr(d.token);   // sepet ödeme onayında (paytr=ok) temizlenir
+        openPaytr(d.token, d.order_no);   // sepet ödeme onayında (paytr=ok & eşleşen no) temizlenir
       }).catch(function(e2){
         btn.disabled=false; btn.textContent='Siparişi Ver';
         err.textContent='Ödeme başlatılamadı: ' + (e2.message||e2);
@@ -364,6 +383,8 @@
     window.EJData.createOrder(data, list).then(function(res){
       window.EJCart.clear();
       document.getElementById('doneNo').textContent = res.order_no;
+      var trk = document.getElementById('doneTrack');
+      if(trk) trk.href = 'siparis-takip.html?no=' + encodeURIComponent(res.order_no);
       document.getElementById('doneMsg').textContent =
         data.payment_method==='transfer'
           ? 'Teşekkürler. Havale/EFT bilgileri kısa sürede sana iletilecek; ödemen alınınca siparişin hazırlanır.'

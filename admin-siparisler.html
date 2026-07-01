@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Esse Jeffe — Sipariş Yönetimi</title>
+<style>
+  :root{--zeytin:#5d6347;--ink:#2a2a26;--line:#e7e5dd;--bg:#f6f5f1}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:var(--zeytin)}
+  /* açılış yükleme ekranı (login flash'ını önler) */
+  #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:10}
+  #boot .sp{width:30px;height:30px;border:3px solid #d8d6cd;border-top-color:var(--zeytin);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* ortak admin header */
+  .admin-nav{height:52px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:22px;padding:0 18px}
+  .admin-nav .anav-brand{font-size:13px;letter-spacing:.18em;font-weight:700;text-transform:uppercase}
+  .admin-nav nav{display:flex;gap:6px}
+  .admin-nav nav a{font-size:13px;text-decoration:none;color:#6a6a62;padding:7px 13px;border-radius:8px;letter-spacing:.03em}
+  .admin-nav nav a:hover{background:#f0eee7}
+  .admin-nav nav a.active{background:#eef0e8;color:var(--zeytin);font-weight:600}
+  .admin-nav .out{margin-left:auto;background:none;border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;color:#6a6a62}
+  /* giriş */
+  #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  #login .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:32px;width:340px;max-width:100%;box-shadow:0 10px 40px rgba(0,0,0,.06)}
+  #login h1{font-size:18px;margin:0 0 4px;letter-spacing:.16em;text-transform:uppercase}
+  #login p{margin:0 0 22px;color:#8a877d;font-size:13px}
+  #login label{display:block;font-size:12px;margin:0 0 5px;color:#6a6a62}
+  #login input{width:100%;padding:11px 12px;border:1px solid #ddd9cf;border-radius:10px;font:inherit;margin-bottom:14px;outline:none}
+  #login input:focus{border-color:var(--zeytin)}
+  #login button{width:100%;padding:12px;border:none;border-radius:10px;background:var(--zeytin);color:#fff;font-weight:600;cursor:pointer}
+  #login .err{color:#b03030;font-size:12.5px;min-height:18px;margin-bottom:8px}
+  /* uygulama */
+  #app{display:none;grid-template-columns:360px 1fr;height:calc(100vh - 52px)}
+  .side{border-right:1px solid var(--line);background:#fff;display:flex;flex-direction:column;overflow:hidden}
+  .side .shead{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:9px}
+  .side .shead .top{display:flex;align-items:center;gap:8px}
+  .side .shead h2{margin:0;font-size:13px;letter-spacing:.1em;text-transform:uppercase}
+  .side .shead .cnt{margin-left:auto;font-size:12px;color:#8a877d}
+  .side .shead .rf{background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;color:#6a6a62}
+  .side .shead input.q{width:100%;padding:9px 11px;border:1px solid #ddd9cf;border-radius:9px;font:inherit;font-size:13px;outline:none}
+  .side .shead input.q:focus{border-color:var(--zeytin)}
+  .fbar{display:flex;flex-wrap:wrap;gap:5px}
+  .fbar button{font-size:11.5px;padding:5px 9px;border:1px solid var(--line);border-radius:20px;background:#fff;cursor:pointer;color:#6a6a62}
+  .fbar button.on{background:var(--zeytin);color:#fff;border-color:var(--zeytin)}
+  .olist{flex:1;overflow-y:auto}
+  .orow{padding:11px 14px;border-bottom:1px solid #f0eee7;cursor:pointer;display:flex;gap:10px;align-items:flex-start}
+  .orow:hover{background:#faf9f5}.orow.sel{background:#eef0e8}
+  .orow .oi{min-width:0;flex:1}
+  .orow .on{font-size:13px;font-weight:600;margin:0;font-variant-numeric:tabular-nums}
+  .orow .om{font-size:12px;color:#8a877d;margin:2px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .orow .of{text-align:right;flex:0 0 auto}
+  .orow .op{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+  .orow .od{font-size:11px;color:#aaa;margin-top:2px}
+  /* durum rozetleri */
+  .st{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:20px;letter-spacing:.02em;white-space:nowrap}
+  .st-pending{background:#f5ecd8;color:#8a6d1f}
+  .st-preparing{background:#e6eef5;color:#2b5a86}
+  .st-shipped{background:#e5eadf;color:#4d6b2f}
+  .st-delivered{background:#dcece0;color:#256b3b}
+  .st-cancelled{background:#f3dede;color:#9a3b3b}
+  .pay-paid{color:#256b3b}.pay-pending{color:#8a6d1f}.pay-failed{color:#9a3b3b}.pay-cod{color:#6a6a62}
+  /* detay */
+  .main{overflow-y:auto;padding:22px 26px}
+  .main .empty{height:100%;display:flex;align-items:center;justify-content:center;color:#aaa}
+  .det{max-width:820px}
+  .det .dh{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .det .dh h2{font-size:19px;margin:0;font-variant-numeric:tabular-nums}
+  .det .dh .when{color:#8a877d;font-size:13px;margin:2px 0 0}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .card h3{margin:0 0 10px;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:#9a978d}
+  .kv{display:flex;font-size:13.5px;margin:0 0 6px;line-height:1.45}
+  .kv .k{width:96px;flex:0 0 auto;color:#8a877d}
+  .kv .v{flex:1;word-break:break-word}
+  .items{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:13.5px}
+  .items th,.items td{text-align:left;padding:10px 12px;border-bottom:1px solid #f0eee7}
+  .items th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#9a978d;font-weight:600}
+  .items td.num,.items th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .items tr:last-child td{border-bottom:none}
+  .items .prod .pn{font-weight:600}
+  .items .prod .pm{color:#8a877d;font-size:12px;margin-top:2px}
+  .totals{margin:12px 0 0;margin-left:auto;max-width:320px}
+  .totals .kv .k{width:auto;flex:1}.totals .kv .v{flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums}
+  .totals .grand{font-size:16px;font-weight:700;border-top:1px solid var(--line);padding-top:8px;margin-top:4px}
+  .sec-t{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#9a978d;margin:26px 0 12px;border-bottom:1px solid var(--line);padding-bottom:7px}
+  .upd{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .f{margin-bottom:14px}
+  .f label{display:block;font-size:12px;color:#6a6a62;margin-bottom:5px;letter-spacing:.03em}
+  .f input,.f select{width:100%;padding:9px 11px;border:1px solid #ddd9cf;border-radius:9px;font:inherit;font-size:14px;outline:none;background:#fff}
+  .f input:focus,.f select:focus{border-color:var(--zeytin)}
+  .bar{display:flex;gap:12px;align-items:center;margin-top:4px}
+  .bar .save{background:var(--zeytin);color:#fff;border:none;border-radius:10px;padding:11px 24px;font-weight:600;font-size:14px;cursor:pointer}
+  .bar .msg{font-size:13px}
+  .busy{opacity:.55;pointer-events:none}
+  .muted{color:#9a978d;font-size:12px}
+  @media(max-width:820px){#app{grid-template-columns:1fr;height:auto}.side{height:auto;max-height:42vh}.cards,.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- açılış yükleme (oturum kontrol edilirken) -->
+<div id="boot"><div class="sp"></div></div>
+
+<!-- giriş -->
+<div id="login" style="display:none">
+  <form class="card" id="loginForm">
+    <h1>Sipariş Yönetimi</h1>
+    <p>Esse Jeffe — yönetici girişi</p>
+    <div class="err" id="loginErr"></div>
+    <label>E-posta</label>
+    <input type="email" id="email" autocomplete="username" required>
+    <label>Şifre</label>
+    <input type="password" id="pass" autocomplete="current-password" required>
+    <button type="submit">Giriş Yap</button>
+  </form>
+</div>
+
+<!-- ortak admin header -->
+<header class="admin-nav" id="adminNav" style="display:none">
+  <a href="index.html" class="anav-brand" style="text-decoration:none;color:inherit">Esse Jeffe · Admin</a>
+  <nav>
+    <a href="admin.html">Destek</a>
+    <a href="admin-urunler.html">Ürünler</a>
+    <a href="admin-siparisler.html" class="active">Siparişler</a>
+  </nav>
+  <a href="index.html" class="out" style="text-decoration:none;margin-left:auto">← Siteye Dön</a>
+  <button class="out" id="logout">Çıkış</button>
+</header>
+
+<!-- uygulama -->
+<div id="app">
+  <aside class="side">
+    <div class="shead">
+      <div class="top">
+        <h2>Siparişler</h2>
+        <span class="cnt" id="cnt"></span>
+        <button class="rf" id="refresh" title="Yenile">↻</button>
+      </div>
+      <input class="q" id="q" type="search" placeholder="Sipariş no, ad veya telefon ara…">
+      <div class="fbar" id="fbar"></div>
+    </div>
+    <div class="olist" id="olist"></div>
+  </aside>
+  <main class="main" id="main">
+    <div class="empty" id="emptyMain">Detay için soldan bir sipariş seçin.</div>
+  </main>
+</div>
+
+<script src="backend/supabase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function () {
+  var cfg = window.EJ_CONFIG || {};
+  var sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
+
+  // durum & ödeme etiketleri
+  var STATUS = [
+    { k: 'pending',   t: 'Bekliyor' },
+    { k: 'preparing', t: 'Hazırlanıyor' },
+    { k: 'shipped',   t: 'Kargoda' },
+    { k: 'delivered', t: 'Teslim edildi' },
+    { k: 'cancelled', t: 'İptal' }
+  ];
+  var STATUS_T = {}; STATUS.forEach(function (s) { STATUS_T[s.k] = s.t; });
+  var PAYM = { cod: 'Kapıda ödeme', card: 'Kart', transfer: 'Havale/EFT' };
+  var PAYS = { pending: 'Bekliyor', paid: 'Ödendi', failed: 'Başarısız', cod: 'Kapıda' };
+  var PAYS_CLS = { pending: 'pay-pending', paid: 'pay-paid', failed: 'pay-failed', cod: 'pay-cod' };
+
+  var bootEl = document.getElementById('boot');
+  var loginBox = document.getElementById('login');
+  var nav = document.getElementById('adminNav');
+  var app = document.getElementById('app');
+  var olistEl = document.getElementById('olist');
+  var mainEl = document.getElementById('main');
+
+  function showLogin(msg){ bootEl.style.display='none'; nav.style.display='none'; app.style.display='none'; loginBox.style.display='flex'; if(msg) document.getElementById('loginErr').textContent=msg; }
+  function showApp(){ bootEl.style.display='none'; loginBox.style.display='none'; nav.style.display='flex'; app.style.display='grid'; }
+
+  var orders = [];       // tüm siparişler (order_items dahil)
+  var current = null;    // seçilen sipariş
+  var filter = 'all';    // durum filtresi
+  var query = '';        // arama metni
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function el(id){ return document.getElementById(id); }
+  function val(id){ var e=el(id); return e?e.value.trim():''; }
+  function tl(n){ return (n||0).toLocaleString('tr-TR') + ' TL'; }
+  function fmtDate(s){
+    if(!s) return '—';
+    var d = new Date(s);
+    if(isNaN(d)) return esc(s);
+    return d.toLocaleString('tr-TR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+  }
+  function fmtDateShort(s){
+    var d = new Date(s);
+    if(isNaN(d)) return '';
+    return d.toLocaleDateString('tr-TR', { day:'2-digit', month:'short' });
+  }
+
+  // ---------- giriş ----------
+  el('loginForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var err = el('loginErr'); err.textContent = '';
+    sb.auth.signInWithPassword({ email: val('email'), password: el('pass').value }).then(function (r) {
+      if (r.error) { err.textContent = 'Giriş başarısız: ' + r.error.message; return; }
+      boot();
+    });
+  });
+  el('logout').addEventListener('click', function () {
+    sb.auth.signOut().then(function () { location.reload(); });
+  });
+  sb.auth.getSession().then(function (r) { if (r.data.session) boot(); else showLogin(); });
+
+  // admin mi? profiles.is_admin
+  function boot() {
+    sb.auth.getUser().then(function (u) {
+      var uid = u.data.user && u.data.user.id;
+      if (!uid) { showLogin(); return; }
+      sb.from('profiles').select('is_admin').eq('id', uid).single().then(function (r) {
+        if (r.error || !r.data || r.data.is_admin !== true) {
+          sb.auth.signOut();
+          showLogin('Bu hesabın sipariş yönetim yetkisi yok.');
+          return;
+        }
+        showApp();
+        renderFilters();
+        loadOrders();
+      });
+    });
+  }
+
+  // ---------- veri ----------
+  function loadOrders() {
+    el('cnt').textContent = 'yükleniyor…';
+    sb.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }).then(function (r) {
+      if (r.error) { olistEl.innerHTML = '<div style="padding:18px;color:#b03030;font-size:13px">Yüklenemedi: ' + esc(r.error.message) + '</div>'; el('cnt').textContent=''; return; }
+      orders = r.data || [];
+      // seçili sipariş güncel veriyle tazelensin
+      if (current) { var f = orders.filter(function(o){return o.id===current.id;})[0]; current = f || null; }
+      renderList();
+      if (current) renderDetail();
+    });
+  }
+  el('refresh').addEventListener('click', loadOrders);
+
+  // ---------- filtre + arama ----------
+  function renderFilters() {
+    var items = [{ k: 'all', t: 'Tümü' }].concat(STATUS);
+    el('fbar').innerHTML = items.map(function (s) {
+      return '<button data-k="' + s.k + '"' + (filter === s.k ? ' class="on"' : '') + '>' + s.t + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(el('fbar').querySelectorAll('button'), function (b) {
+      b.addEventListener('click', function () { filter = b.dataset.k; renderFilters(); renderList(); });
+    });
+  }
+  el('q').addEventListener('input', function () { query = this.value.trim().toLowerCase(); renderList(); });
+
+  function visibleOrders() {
+    return orders.filter(function (o) {
+      if (filter !== 'all' && o.status !== filter) return false;
+      if (query) {
+        var hay = (o.order_no + ' ' + (o.full_name||'') + ' ' + (o.phone||'')).toLowerCase();
+        if (hay.indexOf(query) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderList() {
+    var list = visibleOrders();
+    el('cnt').textContent = list.length + (filter === 'all' && !query ? ' sipariş' : ' / ' + orders.length);
+    if (!list.length) { olistEl.innerHTML = '<div style="padding:20px;color:#aaa;font-size:13px">Eşleşen sipariş yok.</div>'; return; }
+    olistEl.innerHTML = list.map(function (o) {
+      var sel = current && current.id === o.id ? ' sel' : '';
+      var st = STATUS_T[o.status] || o.status;
+      return '<div class="orow' + sel + '" data-id="' + o.id + '">' +
+        '<div class="oi">' +
+          '<p class="on">' + esc(o.order_no) + '</p>' +
+          '<p class="om">' + esc(o.full_name || '—') + ' · ' + (PAYM[o.payment_method] || o.payment_method) + '</p>' +
+          '<span class="st st-' + esc(o.status) + '">' + esc(st) + '</span>' +
+        '</div>' +
+        '<div class="of">' +
+          '<div class="op">' + tl(o.total) + '</div>' +
+          '<div class="od">' + fmtDateShort(o.created_at) + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    Array.prototype.forEach.call(olistEl.querySelectorAll('.orow'), function (row) {
+      row.addEventListener('click', function () { selectOrder(row.dataset.id); });
+    });
+  }
+
+  function selectOrder(id) {
+    current = orders.filter(function (o) { return o.id === id; })[0] || null;
+    renderList();
+    renderDetail();
+  }
+
+  // ---------- detay ----------
+  function renderDetail() {
+    var o = current;
+    if (!o) { mainEl.innerHTML = '<div class="empty">Detay için soldan bir sipariş seçin.</div>'; return; }
+    var items = (o.order_items || []);
+    var itemRows = items.map(function (it) {
+      var meta = [it.color, it.size].filter(Boolean).join(' · ');
+      return '<tr>' +
+        '<td class="prod"><div class="pn">' + esc(it.product_name) + '</div>' +
+          (meta ? '<div class="pm">' + esc(meta) + '</div>' : '') + '</td>' +
+        '<td class="num">' + tl(it.unit_price) + '</td>' +
+        '<td class="num">' + (it.qty || 0) + '</td>' +
+        '<td class="num">' + tl((it.unit_price || 0) * (it.qty || 0)) + '</td>' +
+      '</tr>';
+    }).join('') || '<tr><td colspan="4" class="muted">Kalem kaydı yok.</td></tr>';
+
+    var addr = [o.address, o.district, o.city, o.postal_code].filter(Boolean).join(', ');
+    var payCls = PAYS_CLS[o.payment_status] || '';
+
+    mainEl.innerHTML =
+      '<div class="det">' +
+        '<div class="dh">' +
+          '<div><h2>' + esc(o.order_no) + '</h2>' +
+            '<p class="when">' + fmtDate(o.created_at) + '</p></div>' +
+          '<span class="st st-' + esc(o.status) + '" style="margin-top:6px">' + esc(STATUS_T[o.status] || o.status) + '</span>' +
+        '</div>' +
+
+        '<div class="cards">' +
+          '<div class="card"><h3>Müşteri</h3>' +
+            kv('Ad Soyad', esc(o.full_name)) +
+            kv('Telefon', o.phone ? '<a href="tel:' + esc(o.phone) + '">' + esc(o.phone) + '</a>' : '—') +
+            kv('E-posta', o.email ? '<a href="mailto:' + esc(o.email) + '">' + esc(o.email) + '</a>' : '—') +
+            kv('Üyelik', o.user_id ? 'Üye' : 'Misafir') +
+          '</div>' +
+          '<div class="card"><h3>Teslimat</h3>' +
+            kv('Adres', esc(addr || '—')) +
+            (o.note ? kv('Not', esc(o.note)) : '') +
+          '</div>' +
+          '<div class="card"><h3>Ödeme</h3>' +
+            kv('Yöntem', esc(PAYM[o.payment_method] || o.payment_method)) +
+            kv('Durum', '<span class="' + payCls + '">' + esc(PAYS[o.payment_status] || o.payment_status) + '</span>') +
+            (o.paid_at ? kv('Ödendi', fmtDate(o.paid_at)) : '') +
+            (o.payment_ref ? kv('Referans', esc(o.payment_ref)) : '') +
+          '</div>' +
+          '<div class="card"><h3>Kargo</h3>' +
+            kv('Firma', esc(o.carrier || '—')) +
+            kv('Takip No', esc(o.tracking_no || '—')) +
+          '</div>' +
+        '</div>' +
+
+        '<div class="sec-t">Ürünler</div>' +
+        '<table class="items"><thead><tr>' +
+          '<th>Ürün</th><th class="num">Birim</th><th class="num">Adet</th><th class="num">Tutar</th>' +
+        '</tr></thead><tbody>' + itemRows + '</tbody></table>' +
+        '<div class="totals">' +
+          kv('Ara toplam', tl(o.subtotal)) +
+          kv('Kargo', o.shipping_fee ? tl(o.shipping_fee) : 'Ücretsiz') +
+          '<div class="kv grand"><span class="k">Toplam</span><span class="v">' + tl(o.total) + '</span></div>' +
+        '</div>' +
+
+        '<div class="sec-t">Durum Güncelle</div>' +
+        '<div class="upd">' +
+          '<div class="grid2">' +
+            '<div class="f"><label>Sipariş Durumu</label><select id="uStatus">' +
+              STATUS.map(function (s) { return '<option value="' + s.k + '"' + (o.status === s.k ? ' selected' : '') + '>' + s.t + '</option>'; }).join('') +
+            '</select></div>' +
+            '<div class="f"><label>Ödeme Durumu</label><select id="uPay">' +
+              ['pending','paid','failed','cod'].map(function (k) { return '<option value="' + k + '"' + (o.payment_status === k ? ' selected' : '') + '>' + PAYS[k] + '</option>'; }).join('') +
+            '</select></div>' +
+          '</div>' +
+          '<div class="grid2">' +
+            '<div class="f"><label>Kargo Firması</label><input id="uCarrier" value="' + esc(o.carrier || '') + '" placeholder="örn. Yurtiçi, Aras"></div>' +
+            '<div class="f"><label>Takip Numarası</label><input id="uTrack" value="' + esc(o.tracking_no || '') + '" placeholder="Kargo takip no"></div>' +
+          '</div>' +
+          '<div class="bar">' +
+            '<button class="save" id="saveBtn">Kaydet</button>' +
+            '<span class="msg" id="formMsg"></span>' +
+          '</div>' +
+          '<p class="muted" style="margin:10px 0 0">Ödeme durumu "Ödendi" yapıldığında ödeme tarihi otomatik damgalanır. Sipariş oluşturma bu ekrandan yapılamaz.</p>' +
+        '</div>' +
+      '</div>';
+
+    el('saveBtn').addEventListener('click', saveUpdate);
+  }
+
+  function kv(k, v) { return '<div class="kv"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
+
+  // ---------- güncelle ----------
+  function saveUpdate() {
+    if (!current) return;
+    var patch = {
+      status: val('uStatus'),
+      payment_status: val('uPay'),
+      carrier: val('uCarrier') || null,
+      tracking_no: val('uTrack') || null
+    };
+    // "Ödendi" işaretlendi ve daha önce ödenmemişse ödeme tarihini damgala
+    if (patch.payment_status === 'paid' && !current.paid_at) {
+      patch.paid_at = new Date().toISOString();
+    }
+
+    el('saveBtn').classList.add('busy'); msg('Kaydediliyor…');
+    sb.from('orders').update(patch).eq('id', current.id).select('*, order_items(*)').single().then(function (r) {
+      el('saveBtn').classList.remove('busy');
+      if (r.error) { msg('Hata: ' + r.error.message, false, true); return; }
+      // yerel veriyi tazele
+      var idx = orders.map(function (o) { return o.id; }).indexOf(current.id);
+      if (idx > -1) orders[idx] = r.data;
+      current = r.data;
+      msg('Kaydedildi ✓', true);
+      renderList();
+      renderDetail();
+    });
+  }
+
+  function msg(t, ok, err) {
+    var m = el('formMsg'); if (!m) return;
+    m.textContent = t;
+    m.style.color = err ? '#b03030' : ok ? '#2f7d44' : '#8a877d';
+  }
+})();
+</script>
+</body>
+</html>

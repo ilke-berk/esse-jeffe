@@ -396,6 +396,33 @@ form.ej-form{display:grid;gap:24px}
 .mega-foot{display:flex;justify-content:center;margin-top:24px;padding-top:20px;border-top:1px solid var(--line)}
 .mega-overlay{position:fixed;inset:0;z-index:37;background:rgba(20,18,15,.22);opacity:0;pointer-events:none;transition:opacity .28s ease}
 .mega-overlay.open{opacity:1;pointer-events:all}
+/* ---------- arama (search) ---------- */
+.search-overlay{position:fixed;inset:0;z-index:60;background:rgba(20,18,15,.34);opacity:0;pointer-events:none;transition:opacity .28s ease}
+.search-overlay.open{opacity:1;pointer-events:all}
+.search-panel{position:fixed;left:0;right:0;top:0;z-index:61;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 16px 48px rgba(20,18,15,.12);transform:translateY(-100%);transition:transform .34s cubic-bezier(.22,.75,.25,1)}
+.search-panel.open{transform:translateY(0)}
+.search-in{max-width:760px;margin:0 auto;padding:22px 24px 26px}
+.search-bar{display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--line-strong);padding-bottom:12px}
+.search-bar>svg{width:20px;height:20px;stroke:var(--muted);stroke-width:1.5;fill:none;flex-shrink:0}
+.search-bar input{flex:1;min-width:0;border:none;outline:none;background:none;font-family:var(--serif);font-size:clamp(17px,2.4vw,21px);font-weight:300;color:var(--ink);-webkit-appearance:none}
+.search-bar input::placeholder{color:var(--muted)}
+.search-bar input::-webkit-search-cancel-button{-webkit-appearance:none}
+.search-close{background:none;border:none;cursor:pointer;color:var(--muted);display:grid;place-items:center;padding:4px;flex-shrink:0;transition:color .2s}
+.search-close:hover{color:var(--ink)}
+.search-close svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.5;fill:none}
+.search-results{margin-top:6px;max-height:min(60vh,440px);overflow-y:auto}
+.search-row{display:flex;align-items:center;gap:14px;padding:12px 4px;text-decoration:none;color:var(--ink);border-bottom:1px solid var(--line)}
+.search-row:last-child{border-bottom:none}
+.search-row:hover{background:var(--bg-warm)}
+.sr-ph{flex-shrink:0;width:46px;height:60px;background:var(--bg-warm);display:grid;place-items:center;overflow:hidden}
+.sr-ph img{width:100%;height:100%;object-fit:cover}
+.sr-ph svg{width:22px;height:22px;opacity:.25;stroke:var(--ink);stroke-width:1;fill:none}
+.sr-info{flex:1;min-width:0}
+.sr-name{display:block;font-family:var(--serif);font-size:16px;line-height:1.2}
+.sr-md{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sr-price{font-size:13px;letter-spacing:.04em;white-space:nowrap;flex-shrink:0}
+.sr-price .old{color:var(--muted);text-decoration:line-through;margin-right:6px;font-size:11.5px}
+.search-empty{padding:28px 4px;color:var(--muted);font-size:13.5px;text-align:center}
 /* ---------- mobile menu (hamburger) ---------- */
 .hamburger{display:none;background:none;border:none;cursor:pointer;width:30px;height:30px;padding:0;place-items:center;color:var(--ink)}
 .hamburger svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.4;fill:none}
