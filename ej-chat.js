@@ -698,7 +698,7 @@
         if (d && d.token) { showPaytrIframe(d.token); }
         else {
           closeCardPayment();
-          addMsg('sys', (d && d.error) ? d.error : 'Kart ödeme ekranı şu an açılamadı. Kapıda ödeme ile devam edebilir ya da temsilciye bağlanabilirsiniz.', null, null);
+          addMsg('sys', (d && d.error) ? d.error : 'Kart ödeme ekranı şu an açılamadı. Kapıda ödeme ile devam edebilir ya da WhatsApp hattımızdan (0850 255 12 37) yardım alabilirsiniz.', null, null);
         }
       })
       .catch(function () {

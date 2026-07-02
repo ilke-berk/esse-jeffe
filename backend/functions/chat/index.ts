@@ -217,8 +217,8 @@ OPERASYONEL NOTLAR:
 - Fiyat ve toplamı ASLA uydurma; sipariş tutarını sistem (create_order) hesaplar. Katalogdaki fiyatlar dışında rakam verme.
 
 SINIRLARIN (yalnız bunlarda temsilciye yönlendir):
-- Müşterinin MEVCUT/GEÇMİŞ bir siparişine özel konular: o siparişin durumu/kargo takip kodu, ödemesinde yaşanan arıza, kişisel iade/değişim talebinin BAŞLATILMASI ve onayı. Bunları sen çözemezsin (kişisel kayıtlara erişimin yok). Politikayı/koşulları açıklayabilirsin ama işlemi başlatamazsın.
-- Bu durumlarda ya da müşteri bir insanla görüşmek isterse: kibarca alt köşedeki "Temsilciye Bağlan" butonunu öner veya WhatsApp ${WHATSAPP} hattını (Pazartesi–Cumartesi 08:00–19:00) ver.
+- Müşterinin MEVCUT/GEÇMİŞ bir siparişine özel konular: o siparişin durumu/kargo takip kodu, ödemesinde yaşanan arıza, kişisel iade/değişim talebinin BAŞLATILMASI ve onayı. Bunları sen çözemezsin (kişisel kayıtlara erişimin yok). Politikayı/koşulları açıklayabilirsin ama işlemi başlatamazsın. NOT: Sipariş durumunu müşteri sitedeki "Sipariş Takip" sayfasından (sipariş no + telefon ile) kendisi de sorgulayabilir; bunu da söyleyebilirsin.
+- Bu durumlarda ya da müşteri bir insanla görüşmek isterse: kibarca WhatsApp ${WHATSAPP} hattını (Pazartesi–Cumartesi 08:00–19:00) ver. Sohbette "Temsilciye Bağlan" butonu YOKTUR; müşteriye buton önerme, yalnızca WhatsApp'a yönlendir.
 - Bilgi tabanında VE katalogda olmayan bir şeyi uydurma; gerçekten emin değilsen temsilciye yönlendir. Ama yukarıdaki bilgi tabanındaki her şeyi (beden, kargo, ödeme, değişim, iade, stok mantığı) BİZZAT ve net biçimde yanıtla — bunları temsilciye atma.`;
 }
 
@@ -481,7 +481,7 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
   if (oErr || !orderRow) {
     chatLog("error", "cod_order_insert_error", { detail: oErr?.message });
     await restoreStock();
-    return { message: "HATA: Sipariş kaydedilemedi (sistem hatası). Müşteriden özür dile ve birazdan tekrar denemesini ya da temsilciye bağlanmasını öner." };
+    return { message: `HATA: Sipariş kaydedilemedi (sistem hatası). Müşteriden özür dile ve birazdan tekrar denemesini ya da WhatsApp ${WHATSAPP} hattından yazmasını öner.` };
   }
   const rows = orderItems.map((r) => ({ ...r, order_id: orderRow.id }));
   const { error: iErr } = await admin.from("order_items").insert(rows);
@@ -490,7 +490,7 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
     chatLog("error", "cod_order_items_insert_error", { order_no: oid, detail: iErr.message });
     await admin.from("orders").delete().eq("id", orderRow.id);
     await restoreStock();
-    return { message: "HATA: Sipariş kaydedilemedi (sistem hatası). Müşteriden özür dile ve birazdan tekrar denemesini ya da temsilciye bağlanmasını öner." };
+    return { message: `HATA: Sipariş kaydedilemedi (sistem hatası). Müşteriden özür dile ve birazdan tekrar denemesini ya da WhatsApp ${WHATSAPP} hattından yazmasını öner.` };
   }
   await admin.from("fn_rate_limit").insert({ ip, kind: "order" });
   // NOT: onay e-postası yalnız create-order/paytr-callback'ten gider
@@ -523,7 +523,7 @@ type AiResult = { text: string; order?: Record<string, unknown> };
 async function askGemini(history: any[], conv: any, ip: string): Promise<AiResult> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) {
-    return { text: `Yapay zekâ asistanı şu an yapılandırılmamış. Lütfen "Temsilciye Bağlan" butonuna basın veya WhatsApp ${WHATSAPP} hattından yazın.` };
+    return { text: `Yapay zekâ asistanı şu an yapılandırılmamış. Lütfen WhatsApp ${WHATSAPP} hattından yazın.` };
   }
   const contents = toGeminiContents(history);
   if (!contents.length) return { text: "Merhaba! Size nasıl yardımcı olabilirim?" };
@@ -550,7 +550,7 @@ async function askGemini(history: any[], conv: any, ip: string): Promise<AiResul
     });
     if (!res.ok) {
       chatLog("error", "gemini_error", { status: res.status, detail: (await res.text()).slice(0, 300) });
-      return { text: `Şu an yanıt veremiyorum. Lütfen "Temsilciye Bağlan" butonunu kullanın.`, order };
+      return { text: `Şu an yanıt veremiyorum. Lütfen birazdan tekrar deneyin veya WhatsApp ${WHATSAPP} hattından yazın.`, order };
     }
     const data = await res.json();
     const cand = (data.candidates || [])[0];
