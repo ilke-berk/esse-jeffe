@@ -39,6 +39,20 @@
 
 > NOT: CORS yalnız tarayıcı kaynaklı çağrıları durdurur; asıl bot koruması IP hız sınırıdır. İstemci birleştirme güvenlik değil, dürüst kullanıcı için maliyet/UX iyileştirmesidir.
 
+### ✅ ÇÖZÜLDÜ — AI asistan kalıcı hafıza + `start`'ta user_id spoof (2026-07-02)
+İki sorun birlikte ele alındı: (a) chat `start`, `user_id`'yi client beyanından alıyordu → başkasının hesabına konuşma bağlanabilirdi (hafıza özelliğiyle birlikte başkasının sohbet özetini sızdırabilir hâle gelecekti); (b) AI, geçmiş sohbeti yalnız aynı tarayıcının localStorage'ı üzerinden hatırlıyordu; ayrıca geçmiş sorgusu `order(created_at).limit(30)` ile **ilk** 30 mesajı aldığından uzun sohbette AI en YENİ mesajları göremiyordu.
+
+**Yapıldı (2026-07-02):**
+- **Son-30 bug'ı:** geçmiş artık `desc + limit(30) + reverse` ile çekiliyor (en son 30 mesaj).
+- **`start`'ta JWT doğrulama:** `user_id` client'tan alınmıyor; widget girişli kullanıcının `access_token`'ını gönderir, fonksiyon `admin.auth.getUser` ile doğrular.
+- **`resume` action'ı:** localStorage boşsa (farklı cihaz/tarayıcı) widget, JWT ile kullanıcının son konuşmasını devralır; `visitor_token` yalnız konuşma sahibine döner. 30 günden eski / `closed` konuşma devralınmaz. IP hız sınırı: 10/dk.
+- **`end` action'ı:** widget'taki "görüşmeyi sonlandır" artık sunucuda `status=closed` yapar → resume ile geri gelmez.
+- **Özet hafıza:** girişli kullanıcı yeni konuşma başlatınca önceki konuşması Gemini ile 3-4 cümleye özetlenir, `chat_conversations.summary`'ye yazılır ve system prompt'a "ÖNCEKİ GÖRÜŞME NOTU" olarak eklenir (90 gün geriye bakar; `EdgeRuntime.waitUntil` ile arka planda). `schema.sql` → `summary` kolonu + `user_id` partial index.
+- **`conv_limit` (50 mesaj) kilidi çözüldü:** sınıra ulaşan konuşma widget'ta kapatılıp sıfırlanır; kullanıcının sonraki mesajı (özet hafızayla) yeni konuşmada devam eder.
+- **Retention (KVKK):** `start` sırasında 12 aydan eski konuşmalar silinir (mesajlar cascade); `gizlilik.html`'e sohbet kayıtları/12 ay saklama paragrafı eklendi.
+- `ej-chat.js` sürümü tüm sayfalarda `?v=13`'e yükseltildi.
+- **Aktivasyon:** `schema.sql`'i çalıştır (summary kolonu + index) ve `chat` fonksiyonunu yeniden deploy et.
+
 ### ✅ ÇÖZÜLDÜ — 🟠 Orta — Şema drift'i / repoda eksik SQL (2026-07-01)
 `schema.sql` şunları içermiyordu: `profiles.is_admin`, `orders.paid_at`, `orders.payment_ref`, `chat_conversations`/`chat_messages` tabloları, admin/ürün-yazma RLS politikaları, `is_admin()`. `chat-README.md`, olmayan bir `chat-schema.sql`'e atıf yapıyordu.
 
@@ -57,7 +71,7 @@
 
 ## 4. Kullanıcıya Açılınca Çıkabilecek Sorunlar (Fonksiyonel/UX)
 
-- **Admin'de sipariş yönetimi yok:** `admin.html` (destek) ve `admin-urunler.html` (ürün) var, ama sipariş listeleme/durum güncelleme ekranı yok. Siparişler yalnızca Supabase dashboard'undan görülüyor → operasyonel büyük boşluk. Kargoya verildi/teslim edildi gibi durum güncellemesi arayüzü yok.
+- **✅ ÇÖZÜLDÜ — Admin sipariş yönetimi (2026-07-02):** `admin-siparisler.html` eklendi — sipariş listeleme, durum filtreleri (beklemede/hazırlanıyor/kargoda/teslim/iptal), sipariş no/ad/telefon araması, durum + ödeme durumu + kargo firması/takip no güncelleme ("ödendi" işaretlenince `paid_at` otomatik). Güvenlik: `signInWithPassword` + `profiles.is_admin` kontrolü; asıl kapı RLS (`orders_admin_read`/`orders_admin_update`, yalnız `is_admin()`). Kalan (küçük): sayfalama yok — sipariş sayısı 1000'i aşınca `range()` eklenmeli.
 - **✅ ÇÖZÜLDÜ — Misafir sipariş takibi (2026-07-01):** "Sipariş no + telefon ile sorgula" akışı eklendi. RLS geri okumayı engellediği için takip, service_role ile okuyan `track-order` Edge Function üzerinden yapılır; `order_no` **ve** telefon (rakam normalize, son 10 hane) **ikisi de** eşleşirse yalnız güvenli alanlar döner (adres/e-posta dönmez). IP başına hız sınırı (`order_track_rate_limit`, 15/10 dk) enumeration/kaba kuvveti yavaşlatır; eşleşmezse belirsiz `404` (bilgi sızdırmaz). Yeni sayfa `siparis-takip.html` (footer "Yardım" + sepet onay ekranından linkli, no otomatik dolu); kargo firması/takip no da gösterilir. Deploy: `backend/track-order-kurulum.md`.
 - **✅ ÇÖZÜLDÜ — Arama (2026-07-01):** Header'daki büyüteç ikonu artık tam ekran bir arama paneli açıyor (`ej.js` yeni `Arama` IIFE'si + `ej.css` `.search-*` stilleri). İsim/model üzerinde Türkçe + aksan duyarsız (`ejNorm`) anlık filtreleme; sonuçlar `urun.html?slug=…`'e link. Veri kaynağı: Supabase açıksa canlı `EJData.products()` (başarılıysa önbelleğe alınır, değilse statik'e düşer ve sonra tekrar dener), kapalıysa yeni paylaşılan `EJ_CATALOG`. 19 sayfanın hepsi `ej.js`+`ej.css` yüklediği için tek noktadan çözüldü; HTML'lere dokunulmadı (yalnız `?v=` cache sürümleri artırıldı).
 - **✅ ÇÖZÜLDÜ — Mega menü senkronu (2026-07-01):** Elle hardcode 9 kart kaldırıldı; kartlar artık tek kaynak `EJ_CATALOG`'dan üretiliyor ve **hepsi** `urun.html?slug=…`'e gidiyor (eskiden çoğu `koleksiyon.html`'e gidiyordu). Supabase açıkken `ej-supabase.js` → `renderMega()` aynı `#megaProducts` kutusunu koleksiyon grid'iyle **aynı** canlı DB verisiyle üzerine yazıyor → menü katalogla asla eskimiyor. Veri yoksa statik kartlar fallback kalır.
@@ -80,23 +94,25 @@
 ## 6. Optimizasyon Önerileri
 
 **Performans**
-- `ej.css` (33KB), `ej.js` (20KB), `ej-chat.js` (35KB) minify edilmemiş — prod için minify/gzip.
-- Ürün grid görsellerine `loading="lazy"` + boyut ekle (LCP/CLS iyileşir).
-- **Font çift yükleme:** hem Google Fonts (Spectral) hem yerel `_ds/.../fonts.css` yükleniyor — birini seç, `font-display: swap` ve preload uygula.
-- supabase-js her sayfada CDN'den dinamik `<script>` ile geliyor; `<link rel="preconnect">`/preload ile hızlandır, sürüm sabitle (`@2` yerine `@2.x.y`).
+- ✅ **ÇÖZÜLDÜ (2026-07-02) — 🔴 Anasayfada ~2 MB geliştirici JS:** `index.html` her ziyaretçiye `react.development.js` + `react-dom.development.js` + `@babel/standalone` (~1.5 MB) yüklüyordu; tek amaçları sağdaki "Tweaks" tasarım paneli (`tweaks-panel.jsx`, hero düzeni/font/başlık/overlay seçici, `EDITMODE` işaretli) idi — yani ziyaretçiye giden bir tasarım editörü. **Yapıldı:** React/Babel/tweaks blok `index.html`'den tamamen kaldırıldı; seçili tasarım statik gömüldü (`<body data-hero="full" style="--ov:.9">`, font zaten Spectral = ej.css varsayılanı). Editör kaybolmadı: `demo.html` artık editörlü anasayfa kopyası (tweaks paneli çalışır, `noindex,nofollow` ile arama motoruna kapalı). Eski `demo.html` (sayfa dizini/site haritası) git geçmişinde. **Net kazanç: anasayfa ~2 MB daha hafif.**
+- ✅ **ÇÖZÜLDÜ (2026-07-02) — Görsel lazy-load:** ürün kartı görsellerine `loading="lazy" decoding="async" width/height` eklendi (`ej-supabase.js` `cardHTML`; zaten `aspect-ratio:3/4` vardı → CLS iyileşir). Ayrıca arama sonucu küçük resmi + sepet paneli görselleri (`ej.js`) lazy yapıldı.
+- ✅ **ÇÖZÜLDÜ (2026-07-02) — "Font çift yükleme" (aslında ölü yük):** Yerel `_ds/.../fonts.css` **Playfair + Jost** yüklüyordu; oysa site fontu **Spectral** (`--serif`, Google Fonts) — Playfair/Jost'u yalnızca kaldırılan Tweaks paneli kullanıyordu (o da Google Fonts'tan dinamik çekiyor). Yani yerel `fonts.css` **tüm sayfalarda ölü yüktü** (7 woff2 boşa). `fonts.css` `<link>`'i **21 HTML'nin hepsinden** kaldırıldı. Google Fonts Spectral zaten `preconnect` + `display=swap` ile geliyor.
+- ✅ **ÇÖZÜLDÜ (2026-07-02) — supabase-js pin + preconnect:** CDN sürümü `@2` (kayan) → `@2.110.0` sabitlendi (`ej-supabase.js` dinamik yükleyici + 3 admin sayfası). `cdn.jsdelivr.net`'e preconnect eklendi: içerik sayfalarında `ej-supabase.js` parse edilir edilmez link enjekte ediliyor (tek nokta, tüm sayfalar); admin sayfalarına statik `<link rel="preconnect">`.
+- ⏳ **Kalan — minify/gzip:** `ej.css` (33KB), `ej.js` (20KB), `ej-chat.js` (35KB) hâlâ minify değil. Statik site + build yok; sunucu tarafı gzip/brotli veya ileride bir build adımı önerilir.
 
 **Sağlamlık**
-- Hata izleme (Sentry vb.) yok — şu an sadece `console.error`.
-- Edge Function'lara yapılandırılmış loglama + rate limit.
-- Otomatik test yok.
+- ✅ **ÇÖZÜLDÜ (2026-07-02) — Yapılandırılmış loglama + rate limit:** ham `console.error` yerine istek başına tek-satır-JSON logger (`_shared/log.ts`, `request_id`+`elapsed_ms`, PII yazmaz). Tüm Edge Function'lar bağlı (`create-order`, `paytr-token`, `paytr-callback`, `submit-form`, `track-order`, `order-email`; `chat` farklı ağaçta olduğundan aynı biçimli yerleşik `chatLog` kullanır). IP rate-limit ortak modüle (`_shared/rate-limit.ts`) toplandı; sipariş için `fn_rate_limit` (create-order+paytr-token ORTAK, 10/60dk — yalnız başarıyla açılan sipariş sayılır), form (3–5/60dk), takip (15/10dk).
+- ✅ **ÇÖZÜLDÜ (2026-07-02) — Hata izleme (iki katman):** **(a) Sunucu/Sentry:** logger `error` seviyesinde `SENTRY_DSN` tanımlıysa olayı Sentry'ye iletir (`_shared/sentry.ts`); `EdgeRuntime.waitUntil` ile arka planda, fail-soft (gönderim akışı bozmaz), PII göndermez; DSN yoksa atlanır. **(b) İstemci (tarayıcı):** `ej.js` başındaki EJMonitor `window.onerror`+`unhandledrejection`'ı yakalar → YENİ `log-error` Edge Function (20/saat/IP + sayfa başına 8) → `client_errors` tablosu (yazma yalnız service_role, okuma yalnız admin). Aktivasyon: `backend/saglamlik-kurulum.md`.
+- ✅ **ÇÖZÜLDÜ (2026-07-02) — Otomatik test (iki takım):** **(a) Node** (`tests/*.test.mjs`, `npm test`, bağımlılıksız; `--experimental-strip-types` ile `.ts` modüllerini import eder) — **41 test yerelde koşuldu, geçiyor:** util (sipariş no sözleşmesi, telefon normalize, origin allowlist), rate-limit (pencere/karar, sahte DB, fail-closed), log+sentry (JSON biçimi, yalnız `error` Sentry'ye), order-email (fail-soft, XSS escape) + frontend tutarlılığı (JS söz dizimi, `EJ_CATALOG`↔`schema.sql` tohum eşitliği, EJMonitor kurulu mu, `ej.js?v=` sürüm tutarlılığı). **(b) Deno** (`_shared/*_test.ts`, `deno task test`) — Edge çalışma zamanına en yakın doğrulama; bu makinede Deno yok, CI için hazır.
+- ✅ **BONUS — Sipariş no tutarsızlığı (testler yazılırken bulundu):** `paytr-token` 12 haneli sipariş no üretiyordu, `track-order` yalnız 11 haneliyi kabul ediyordu → **kart ile ödeyen misafir siparişini takip edemiyordu**. Üretim `_shared/util.ts` → `makeOrderNo`'da tekilleştirildi (11 hane, create-order/schema ile aynı); `track-order` eski 12 haneli kart siparişlerini de kabul eder (`isValidOrderNo`).
 
 ---
 
 ## Geliştirilmesi Gerekenler (öncelik sırasıyla)
 
 1. ~~COD/havale fiyat doğrulamasını sunucuya taşı (🔴).~~ ✅ Yapıldı — `create-order` Edge Function + RLS kilidi.
-2. Admin sipariş yönetimi ekranı (kalan) + ~~sipariş e-posta bildirimi~~ ✅ (Resend, `create-order` + `paytr-callback`, `_shared/order-email.ts`).
-3. Spam koruması (Captcha/rate limit) — ~~bülten, iletişim~~ ✅ (honeypot + IP hız sınırı, `submit-form`); ~~chat~~ ✅ (origin kilidi + IP hız sınırı, `chat_rate_limit`); **kalan: sipariş rate-limit**.
+2. ~~Admin sipariş yönetimi ekranı~~ ✅ (`admin-siparisler.html`) + ~~sipariş e-posta bildirimi~~ ✅ (Resend, `create-order` + `paytr-callback`, `_shared/order-email.ts`).
+3. ~~Spam koruması (Captcha/rate limit)~~ ✅ — ~~bülten, iletişim~~ (honeypot + IP hız sınırı, `submit-form`); ~~chat~~ (origin kilidi + IP hız sınırı, `chat_rate_limit`); ~~sipariş~~ (`fn_rate_limit`, create-order+paytr-token 10/60dk).
 4. Eksik SQL'i repoya ekle, admin RLS'i doğrula.
 5. SEO paketi (meta/OG/favicon/JSON-LD/sitemap) + Analytics.
 6. ~~Misafir sipariş takibi~~ ✅ (`track-order` + `siparis-takip.html`) + site içi arama (kalan).

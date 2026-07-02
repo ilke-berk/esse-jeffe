@@ -5,6 +5,16 @@
    - window.EJData ile ürün verisi sunar
    - [data-ej-grid] taşıyan kapsayıcıları ürün kartlarıyla doldurur
    ============================================================ */
+
+// cdn.jsdelivr.net'e erken bağlan (supabase-js buradan yüklenir) — bağlantı ısıtma
+(function () {
+  try {
+    var pc = document.createElement('link');
+    pc.rel = 'preconnect'; pc.href = 'https://cdn.jsdelivr.net';
+    document.head.appendChild(pc);
+  } catch (e) {}
+})();
+
 (function () {
   var cfg = window.EJ_CONFIG || {};
   if (!cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) {
@@ -46,7 +56,7 @@
   function cardHTML(p) {
     var tag = p.badge ? '<span class="tag">' + esc(p.badge) + '</span>' : '';
     var media = p.image
-      ? '<img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">'
+      ? '<img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" loading="lazy" decoding="async" width="900" height="1200" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">'
       : PH_SVG;
     var dots = p.colors.map(function (c) {
       return '<span style="background:' + esc(c.hex) + '" title="' + esc(c.name) + '"></span>';
@@ -522,7 +532,7 @@
   if (window.supabase && window.supabase.createClient) { init(); }
   else {
     var s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0';
     s.onload = init;
     s.onerror = function () { console.error('[EJ] Supabase SDK yüklenemedi (internet?).'); };
     document.head.appendChild(s);

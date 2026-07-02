@@ -47,16 +47,22 @@
   var pollMisses = 0;         // ard arda yeni mesaj getirmeyen poll (idle backoff)
   var starting = false, sending = false;
   var startErr = null;        // konuşma başlatılamazsa (ör. kota) gösterilecek mesaj
+  var resumeTried = null;     // sunucudan konuşma devralma denemesi (tek seferlik promise)
   var sendQueue = [];         // canlı destekte yazılan mesajlar düşmesin diye sıra
   var userMsgCount = 0;       // temsilci bağlantısını ne zaman göstereceğimiz için
 
   // insan gibi gönderim (AI modu): kullanıcı ard arda yazarsa mesajları HEMEN
   // API'ye göndermeyip birleştir → tek Gemini çağrısı. Daha az maliyet (bot spam'i
-  // bile tek konuşmada tek çağrıya iner) + daha doğal akış. Bu pencere içinde yeni
-  // mesaj gelirse bekleme sıfırlanır. NOT: gerçek güvenlik sınırı sunucuda olmalı
-  // (edge function'da origin kilidi + IP/oturum hız sınırı + günlük konuşma kotası);
-  // buradaki birleştirme yalnızca dürüst kullanıcı için maliyet/UX iyileştirmesidir.
-  var COALESCE_MS = 1200;
+  // bile tek konuşmada tek çağrıya iner) + daha doğal akış. Kullanıcılar çoğu zaman
+  // tek soruyu parça parça (2-3 ayrı mesaj) yazdığı için pencereyi 10 sn tutuyoruz:
+  // her mesajdan sonra 10 sn beklenir; bu süre içinde yeni mesaj gelirse timer
+  // baştan 10 sn'ye döner (scheduleFlush timer'ı sıfırlar). Böylece kullanıcı
+  // yazmayı bitirince tek, bütün bir cevap gelir; "yazıyor…" göstergesi de ancak
+  // bekleme dolup gerçekten API'ye gidince belirir (daha insansı). NOT: gerçek
+  // güvenlik sınırı sunucuda olmalı (edge function'da origin kilidi + IP/oturum
+  // hız sınırı + günlük konuşma kotası); buradaki birleştirme yalnızca dürüst
+  // kullanıcı için maliyet/UX iyileştirmesidir.
+  var COALESCE_MS = 10000;
   var burst = [];             // henüz gönderilmemiş kullanıcı satırları
   var burstRow = null;        // bu satırları biriktiren tek 'pending' balon
   var coalesceTimer = null;
@@ -300,7 +306,14 @@
     dotEl.style.display = 'none';
     // Konuşma YOKSA otomatik başlatma: karşılama/seçim ekranı görünür kalsın.
     // Konuşma ancak kullanıcı bir çipe tıklayınca ya da mesaj yazınca başlar.
+    // İstisna: girişli kullanıcının sunucuda süren bir konuşması varsa devral
+    // (farklı cihaz/tarayıcıdan kaldığı yerden devam).
     if (conv && conv.id) { poll(); startPolling(); }
+    else {
+      resumeIfPossible().then(function () {
+        if (conv && conv.id && panel.classList.contains('open')) { poll(); startPolling(); }
+      });
+    }
     setTimeout(function () { textEl.focus(); }, 80);
   }
   // uyarlanabilir yoklama: duruma göre bir sonraki aralığı seç (bkz. POLL_* sabitleri)
@@ -335,8 +348,12 @@
   }
   function askEnd() { confirmEl.classList.add('on'); }
   function endChat() {
-    // konuşmayı yerelde sıfırla: bir sonraki açılış temiz başlar
+    // sunucuda kapat (closed → resume ile geri gelmez) + yerelde sıfırla
     closeCardPayment();
+    if (conv && conv.id) {
+      api('end', { conversation_id: conv.id, visitor_token: conv.token }).catch(function () {});
+    }
+    resumeTried = Promise.resolve();   // kullanıcı bilinçli sonlandırdı: bu sayfa ömründe devralma yok
     conv = null; save(null);
     seen = {}; lastTs = '1970-01-01'; status = 'ai'; userMsgCount = 0; pollMisses = 0;
     burst = []; burstRow = null; sendQueue = [];
@@ -376,12 +393,17 @@
     if (starting) return Promise.resolve();
     starting = true;
     startErr = null;
-    return prefill().then(function (info) {
-      return api('start', { name: info.name, email: info.email, user_id: info.user_id, page: location.pathname });
-    }).then(function (res) {
-      if (res && res.conversation_id) { conv = { id: res.conversation_id, token: res.visitor_token }; save(conv); }
-      else if (res && res.error) { startErr = res.message || 'Sohbet şu an başlatılamadı, lütfen biraz sonra tekrar deneyin.'; }
-      starting = false;
+    // önce girişli kullanıcının önceki konuşmasını devralmayı dene (farklı cihaz/tarayıcı)
+    return resumeIfPossible().then(function () {
+      if (conv && conv.id) { starting = false; return; }
+      return prefill().then(function (info) {
+        // user_id gönderilmez; backend girişli kullanıcıyı access_token (JWT) ile doğrular
+        return api('start', { name: info.name, email: info.email, access_token: info.access_token, page: location.pathname });
+      }).then(function (res) {
+        if (res && res.conversation_id) { conv = { id: res.conversation_id, token: res.visitor_token }; save(conv); }
+        else if (res && res.error) { startErr = res.message || 'Sohbet şu an başlatılamadı, lütfen biraz sonra tekrar deneyin.'; }
+        starting = false;
+      });
     }).catch(function () { starting = false; });
   }
 
@@ -392,13 +414,43 @@
         return EJData.auth.session().then(function (s) {
           if (s && s.user) {
             var md = s.user.user_metadata || {};
-            return { name: md.full_name || null, email: s.user.email || null, user_id: s.user.id };
+            return { name: md.full_name || null, email: s.user.email || null, access_token: s.access_token || null };
           }
           return {};
         }).catch(function () { return {}; });
       }
     } catch (e) {}
     return Promise.resolve({});
+  }
+
+  // girişli kullanıcının JWT'si; girişli değilse null
+  function userToken() {
+    try {
+      if (window.EJData && EJData.auth && EJData.auth.session) {
+        return EJData.auth.session().then(function (s) {
+          return (s && s.access_token) ? s.access_token : null;
+        }).catch(function () { return null; });
+      }
+    } catch (e) {}
+    return Promise.resolve(null);
+  }
+
+  // Girişli kullanıcının son konuşmasını sunucudan devral (localStorage boşsa:
+  // farklı cihaz, farklı tarayıcı ya da temizlenmiş depolama). Sayfa ömründe
+  // bir kez denenir; sonuç ne olursa olsun aynı promise paylaşılır ki
+  // openPanel ile ensureConv yarışıp iki konuşma açmasın.
+  function resumeIfPossible() {
+    if (conv || resumeTried) return resumeTried || Promise.resolve();
+    resumeTried = userToken().then(function (jwt) {
+      if (!jwt || conv) return;
+      return api('resume', { access_token: jwt }, 15000).then(function (res) {
+        if (res && res.conversation_id && res.visitor_token && !conv) {
+          conv = { id: res.conversation_id, token: res.visitor_token };
+          save(conv);
+        }
+      });
+    }).catch(function () {});
+    return resumeTried;
   }
 
   function doSend() {
@@ -485,6 +537,17 @@
         if (res && res.error) {
           showTyping(false);
           addMsg('sys', res.message || 'Şu an yanıt veremiyorum, lütfen biraz sonra tekrar deneyin.', null, null);
+          if (res.error === 'conv_limit') {
+            // konuşma mesaj sınırına ulaştı: sunucuda kapat + yerelde sıfırla.
+            // Kullanıcının SONRAKİ mesajı otomatik olarak yeni bir konuşma açar
+            // (girişliyse özet hafıza yeni konuşmaya taşınır).
+            var full = conv;
+            conv = null; save(null);
+            resumeTried = Promise.resolve();
+            if (full && full.id) {
+              api('end', { conversation_id: full.id, visitor_token: full.token }).catch(function () {});
+            }
+          }
           scrollDown();
           return;
         }
@@ -612,14 +675,7 @@
 
   // girişliyse kullanıcı JWT'si (sipariş hesaba bağlansın), değilse anon key
   function getAuthToken() {
-    try {
-      if (window.EJData && EJData.auth && EJData.auth.session) {
-        return EJData.auth.session().then(function (s) {
-          return (s && s.access_token) ? s.access_token : cfg.SUPABASE_KEY;
-        }).catch(function () { return cfg.SUPABASE_KEY; });
-      }
-    } catch (e) {}
-    return Promise.resolve(cfg.SUPABASE_KEY);
+    return userToken().then(function (t) { return t || cfg.SUPABASE_KEY; });
   }
 
   // kart ödemesi: mevcut paytr-token fonksiyonu siparişi (pending) oluşturur + token döner

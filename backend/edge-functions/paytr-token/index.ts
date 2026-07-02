@@ -19,25 +19,19 @@
 //  kötü niyetli bir client kullanıcıyı başka bir siteye yönlendiremez.
 // ============================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createLogger, errMsg } from "../_shared/log.ts";
+import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
+import { canonVariant, clientIp, makeOrderNo, parseOriginList, resolveOrigin } from "../_shared/util.ts";
 
 // ok/fail yönlendirmesi için izinli origin'ler (client kontrolüne bırakılmaz)
-const ALLOWED_ORIGINS = (Deno.env.get("PAYTR_ALLOWED_ORIGINS") ||
-  Deno.env.get("SITE_URL") ||
-  "https://essejeffe.com,https://www.essejeffe.com")
-  .split(",").map((s) => s.trim().replace(/\/+$/, "")).filter(Boolean);
+const ALLOWED_ORIGINS = parseOriginList(
+  Deno.env.get("PAYTR_ALLOWED_ORIGINS") ||
+    Deno.env.get("SITE_URL") ||
+    "https://essejeffe.com,https://www.essejeffe.com",
+);
 
-function isAllowedOrigin(o: string): boolean {
-  if (!o) return false;
-  if (ALLOWED_ORIGINS.includes(o)) return true;
-  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o); // yerel geliştirme
-}
-
-// Client'ın gönderdiği origin allowlist'teyse onu, değilse ilk izinli origin'i döndür.
-function resolveOrigin(clientOrigin: unknown): string {
-  const o = String(clientOrigin || "").trim().replace(/\/+$/, "");
-  if (isAllowedOrigin(o)) return o;
-  return ALLOWED_ORIGINS[0] || "";
-}
+// IP başına sipariş/ödeme başlatma sınırı (create-order ile ORTAK 'order' sayacı).
+const ORDER_RATE = { table: "fn_rate_limit", kind: "order", max: 10, windowMin: 60 };
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -74,19 +68,10 @@ async function hmacB64(message: string, key: string): Promise<string> {
   return b64(new Uint8Array(sig));
 }
 
-function orderNo(): string {
-  const d = new Date();
-  const ymd =
-    String(d.getUTCFullYear()).slice(2) +
-    String(d.getUTCMonth() + 1).padStart(2, "0") +
-    String(d.getUTCDate()).padStart(2, "0");
-  const rnd = Math.floor(Math.random() * 1e6).toString().padStart(6, "0");
-  return "EJ" + ymd + rnd; // yalnız harf+rakam → PayTR merchant_oid kuralına uygun
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST bekleniyor" }, 405);
+  const log = createLogger("paytr-token", req);
 
   // --- PayTR anahtarları (yoksa sipariş bile oluşturma) ---
   const MID = Deno.env.get("PAYTR_MERCHANT_ID");
@@ -108,7 +93,7 @@ Deno.serve(async (req) => {
   }
   const form = payload?.form ?? {};
   const items = Array.isArray(payload?.items) ? payload.items : [];
-  const origin = resolveOrigin(payload?.origin);
+  const origin = resolveOrigin(payload?.origin, ALLOWED_ORIGINS);
 
   // --- temel doğrulama ---
   if (!items.length) return json({ error: "Sepet boş" }, 400);
@@ -126,6 +111,18 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
+  // --- IP başına hız sınırı (sipariş spam'i / ödeme başlatma istismarı) ---
+  const ip = clientIp(req);
+  const rl = await checkRateLimit(admin, { ...ORDER_RATE, ip });
+  if (rl.error) {
+    log.error("rate_limit_db_error", { ip, detail: rl.error });
+    return json({ error: "Sunucu hatası." }, 500);
+  }
+  if (!rl.allowed) {
+    log.warn("rate_limited", { ip, count: rl.count });
+    return json({ error: "Çok fazla deneme. Lütfen bir süre sonra tekrar deneyin." }, 429);
+  }
+
   // --- girişli kullanıcıyı (varsa) çöz ---
   let userId: string | null = null;
   const authz = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
@@ -138,10 +135,13 @@ Deno.serve(async (req) => {
   const slugs = [...new Set(items.map((it: any) => String(it.id || "")))].filter(Boolean);
   const { data: products, error: pErr } = await admin
     .from("products")
-    .select("id, slug, name, price, model_desc")
+    .select("id, slug, name, price, model_desc, sizes, product_colors(name)")
     .in("slug", slugs)
     .eq("active", true);
-  if (pErr) return json({ error: "Ürünler okunamadı: " + pErr.message }, 500);
+  if (pErr) {
+    log.error("products_read_error", { ip, detail: pErr.message });
+    return json({ error: "Ürünler okunamadı. Lütfen tekrar deneyin." }, 500);
+  }
   const bySlug = new Map((products || []).map((p: any) => [p.slug, p]));
 
   let subtotal = 0;
@@ -151,6 +151,12 @@ Deno.serve(async (req) => {
     const p: any = bySlug.get(String(it.id));
     if (!p) return json({ error: "Geçersiz veya pasif ürün: " + (it.name || it.id) }, 400);
     const qty = Math.max(1, parseInt(it.qty, 10) || 1);
+    // Renk/bedeni ürünün gerçek listesine sabitle: uydurma varyant ("M ", "m")
+    // reserve_stock_bulk'ta satır bulamayıp "takipsiz → sınırsız" sayılırdı.
+    const color = canonVariant(it.color, (p.product_colors || []).map((c: any) => c.name));
+    const size = canonVariant(it.size, p.sizes);
+    if (color === null) return json({ error: "Geçersiz renk seçimi: " + p.name }, 400);
+    if (size === null) return json({ error: "Geçersiz beden seçimi: " + p.name }, 400);
     const line = p.price * qty;
     subtotal += line;
     basket.push([p.name, Number(p.price).toFixed(2), qty]);
@@ -158,8 +164,8 @@ Deno.serve(async (req) => {
       product_id: p.id,
       product_name: p.name,
       model_desc: p.model_desc || null,
-      color: it.color || null,
-      size: it.size || null,
+      color: color || null,
+      size: size || null,
       unit_price: p.price,
       qty,
     });
@@ -180,14 +186,18 @@ Deno.serve(async (req) => {
   }));
   const restoreStock = () =>
     admin.rpc("restore_stock_bulk", { p_items: reserveItems })
-      .then(({ error }) => { if (error) console.error("[paytr-token] stok iadesi:", error.message); })
-      .catch((e) => console.error("[paytr-token] stok iadesi:", (e as Error).message));
+      .then(({ error }) => { if (error) log.error("stock_restore_error", { detail: error.message }); })
+      .catch((e) => log.error("stock_restore_error", { detail: errMsg(e) }));
 
   const { data: reserve, error: rErr } = await admin.rpc("reserve_stock_bulk", {
     p_items: reserveItems,
   });
-  if (rErr) return json({ error: "Stok kontrol edilemedi: " + rErr.message }, 500);
+  if (rErr) {
+    log.error("stock_check_error", { ip, detail: rErr.message });
+    return json({ error: "Stok kontrol edilemedi. Lütfen tekrar deneyin." }, 500);
+  }
   if (reserve && reserve.ok === false) {
+    log.warn("out_of_stock", { ip, variant: reserve });
     return json(
       { error: "Üzgünüz, seçtiğiniz üründen yeterli stok kalmadı.", out_of_stock: reserve },
       409,
@@ -195,8 +205,11 @@ Deno.serve(async (req) => {
   }
 
   // --- siparişi oluştur (pending) ---
-  const oid = orderNo();
-  const { error: oErr } = await admin.from("orders").insert({
+  // NOT: makeOrderNo 11 haneli üretir (EJ+YYAAGG+5) — create-order ve
+  // schema.sql ile AYNI biçim. Eski yerel üreteç 12 haneliydi; bu yüzden
+  // kart siparişleri track-order'ın biçim kontrolüne takılıyordu.
+  const oid = makeOrderNo();
+  const { data: orderRow, error: oErr } = await admin.from("orders").insert({
     order_no: oid,
     status: "pending",
     user_id: userId,
@@ -213,17 +226,27 @@ Deno.serve(async (req) => {
     address: form.address,
     postal_code: form.postal_code || null,
     note: form.note || null,
-  });
-  if (oErr) {
+  }).select("id").single();
+  if (oErr || !orderRow?.id) {
+    log.error("order_insert_error", { ip, order_no: oid, detail: oErr?.message || "no_row" });
     await restoreStock();
-    return json({ error: "Sipariş oluşturulamadı: " + oErr.message }, 500);
+    return json({ error: "Sipariş oluşturulamadı. Lütfen tekrar deneyin." }, 500);
   }
 
-  const { data: orderRow } = await admin.from("orders").select("id").eq("order_no", oid).single();
-  if (orderRow?.id) {
-    const rows = orderItems.map((r) => ({ ...r, order_id: orderRow.id }));
-    await admin.from("order_items").insert(rows);
+  // Kalemler yazılamazsa devam ETME: müşteri kalemsiz sipariş için ödeme
+  // yapardı ve başarısız ödemede paytr-callback iade edecek kalem bulamayıp
+  // ayrılan stok kalıcı kaybolurdu. create-order ile aynı rollback deseni.
+  const rows = orderItems.map((r) => ({ ...r, order_id: orderRow.id }));
+  const { error: iErr } = await admin.from("order_items").insert(rows);
+  if (iErr) {
+    log.error("order_items_insert_error", { ip, order_no: oid, detail: iErr.message });
+    await admin.from("orders").delete().eq("id", orderRow.id);
+    await restoreStock();
+    return json({ error: "Sipariş kaydedilemedi. Lütfen tekrar deneyin." }, 500);
   }
+
+  // sipariş açıldı → hız sınırı sayacına ekle (create-order ile ortak kota)
+  await recordRateLimit(admin, ORDER_RATE.table, ip, ORDER_RATE.kind);
 
   // --- PayTR token ---
   const userIp =
@@ -268,15 +291,18 @@ Deno.serve(async (req) => {
     });
     ptr = await res.json();
   } catch (e) {
+    log.error("paytr_unreachable", { ip, order_no: oid, detail: errMsg(e) });
     await admin.from("orders").update({ payment_status: "failed" }).eq("order_no", oid);
     await restoreStock(); // ödeme başlatılamadı → stoğu geri ver
-    return json({ error: "PayTR'ye ulaşılamadı: " + (e as Error).message }, 502);
+    return json({ error: "Ödeme sağlayıcısına ulaşılamadı. Lütfen tekrar deneyin." }, 502);
   }
   if (ptr?.status !== "success") {
+    log.error("paytr_token_error", { ip, order_no: oid, detail: String(ptr?.reason || "bilinmiyor") });
     await admin.from("orders").update({ payment_status: "failed" }).eq("order_no", oid);
     await restoreStock(); // ödeme başlatılamadı → stoğu geri ver
-    return json({ error: "PayTR token hatası: " + (ptr?.reason || "bilinmiyor") }, 400);
+    return json({ error: "Ödeme başlatılamadı. Lütfen tekrar deneyin veya farklı bir ödeme yöntemi seçin." }, 400);
   }
 
+  log.info("payment_started", { ip, order_no: oid, total, item_count: orderItems.length });
   return json({ token: ptr.token, order_no: oid, total });
 });

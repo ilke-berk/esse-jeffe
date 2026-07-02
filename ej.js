@@ -1,4 +1,65 @@
 /* Esse Jeffe — paylaşılan JS */
+
+// ── Hata izleme (EJMonitor) ──────────────────────────────
+// Ziyaretçi tarayıcısında patlayan JS hatalarını log-error Edge
+// Function'ına raporlar → client_errors tablosunda birikir.
+// Sessiz çalışır: raporlama hatası kullanıcıyı asla etkilemez.
+// EJ_CONFIG yoksa (Supabase kapalı) hiçbir istek atmaz.
+(function () {
+  var MAX_PER_PAGE = 8;      // sayfa başına en çok rapor (döngüsel hata seli önlemi)
+  var sent = 0;
+  var seen = {};             // aynı hatayı bir kez gönder (mesaj+konum anahtarı)
+
+  function post(payload) {
+    try {
+      var cfg = window.EJ_CONFIG;
+      if (!cfg || !cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) return;
+      fetch(cfg.SUPABASE_URL + '/functions/v1/log-error', {
+        method: 'POST',
+        keepalive: true,     // sayfa kapanırken de gitsin
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + cfg.SUPABASE_KEY,
+          'apikey': cfg.SUPABASE_KEY
+        },
+        body: JSON.stringify(payload)
+      }).catch(function () {});
+    } catch (e) { /* raporlama asla sayfayı bozmaz */ }
+  }
+
+  function report(message, source, line, col, stack) {
+    message = String(message || '').slice(0, 500);
+    if (!message) return;
+    // Üçüncü parti/cross-origin script'lerin detaysız "Script error." gürültüsünü atla
+    if (message === 'Script error.' && !source) return;
+    var key = message + '|' + (source || '') + '|' + (line || 0);
+    if (seen[key] || sent >= MAX_PER_PAGE) return;
+    seen[key] = true;
+    sent++;
+    post({
+      message: message,
+      source: String(source || '').slice(0, 500),
+      line: line || null,
+      col: col || null,
+      stack: String(stack || '').slice(0, 3000),
+      url: location.pathname + location.search,
+      ua: navigator.userAgent.slice(0, 300)
+    });
+  }
+
+  window.addEventListener('error', function (e) {
+    // yalnız JS hataları; <img>/<script> kaynak yükleme hataları (e.message yok) atlanır
+    if (!e || !e.message) return;
+    report(e.message, e.filename, e.lineno, e.colno, e.error && e.error.stack);
+  });
+
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    if (r instanceof Error) report(r.message, null, null, null, r.stack);
+    else report('unhandledrejection: ' + String(r).slice(0, 300), null, null, null, null);
+  });
+})();
+
 (function () {
   // ── Name ticker ─────────────────────────────────────────
   const names = ['Pera', 'Asos', 'Efes', 'Karya', 'Likya', 'Side', 'Truva', 'Milet', 'Lidya'];
@@ -42,7 +103,7 @@
   if (bagOverlay) bagOverlay.addEventListener('click', closeBag);
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeBag(); });
   document.addEventListener('click', function(e){
-    if (bagPanel && bagPanel.classList.contains('open') && !bagPanel.contains(e.target) && !bagBtn.contains(e.target)) closeBag();
+    if (bagPanel && bagPanel.classList.contains('open') && !bagPanel.contains(e.target) && !(bagBtn && bagBtn.contains(e.target))) closeBag();
   });
 })();
 
@@ -258,7 +319,7 @@ function ejNorm(s) {
 
   function rowHTML(p) {
     var media = p.img
-      ? '<span class="sr-ph"><img src="' + ejEsc(p.img) + '" alt=""></span>'
+      ? '<span class="sr-ph"><img src="' + ejEsc(p.img) + '" alt="" loading="lazy" decoding="async"></span>'
       : '<span class="sr-ph">' + EJ_PH_SVG + '</span>';
     var price = (p.old ? '<span class="old">' + ejFmt(p.old) + '</span>' : '') + ejFmt(p.price);
     return '<a class="search-row" role="option" href="urun.html?slug=' + encodeURIComponent(p.slug) + '">' +
@@ -389,30 +450,34 @@ window.EJCart = (function () {
   }
 
   // ── render ──
+  // Sepet verisi localStorage'dan gelir ama kaynağı DB ürün adı/görseli
+  // (ürün sayfası DOM'u) — admin panelinden HTML içeren ürün adı girilirse
+  // stored XSS olurdu. Bu yüzden her alan ejEsc'ten geçer; color_hex yalnız
+  // #hex biçiminde kabul edilir (style attribute'una serbest metin girmesin).
   function swatch(it) {
     if (it.img) {
-      return '<div class="bag-img"><img src="' + it.img + '" alt="' + (it.name || '') + '"></div>';
+      return '<div class="bag-img"><img src="' + ejEsc(it.img) + '" alt="' + ejEsc(it.name || '') + '" loading="lazy" decoding="async"></div>';
     }
-    var c = it.color_hex || '#e7e1da';
+    var c = /^#[0-9a-fA-F]{3,8}$/.test(String(it.color_hex || '')) ? it.color_hex : '#e7e1da';
     return '<div class="bag-img"><span style="display:block;width:68px;height:90px;background:' + c + '"></span></div>';
   }
 
   function itemRow(it) {
     var k = lineKey(it);
     var meta = [];
-    if (it.color) meta.push(it.color);
-    if (it.size)  meta.push('Beden: ' + it.size);
+    if (it.color) meta.push(ejEsc(it.color));
+    if (it.size)  meta.push('Beden: ' + ejEsc(it.size));
     return '' +
-      '<div class="bag-item" data-key="' + k + '">' +
+      '<div class="bag-item" data-key="' + ejEsc(k) + '">' +
         swatch(it) +
         '<div class="bag-info">' +
-          '<div class="bag-name">' + (it.name || '') + '</div>' +
-          (it.desc ? '<div class="bag-meta">' + it.desc + '</div>' : '') +
+          '<div class="bag-name">' + ejEsc(it.name || '') + '</div>' +
+          (it.desc ? '<div class="bag-meta">' + ejEsc(it.desc) + '</div>' : '') +
           (meta.length ? '<div class="bag-meta">' + meta.join(' · ') + '</div>' : '') +
           '<div class="bag-qty-row">' +
             '<span class="bag-qty">' +
               '<button type="button" class="bag-step" data-step="-1" aria-label="Azalt">−</button>' +
-              '<b>' + it.qty + '</b>' +
+              '<b>' + (parseInt(it.qty, 10) || 0) + '</b>' +
               '<button type="button" class="bag-step" data-step="1" aria-label="Arttır">+</button>' +
               '<button type="button" class="bag-rm" aria-label="Kaldır">Kaldır</button>' +
             '</span>' +

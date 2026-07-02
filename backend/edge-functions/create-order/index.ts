@@ -14,6 +14,9 @@
 // ============================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendOrderEmails } from "../_shared/order-email.ts";
+import { createLogger, errMsg } from "../_shared/log.ts";
+import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
+import { canonVariant, clientIp, makeOrderNo } from "../_shared/util.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -27,19 +30,14 @@ const json = (body: unknown, status = 200) =>
     headers: { ...cors, "Content-Type": "application/json" },
   });
 
-function orderNo(): string {
-  const d = new Date();
-  const ymd =
-    String(d.getUTCFullYear()).slice(2) +
-    String(d.getUTCMonth() + 1).padStart(2, "0") +
-    String(d.getUTCDate()).padStart(2, "0");
-  const rnd = Math.floor(Math.random() * 1e5).toString().padStart(5, "0");
-  return "EJ" + ymd + rnd;
-}
+// IP başına sipariş oluşturma sınırı (paytr-token ile ORTAK 'order' sayacı).
+// Dürüst müşteri için bol; bot'un sahte COD siparişi yağdırmasını keser.
+const ORDER_RATE = { table: "fn_rate_limit", kind: "order", max: 10, windowMin: 60 };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST bekleniyor" }, 405);
+  const log = createLogger("create-order", req);
 
   let payload: any;
   try {
@@ -68,6 +66,18 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
+  // --- IP başına hız sınırı (sipariş spam'i / sahte COD savunması) ---
+  const ip = clientIp(req);
+  const rl = await checkRateLimit(admin, { ...ORDER_RATE, ip });
+  if (rl.error) {
+    log.error("rate_limit_db_error", { ip, detail: rl.error });
+    return json({ error: "Sunucu hatası." }, 500);
+  }
+  if (!rl.allowed) {
+    log.warn("rate_limited", { ip, count: rl.count });
+    return json({ error: "Çok fazla deneme. Lütfen bir süre sonra tekrar deneyin." }, 429);
+  }
+
   // --- girişli kullanıcıyı (varsa) çöz → sipariş hesapta görünsün ---
   let userId: string | null = null;
   const authz = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
@@ -81,10 +91,13 @@ Deno.serve(async (req) => {
   if (!slugs.length) return json({ error: "Geçersiz sepet." }, 400);
   const { data: products, error: pErr } = await admin
     .from("products")
-    .select("id, slug, name, price, model_desc")
+    .select("id, slug, name, price, model_desc, sizes, product_colors(name)")
     .in("slug", slugs)
     .eq("active", true);
-  if (pErr) return json({ error: "Ürünler okunamadı: " + pErr.message }, 500);
+  if (pErr) {
+    log.error("products_read_error", { ip, detail: pErr.message });
+    return json({ error: "Ürünler okunamadı. Lütfen tekrar deneyin." }, 500);
+  }
   const bySlug = new Map((products || []).map((p: any) => [p.slug, p]));
 
   let subtotal = 0;
@@ -93,13 +106,19 @@ Deno.serve(async (req) => {
     const p: any = bySlug.get(String(it.id));
     if (!p) return json({ error: "Geçersiz veya pasif ürün: " + (it.name || it.id) }, 400);
     const qty = Math.max(1, parseInt(it.qty, 10) || 1);
+    // Renk/bedeni ürünün gerçek listesine sabitle: uydurma varyant ("M ", "m")
+    // reserve_stock_bulk'ta satır bulamayıp "takipsiz → sınırsız" sayılırdı.
+    const color = canonVariant(it.color, (p.product_colors || []).map((c: any) => c.name));
+    const size = canonVariant(it.size, p.sizes);
+    if (color === null) return json({ error: "Geçersiz renk seçimi: " + p.name }, 400);
+    if (size === null) return json({ error: "Geçersiz beden seçimi: " + p.name }, 400);
     subtotal += p.price * qty;
     orderItems.push({
       product_id: p.id,
       product_name: p.name,
       model_desc: p.model_desc || null,
-      color: it.color || null,
-      size: it.size || null,
+      color: color || null,
+      size: size || null,
       unit_price: p.price,
       qty,
     });
@@ -120,8 +139,12 @@ Deno.serve(async (req) => {
   const { data: reserve, error: rErr } = await admin.rpc("reserve_stock_bulk", {
     p_items: reserveItems,
   });
-  if (rErr) return json({ error: "Stok kontrol edilemedi: " + rErr.message }, 500);
+  if (rErr) {
+    log.error("stock_check_error", { ip, detail: rErr.message });
+    return json({ error: "Stok kontrol edilemedi. Lütfen tekrar deneyin." }, 500);
+  }
   if (reserve && reserve.ok === false) {
+    log.warn("out_of_stock", { ip, variant: reserve });
     return json(
       { error: "Üzgünüz, seçtiğiniz üründen yeterli stok kalmadı.", out_of_stock: reserve },
       409,
@@ -131,11 +154,11 @@ Deno.serve(async (req) => {
   // Buradan sonra herhangi bir hata olursa ayrılan stoğu iade et.
   const restoreStock = () =>
     admin.rpc("restore_stock_bulk", { p_items: reserveItems })
-      .then(({ error }) => { if (error) console.error("[create-order] stok iadesi:", error.message); })
-      .catch((e) => console.error("[create-order] stok iadesi:", (e as Error).message));
+      .then(({ error }) => { if (error) log.error("stock_restore_error", { detail: error.message }); })
+      .catch((e) => log.error("stock_restore_error", { detail: errMsg(e) }));
 
   // --- siparişi oluştur ---
-  const oid = orderNo();
+  const oid = makeOrderNo();
   const { data: orderRow, error: oErr } = await admin
     .from("orders")
     .insert({
@@ -159,18 +182,23 @@ Deno.serve(async (req) => {
     .select("id")
     .single();
   if (oErr) {
+    log.error("order_insert_error", { ip, order_no: oid, detail: oErr.message });
     await restoreStock(); // sipariş açılamadı → ayrılan stoğu geri ver
-    return json({ error: "Sipariş oluşturulamadı: " + oErr.message }, 500);
+    return json({ error: "Sipariş oluşturulamadı. Lütfen tekrar deneyin." }, 500);
   }
 
   const rows = orderItems.map((r) => ({ ...r, order_id: orderRow.id }));
   const { error: iErr } = await admin.from("order_items").insert(rows);
   if (iErr) {
+    log.error("order_items_insert_error", { ip, order_no: oid, detail: iErr.message });
     // kalemler yazılamadıysa yarım siparişi ve ayrılan stoğu geri al
     await admin.from("orders").delete().eq("id", orderRow.id);
     await restoreStock();
-    return json({ error: "Sipariş kalemleri kaydedilemedi: " + iErr.message }, 500);
+    return json({ error: "Sipariş kaydedilemedi. Lütfen tekrar deneyin." }, 500);
   }
+
+  // başarı → hız sınırı sayacına ekle (yalnız gerçekten açılan siparişler sayılır)
+  await recordRateLimit(admin, ORDER_RATE.table, ip, ORDER_RATE.kind);
 
   // --- onay e-postası (müşteri + işletme) — fail-soft, siparişi bozmaz ---
   await sendOrderEmails({
@@ -195,7 +223,8 @@ Deno.serve(async (req) => {
       unit_price: r.unit_price,
       qty: r.qty,
     })),
-  }).catch((e) => console.error("[create-order] mail:", (e as Error).message));
+  }, log).catch((e) => log.error("mail_error", { order_no: oid, detail: errMsg(e) }));
 
+  log.info("order_created", { ip, order_no: oid, method, total, item_count: orderItems.length });
   return json({ order_no: oid, total });
 });

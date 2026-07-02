@@ -213,6 +213,42 @@ create table if not exists order_track_rate_limit (
 create index if not exists idx_otrl_ip_time on order_track_rate_limit(ip, created_at);
 create index if not exists idx_otrl_time on order_track_rate_limit(created_at);
 
+-- Genel amaçlı IP hız sınırı sayacı (kind ile ayrışır).
+-- Kullananlar: create-order + paytr-token (kind='order' — sipariş spam'i),
+-- log-error (kind='client_error' — hata raporu seli). Yalnız Edge Function'lar
+-- (service_role) yazar/okur; client erişimi yok. Yeni bir fonksiyona hız sınırı
+-- gerektiğinde yeni tablo açmak yerine buraya yeni bir kind eklenir.
+create table if not exists fn_rate_limit (
+  id         bigint generated always as identity primary key,
+  ip         text not null,
+  kind       text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_fnrl_ip_kind_time on fn_rate_limit(ip, kind, created_at);
+create index if not exists idx_fnrl_time on fn_rate_limit(created_at);
+
+-- ============================================================
+--  HATA İZLEME — istemci JS hataları
+--  ej.js (EJMonitor) tarayıcıda yakaladığı hataları log-error Edge
+--  Function'ına gönderir; fonksiyon (service_role) buraya yazar.
+--  Client insert'i YOK (RLS); okuma yalnız admin (is_admin()).
+--  Bakış: Supabase Dashboard → Table Editor → client_errors
+--  (veya SQL: select * from client_errors order by created_at desc limit 50)
+-- ============================================================
+create table if not exists client_errors (
+  id         bigint generated always as identity primary key,
+  message    text not null,
+  stack      text,
+  source     text,          -- hatanın çıktığı dosya/URL
+  line       integer,
+  col        integer,
+  url        text,          -- hatanın görüldüğü sayfa (path)
+  ua         text,          -- tarayıcı user-agent (kısaltılmış)
+  ip         text,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_cerr_time on client_errors(created_at desc);
+
 -- ============================================================
 --  CANLI DESTEK / SOHBET
 --  Ziyaretçi <-> AI (Gemini) <-> admin arası sohbet.
@@ -229,10 +265,14 @@ create table if not exists chat_conversations (
   visitor_email   text,
   page            text,                          -- konuşmanın başladığı sayfa
   unread_admin    boolean not null default false,-- admin için okunmamış var mı
+  summary         text,                          -- önceki görüşme(ler)den taşınan AI hafıza notu
   last_message_at timestamptz not null default now(),
   created_at      timestamptz not null default now()
 );
+alter table chat_conversations add column if not exists summary text;
 create index if not exists chat_conversations_updated_idx on chat_conversations(last_message_at desc);
+-- resume: girişli kullanıcının son konuşmasını hızlı bulmak için
+create index if not exists chat_conversations_user_idx on chat_conversations(user_id, last_message_at desc) where user_id is not null;
 
 create table if not exists chat_messages (
   id              uuid primary key default gen_random_uuid(),
@@ -259,6 +299,8 @@ alter table contact_messages       enable row level security;
 alter table form_rate_limit        enable row level security;
 alter table chat_rate_limit        enable row level security;
 alter table order_track_rate_limit enable row level security;
+alter table fn_rate_limit          enable row level security;
+alter table client_errors          enable row level security;
 alter table chat_conversations     enable row level security;
 alter table chat_messages          enable row level security;
 
@@ -472,6 +514,13 @@ drop policy if exists "iletişim mesajı bırak" on contact_messages;
 -- form_rate_limit: hiçbir client politikası yok → yalnız service_role erişir.
 -- chat_rate_limit: hiçbir client politikası yok → yalnız chat Edge Function (service_role) erişir.
 -- order_track_rate_limit: hiçbir client politikası yok → yalnız track-order Edge Function (service_role) erişir.
+-- fn_rate_limit: hiçbir client politikası yok → yalnız Edge Function'lar (service_role) erişir.
+
+-- İstemci hata kayıtları: yazma yalnız log-error Edge Function (service_role);
+-- okuma yalnız admin (ileride panelden hata listesi göstermek için).
+drop policy if exists client_errors_admin_read on client_errors;
+create policy client_errors_admin_read on client_errors
+  for select to authenticated using (is_admin());
 
 -- Sohbet: yalnızca admin doğrudan okuyup yönetir (panel + Realtime).
 -- Ziyaretçi tarafı chat Edge Function (service_role) üzerinden işler; bu yüzden
