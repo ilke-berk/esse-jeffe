@@ -17,6 +17,11 @@
 .pd-gallery-outer{position:relative}
 .pd-gallery{width:100%;display:flex;flex-direction:column;gap:4px}
 .pd-gallery::-webkit-scrollbar{display:none}
+/* masaüstü: galeri kendi içinde kayan bir bölge olur — mouse fotoların üstündeyse
+   fotolar kayar, değilse sayfa normal kayar. (mobilde normal akış) */
+@media(min-width:901px){
+  .pd-gallery{height:calc(100vh - var(--hh,60px));overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
+}
 .pg-dots{display:none}
 .pg-dot{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.5);border:none;padding:0;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.22);transition:background .3s,transform .3s}
 .pg-dot.active{background:rgba(255,255,255,.95);transform:scale(1.5)}
@@ -103,6 +108,28 @@
 .pd-sizes button{font-family:var(--sans);font-size:11.5px;letter-spacing:.08em;min-width:50px;padding:10px 12px;border:1px solid var(--line-strong);background:none;color:var(--ink);cursor:pointer;transition:background .2s,border-color .2s,color .2s}
 .pd-sizes button:hover{border-color:var(--ink)}
 .pd-sizes button.sel{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+/* beden seçme popup (modal) */
+.pd-modal-overlay{position:fixed;inset:0;background:rgba(20,18,15,.5);z-index:9997;display:flex;align-items:center;justify-content:center;padding:20px;animation:pdFade .2s ease}
+.pd-modal-overlay[hidden]{display:none}
+.pd-modal{background:var(--bg);max-width:480px;width:100%;padding:34px 30px 28px;position:relative;border:1px solid var(--line);box-shadow:0 30px 80px rgba(0,0,0,.28);animation:pdPop .26s cubic-bezier(.22,.61,.36,1);text-align:center}
+.pd-modal-close{position:absolute;top:13px;right:13px;background:none;border:none;cursor:pointer;color:var(--soft);padding:6px;line-height:0;border-radius:3px;transition:background .2s,color .2s}
+.pd-modal-close:hover{color:var(--ink);background:rgba(0,0,0,.05)}
+.pd-modal-close svg{width:20px;height:20px;stroke:currentColor;stroke-width:1.6;fill:none}
+.pd-modal h3{font-family:var(--serif);font-weight:300;font-size:24px;letter-spacing:.01em;color:var(--ink);line-height:1.2}
+.pd-modal-sub{font-size:13px;color:var(--soft);line-height:1.6;margin-top:8px}
+.pd-modal-sizes{display:flex;gap:8px;flex-wrap:nowrap;justify-content:center;margin:22px 0 20px}
+.pd-modal-sizes button{flex:0 0 auto;font-family:var(--sans);font-size:12px;letter-spacing:.06em;min-width:50px;padding:12px 10px;border:1px solid var(--line-strong);background:none;color:var(--ink);cursor:pointer;transition:background .2s,border-color .2s,color .2s}
+.pd-modal-sizes button:hover{border-color:var(--ink)}
+.pd-modal-sizes button.sel{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.pd-modal-help{background:none;border:none;font-family:var(--sans);font-size:11px;letter-spacing:.08em;color:#6e2c2c;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:0}
+.pd-modal-help:hover{color:var(--ink)}
+@keyframes pdFade{from{opacity:0}to{opacity:1}}
+@keyframes pdPop{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
+/* sepete ekleme animasyonu: ürün görseli köşedeki sepete küçülerek uçar */
+.ej-fly{position:fixed;z-index:9996;pointer-events:none;background-size:cover;background-position:center 20%;box-shadow:0 14px 34px rgba(20,18,15,.28);border-radius:4px;
+  transition:transform .8s cubic-bezier(.5,-0.15,.3,1),opacity .8s ease,border-radius .8s ease;will-change:transform,opacity}
+.icon.bag.ej-cart-bump{animation:ejCartBump .34s ease}
+@keyframes ejCartBump{0%{transform:none}40%{transform:scale(1.35)}100%{transform:none}}
 /* accordion */
 .pd-accordion{margin-top:28px;border-top:1px solid var(--line)}
 .pd-acc-item{border-bottom:1px solid var(--line)}
@@ -194,9 +221,8 @@
 
     <p class="pd-size-label">Beden <button class="size-guide-btn" id="sizeGuideBtn" type="button">Beden Rehberi →</button></p>
     <div class="pd-sizes">
-      <button type="button">XS</button>
       <button type="button">S</button>
-      <button type="button" class="sel">M</button>
+      <button type="button">M</button>
       <button type="button">L</button>
       <button type="button">XL</button>
       <button type="button">2XL</button>
@@ -297,7 +323,6 @@
     <table class="sg-table">
       <thead><tr><th>Beden</th><th>Göğüs</th><th>Bel</th><th>Kalça</th><th>Boy</th></tr></thead>
       <tbody>
-        <tr><td>XS</td><td>80–84</td><td>62–66</td><td>88–92</td><td>158–162</td></tr>
         <tr><td>S</td><td>84–88</td><td>66–70</td><td>92–96</td><td>160–164</td></tr>
         <tr><td>M</td><td>88–92</td><td>70–74</td><td>96–100</td><td>162–166</td></tr>
         <tr><td>L</td><td>92–96</td><td>74–78</td><td>100–104</td><td>164–168</td></tr>
@@ -339,7 +364,7 @@
 
 <script src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=8"></script>
+<script src="backend/ej-supabase.js?v=10"></script>
 <script>
 function ejInitFerris(){
   if (window.__ferrisInited) return;
@@ -461,6 +486,19 @@ if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
 }
 </script>
 
+<!-- Beden seçme popup (modal) -->
+<div class="pd-modal-overlay" id="sizeModal" hidden>
+  <div class="pd-modal" role="dialog" aria-modal="true" aria-labelledby="sizeModalTitle">
+    <button class="pd-modal-close" id="sizeModalClose" type="button" aria-label="Kapat">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </button>
+    <h3 id="sizeModalTitle">Lütfen bir beden seçin</h3>
+    <p class="pd-modal-sub">Sepete eklemek için önce bedeninizi seçin.</p>
+    <div class="pd-modal-sizes" id="sizeModalSizes"></div>
+    <button class="pd-modal-help" id="sizeModalHelp" type="button">Bedeninizden emin değil misiniz? Bize danışın →</button>
+  </div>
+</div>
+
 <!-- Sepet overlay + panel -->
 <div class="bag-overlay" id="bagOverlay"></div>
 <aside class="bag-panel" id="bagPanel" aria-label="Sepetim">
@@ -523,13 +561,74 @@ document.querySelectorAll('.pd-acc-btn').forEach(function(btn){
     btn.nextElementSibling.classList.toggle('open',!exp);
   });
 });
-// size selector (delegasyon — dinamik bedenlerde de çalışır)
+// beden seçici (delegasyon — dinamik bedenlerde de çalışır)
+function ejSelectSize(value){
+  document.querySelectorAll('.pd-sizes button').forEach(function(x){
+    x.classList.toggle('sel', x.textContent.trim() === value);
+  });
+}
 document.addEventListener('click',function(e){
   var b = e.target.closest('.pd-sizes button');
   if(!b) return;
-  document.querySelectorAll('.pd-sizes button').forEach(function(x){ x.classList.remove('sel'); });
-  b.classList.add('sel');
+  ejSelectSize(b.textContent.trim());
 });
+
+// Beden seçme popup (modal): beden seçmeden "Sepete Ekle"ye basılınca ej.js
+// 'ej:need-size' olayını yollar → burada modal açılır. Bedenler modalda listelenir;
+// modaldan seçilince gerçek beden işaretlenir, modal kapanır ve ürün sepete eklenir.
+(function(){
+  var modal   = document.getElementById('sizeModal');
+  var sizesEl = document.getElementById('sizeModalSizes');
+  var closeEl = document.getElementById('sizeModalClose');
+  var helpEl  = document.getElementById('sizeModalHelp');
+  if(!modal) return;
+
+  function open(){
+    // modaldaki bedenleri her açılışta gerçek beden listesinden üret (dinamik uyumlu)
+    var real = Array.prototype.slice.call(document.querySelectorAll('.pd-sizes button'));
+    sizesEl.innerHTML = '';
+    real.forEach(function(rb){
+      var s = rb.textContent.trim();
+      var mb = document.createElement('button');
+      mb.type = 'button';
+      mb.textContent = s;
+      if(rb.classList.contains('sel')) mb.classList.add('sel');
+      sizesEl.appendChild(mb);
+    });
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+  }
+  function shut(){
+    modal.hidden = true;
+    document.body.style.overflow = '';
+  }
+
+  document.addEventListener('ej:need-size', open);
+
+  // modalda beden seçimi → gerçek bedeni işaretle, kapat, sepete ekle
+  sizesEl.addEventListener('click', function(e){
+    var b = e.target.closest('button');
+    if(!b) return;
+    ejSelectSize(b.textContent.trim());
+    shut();
+    var addBtn = document.querySelector('.pd-actions .btn-solid');
+    if(addBtn) addBtn.click();   // beden artık seçili → ej.js ürünü sepete ekler
+  });
+
+  // "Bedeninizden emin değil misiniz?" → chat (yoksa beden rehberi, o da yoksa iletişim)
+  helpEl.addEventListener('click', function(){
+    shut();
+    var chat=document.getElementById('ejChatBtn');
+    if(chat){ chat.click(); return; }
+    var sg=document.getElementById('sizeGuideBtn');
+    if(sg){ sg.click(); return; }
+    window.location.href='iletisim.html';
+  });
+
+  closeEl.addEventListener('click', shut);
+  modal.addEventListener('click', function(e){ if(e.target === modal) shut(); });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape' && !modal.hidden) shut(); });
+})();
 // recently viewed
 function ejRecent(){
   var p = window.EJ_PRODUCT;
@@ -566,7 +665,7 @@ if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
   ejRecent();
 }
 </script>
-<script src="ej.js?v=6"></script>
+<script src="ej.js?v=8"></script>
 <script src="ej-chat.js?v=12"></script>
 </body>
 </html>

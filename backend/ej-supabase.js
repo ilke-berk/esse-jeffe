@@ -37,7 +37,7 @@
       slug: row.slug, name: row.name, model_desc: row.model_desc,
       description: row.description, price: row.price, old_price: row.old_price,
       badge: row.badge, category: row.category,
-      sizes: row.sizes || ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
+      sizes: row.sizes || ['S', 'M', 'L', 'XL', '2XL', '3XL'],
       image: primary, colors: colors, images: images
     };
   }
@@ -278,10 +278,12 @@
     // bedenler
     var sizesWrap = document.querySelector('.pd-sizes');
     if (sizesWrap && p.sizes && p.sizes.length) {
-      var defIdx = p.sizes.indexOf('M'); if (defIdx < 0) defIdx = 0;
-      sizesWrap.innerHTML = p.sizes.map(function (s, i) {
-        return '<button type="button"' + (i === defIdx ? ' class="sel"' : '') + '>' + esc(s) + '</button>';
-      }).join('');
+      // XS artık sunulmuyor (eski DB kayıtlarında kalmışsa diye ele) ve beden
+      // otomatik seçili gelmez; müşteri bilinçli olarak seçmeli
+      sizesWrap.innerHTML = p.sizes.filter(function (s) { return s !== 'XS'; })
+        .map(function (s) {
+          return '<button type="button">' + esc(s) + '</button>';
+        }).join('');
     }
 
     // renk karuseli kartları
