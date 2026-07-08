@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Giriş Yap — Esse Jeffe</title>
+<title>Yeni Şifre Belirle — Esse Jeffe</title>
+<meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -32,16 +33,15 @@
 <section class="sec wrap">
   <div class="auth-wrap">
     <div class="auth-card">
-      <h1>Giriş Yap</h1>
-      <p class="sub">Hesabına giriş yap; siparişlerini ve adreslerini yönet.</p>
-      <form id="loginForm" novalidate>
-        <div class="field"><label for="logEmail">E-posta</label><input id="logEmail" type="email" placeholder="ornek@eposta.com" autocomplete="email"></div>
-        <div class="field"><label for="logPass">Şifre</label><input id="logPass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
-        <div class="auth-row"><a id="forgotLink" href="#">Şifremi unuttum</a></div>
-        <button class="btn btn-solid" type="submit">Giriş Yap</button>
+      <h1>Yeni Şifre Belirle</h1>
+      <p class="sub">Hesabının güvenliği için yeni bir şifre oluştur.</p>
+      <form id="resetForm" novalidate>
+        <div class="field"><label for="newPass">Yeni Şifre</label><input id="newPass" type="password" placeholder="En az 8 karakter" autocomplete="new-password"></div>
+        <div class="field"><label for="newPass2">Yeni Şifre (Tekrar)</label><input id="newPass2" type="password" placeholder="••••••••" autocomplete="new-password"></div>
+        <button class="btn btn-solid" type="submit">Şifreyi Güncelle</button>
         <p class="auth-msg" id="authMsg"></p>
       </form>
-      <p class="auth-alt">Hesabın yok mu? <a href="kayit.html">Üye ol</a></p>
+      <p class="auth-alt">Sorun mu yaşıyorsun? <a href="giris.html">Giriş sayfasından yeni link iste</a></p>
     </div>
   </div>
 </section>
