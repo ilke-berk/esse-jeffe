@@ -1,0 +1,8 @@
+{
+  "name": "esse-jeffe",
+  "private": true,
+  "description": "Esse Jeffe abiye e-ticaret sitesi — statik frontend + Supabase backend. `npm test` Node'un yerleşik test runner'ı ile tests/ altındaki testleri çalıştırır (bağımlılık yok; Node 22+ yeterli).",
+  "scripts": {
+    "test": "node --experimental-strip-types --test \"tests/*.test.mjs\""
+  }
+}

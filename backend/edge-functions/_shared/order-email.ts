@@ -17,6 +17,13 @@
 //    SITE_URL            (opsiyonel) E-postadaki "hesabım" linki için taban URL.
 // ============================================================
 
+// Loglama için minimal arayüz (log.ts'teki Logger ile uyumlu). Verilmezse
+// console'a düşülür; böylece modül logger'sız da (ör. testte) çalışır.
+export interface EmailLogger {
+  warn(event: string, fields?: Record<string, unknown>): void;
+  error(event: string, fields?: Record<string, unknown>): void;
+}
+
 export interface OrderEmailItem {
   product_name: string;
   model_desc?: string | null;
@@ -243,11 +250,17 @@ async function sendViaResend(
  */
 export async function sendOrderEmails(
   o: OrderEmailData,
+  log?: EmailLogger,
 ): Promise<{ customer: boolean; business: boolean; skipped?: string }> {
+  const warn = (event: string, f?: Record<string, unknown>) =>
+    log ? log.warn(event, f) : console.warn("[order-email]", event, f || "");
+  const err = (event: string, f?: Record<string, unknown>) =>
+    log ? log.error(event, f) : console.error("[order-email]", event, f || "");
+
   const apiKey = Deno.env.get("RESEND_API_KEY");
   const from = Deno.env.get("ORDER_FROM_EMAIL");
   if (!apiKey || !from) {
-    console.warn("[order-email] RESEND_API_KEY / ORDER_FROM_EMAIL yok — gönderim atlandı.");
+    warn("email_skipped", { order_no: o.order_no, reason: "no-config" });
     return { customer: false, business: false, skipped: "no-config" };
   }
 
@@ -266,7 +279,7 @@ export async function sendOrderEmails(
       );
       result.customer = true;
     } catch (e) {
-      console.error("[order-email] müşteri maili başarısız:", (e as Error).message);
+      err("customer_email_failed", { order_no: o.order_no, detail: (e as Error).message });
     }
   }
 
@@ -284,7 +297,7 @@ export async function sendOrderEmails(
       );
       result.business = true;
     } catch (e) {
-      console.error("[order-email] işletme maili başarısız:", (e as Error).message);
+      err("business_email_failed", { order_no: o.order_no, detail: (e as Error).message });
     }
   }
 

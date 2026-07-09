@@ -14,6 +14,9 @@
 //  SUPABASE_URL ve SUPABASE_SERVICE_ROLE_KEY platform tarafından gelir.
 // ============================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createLogger } from "../_shared/log.ts";
+import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
+import { clientIp } from "../_shared/util.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -33,14 +36,10 @@ const LIMITS: Record<string, { max: number; windowMin: number }> = {
   contact: { max: 5, windowMin: 60 },
 };
 
-function clientIp(req: Request): string {
-  const xff = req.headers.get("x-forwarded-for") || "";
-  return xff.split(",")[0].trim() || "unknown";
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST bekleniyor" }, 405);
+  const log = createLogger("submit-form", req);
 
   let payload: any;
   try {
@@ -55,6 +54,7 @@ Deno.serve(async (req) => {
 
   // --- honeypot: gizli alan doluysa bot say, sessizce başarı dön ---
   if (String(payload?.hp || "").trim()) {
+    log.warn("honeypot_hit", { ip: clientIp(req), kind });
     return json({ ok: true });
   }
 
@@ -93,20 +93,15 @@ Deno.serve(async (req) => {
 
   // --- IP başına hız sınırı ---
   const ip = clientIp(req);
-  const cutoff = new Date(Date.now() - limit.windowMin * 60 * 1000).toISOString();
-
-  // eski kayıtları temizle (tablo şişmesin) — pencere dışı + 24s öncesi
-  await admin.from("form_rate_limit").delete().lt("created_at",
-    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-
-  const { count, error: cErr } = await admin
-    .from("form_rate_limit")
-    .select("id", { count: "exact", head: true })
-    .eq("ip", ip)
-    .eq("kind", kind)
-    .gte("created_at", cutoff);
-  if (cErr) return json({ error: "Sunucu hatası." }, 500);
-  if ((count ?? 0) >= limit.max) {
+  const rl = await checkRateLimit(admin, {
+    table: "form_rate_limit", ip, kind, max: limit.max, windowMin: limit.windowMin,
+  });
+  if (rl.error) {
+    log.error("rate_limit_db_error", { ip, kind, detail: rl.error });
+    return json({ error: "Sunucu hatası." }, 500);
+  }
+  if (!rl.allowed) {
+    log.warn("rate_limited", { ip, kind, count: rl.count });
     return json({ error: "Çok fazla deneme. Lütfen bir süre sonra tekrar deneyin." }, 429);
   }
 
@@ -117,11 +112,13 @@ Deno.serve(async (req) => {
       // bülten: e-posta zaten kayıtlı
       return json({ ok: true, already: true });
     }
+    log.error("insert_error", { ip, kind, detail: insErr.message });
     return json({ error: "Kaydedilemedi." }, 500);
   }
 
   // başarı → hız sınırı sayacına ekle
-  await admin.from("form_rate_limit").insert({ ip, kind });
+  await recordRateLimit(admin, "form_rate_limit", ip, kind);
 
+  log.info("form_saved", { ip, kind });
   return json({ ok: true });
 });

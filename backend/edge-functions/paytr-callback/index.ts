@@ -13,6 +13,7 @@
 // ============================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendOrderEmails } from "../_shared/order-email.ts";
+import { createLogger, errMsg } from "../_shared/log.ts";
 
 async function hmacB64(message: string, key: string): Promise<string> {
   const k = await crypto.subtle.importKey(
@@ -34,10 +35,14 @@ const fail = (msg: string) =>
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("POST bekleniyor", { status: 405 });
+  const log = createLogger("paytr-callback", req);
 
   const MKEY = Deno.env.get("PAYTR_MERCHANT_KEY");
   const MSALT = Deno.env.get("PAYTR_MERCHANT_SALT");
-  if (!MKEY || !MSALT) return fail("merchant anahtarları tanımlı değil");
+  if (!MKEY || !MSALT) {
+    log.error("missing_secrets");
+    return fail("merchant anahtarları tanımlı değil");
+  }
 
   // PayTR application/x-www-form-urlencoded gönderir
   const form = await req.formData();
@@ -52,7 +57,11 @@ Deno.serve(async (req) => {
 
   // --- imza doğrulama ---
   const calcHash = await hmacB64(merchantOid + MSALT + status + totalAmount, MKEY);
-  if (calcHash !== postedHash) return fail("bad hash");
+  if (calcHash !== postedHash) {
+    // sahte/oynanmış bildirim girişimi — izlemeye değer
+    log.warn("bad_hash", { order_no: merchantOid });
+    return fail("bad hash");
+  }
 
   const admin = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -67,13 +76,20 @@ Deno.serve(async (req) => {
     )
     .eq("order_no", merchantOid)
     .maybeSingle();
-  if (error) return fail("db: " + error.message);
-  if (!order) return fail("sipariş bulunamadı: " + merchantOid);
+  if (error) {
+    log.error("order_read_error", { order_no: merchantOid, detail: error.message });
+    return fail("db: " + error.message);
+  }
+  if (!order) {
+    log.error("order_not_found", { order_no: merchantOid });
+    return fail("sipariş bulunamadı: " + merchantOid);
+  }
 
   // idempotent: zaten işlenmişse tekrar dokunma (mail de tekrar gitmesin)
   if (order.payment_status === "paid") return ok();
 
   if (status === "success") {
+    log.info("payment_confirmed", { order_no: merchantOid, payment_type: paymentType });
     await admin
       .from("orders")
       .update({
@@ -104,8 +120,9 @@ Deno.serve(async (req) => {
       shipping_fee: order.shipping_fee,
       total: order.total,
       items: its || [],
-    }).catch((e) => console.error("[paytr-callback] mail:", (e as Error).message));
+    }, log).catch((e) => log.error("mail_error", { order_no: merchantOid, detail: errMsg(e) }));
   } else {
+    log.info("payment_failed", { order_no: merchantOid, reason: failReason || null });
     await admin
       .from("orders")
       .update({ payment_status: "failed", payment_ref: failReason || null })
@@ -129,7 +146,7 @@ Deno.serve(async (req) => {
         }));
       if (restore.length) {
         const { error: rErr } = await admin.rpc("restore_stock_bulk", { p_items: restore });
-        if (rErr) console.error("[paytr-callback] stok iadesi:", rErr.message);
+        if (rErr) log.error("stock_restore_error", { order_no: merchantOid, detail: rErr.message });
       }
     }
   }

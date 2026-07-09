@@ -1,0 +1,8 @@
+{
+  "tasks": {
+    "test": "deno test _shared/"
+  },
+  "fmt": {
+    "include": ["_shared/", "create-order/", "paytr-token/", "paytr-callback/", "submit-form/", "track-order/"]
+  }
+}

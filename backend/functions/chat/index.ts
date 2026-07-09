@@ -28,6 +28,17 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
 const WHATSAPP = "0850 255 12 37";
 
+// ---- yapılandırılmış log: tek satır JSON ----
+// Bu fonksiyon backend/functions/ ağacında olduğundan edge-functions/_shared
+// modülünü import edemez; aynı biçim (level/fn/event) burada yerleşiktir.
+// Dashboard log ekranında `"fn":"chat"` veya `"level":"error"` ile filtrelenir.
+function chatLog(level: "info" | "warn" | "error", event: string, fields?: Record<string, unknown>) {
+  const line = JSON.stringify({ level, fn: "chat", event, ...(fields || {}) });
+  if (level === "error") console.error(line);
+  else if (level === "warn") console.warn(line);
+  else console.log(line);
+}
+
 // ---- CORS: origin kilidi (maliyet istismarına karşı) ----
 // İzinli origin'leri CHAT_ALLOWED_ORIGINS secret'ında virgülle verin
 // (ör. "https://essejeffe.com,https://www.essejeffe.com"). Yerel geliştirme için
@@ -82,12 +93,14 @@ function clientIp(req: Request): string {
 const RATE_LIMITS: Record<string, { max: number; sec: number }[]> = {
   start: [{ max: 5, sec: 600 }, { max: 40, sec: 86400 }],    // 10 dk'da 5, günde 40 yeni konuşma
   send: [{ max: 20, sec: 60 }],                              // dakikada 20 (yalnız burst guard)
+  resume: [{ max: 10, sec: 60 }],                            // girişli kullanıcının konuşma devralması
 };
+type RateKind = keyof typeof RATE_LIMITS;
 // Tek bir konuşmada izin verilen kullanıcı mesajı (oturum sınırı; IP'den bağımsız).
 // Gerçek destek sohbeti ~30'u geçmez; 50'de nazikçe WhatsApp/temsilciye yönlendiririz.
 const CONV_SEND_MAX = 50;
 
-async function rateLimited(ip: string, kind: "start" | "send"): Promise<boolean> {
+async function rateLimited(ip: string, kind: RateKind): Promise<boolean> {
   for (const w of RATE_LIMITS[kind]) {
     const cutoff = new Date(Date.now() - w.sec * 1000).toISOString();
     const { count } = await admin
@@ -98,7 +111,7 @@ async function rateLimited(ip: string, kind: "start" | "send"): Promise<boolean>
   }
   return false;
 }
-async function rateHit(ip: string, kind: "start" | "send"): Promise<void> {
+async function rateHit(ip: string, kind: RateKind): Promise<void> {
   await admin.from("chat_rate_limit").insert({ ip, kind });
 }
 
@@ -204,8 +217,8 @@ OPERASYONEL NOTLAR:
 - Fiyat ve toplamı ASLA uydurma; sipariş tutarını sistem (create_order) hesaplar. Katalogdaki fiyatlar dışında rakam verme.
 
 SINIRLARIN (yalnız bunlarda temsilciye yönlendir):
-- Müşterinin MEVCUT/GEÇMİŞ bir siparişine özel konular: o siparişin durumu/kargo takip kodu, ödemesinde yaşanan arıza, kişisel iade/değişim talebinin BAŞLATILMASI ve onayı. Bunları sen çözemezsin (kişisel kayıtlara erişimin yok). Politikayı/koşulları açıklayabilirsin ama işlemi başlatamazsın.
-- Bu durumlarda ya da müşteri bir insanla görüşmek isterse: kibarca alt köşedeki "Temsilciye Bağlan" butonunu öner veya WhatsApp ${WHATSAPP} hattını (Pazartesi–Cumartesi 08:00–19:00) ver.
+- Müşterinin MEVCUT/GEÇMİŞ bir siparişine özel konular: o siparişin durumu/kargo takip kodu, ödemesinde yaşanan arıza, kişisel iade/değişim talebinin BAŞLATILMASI ve onayı. Bunları sen çözemezsin (kişisel kayıtlara erişimin yok). Politikayı/koşulları açıklayabilirsin ama işlemi başlatamazsın. NOT: Sipariş durumunu müşteri sitedeki "Sipariş Takip" sayfasından (sipariş no + telefon ile) kendisi de sorgulayabilir; bunu da söyleyebilirsin.
+- Bu durumlarda ya da müşteri bir insanla görüşmek isterse: kibarca WhatsApp ${WHATSAPP} hattını (Pazartesi–Cumartesi 08:00–19:00) ver. Sohbette "Temsilciye Bağlan" butonu YOKTUR; müşteriye buton önerme, yalnızca WhatsApp'a yönlendir.
 - Bilgi tabanında VE katalogda olmayan bir şeyi uydurma; gerçekten emin değilsen temsilciye yönlendir. Ama yukarıdaki bilgi tabanındaki her şeyi (beden, kargo, ödeme, değişim, iade, stok mantığı) BİZZAT ve net biçimde yanıtla — bunları temsilciye atma.`;
 }
 
@@ -282,6 +295,23 @@ type OrderResult = {
   order?: Record<string, unknown>; // widget'a iletilecek (kartta PayTR tetikler)
 };
 
+// _shared/util.ts'teki canonVariant ile aynı mantık — chat farklı deploy
+// ağacında (backend/functions) olduğundan _shared import edilemez.
+// Renk/bedeni ürünün GERÇEK listesine sabitler; uydurma varyant ("M ", "m")
+// reserve_stock_bulk'ta satır bulamayıp "takipsiz → sınırsız" sayılırdı.
+// "" = varyant seçilmemiş (geçerli), null = listede yok (reddet).
+function canonChatVariant(v: unknown, allowed: string[]): string | null {
+  const val = String(v ?? "").replace(/\s+/g, " ").trim();
+  if (!val) return "";
+  if (!allowed.length) return val;
+  const want = val.toLocaleLowerCase("tr");
+  for (const a of allowed) {
+    const c = String(a ?? "").replace(/\s+/g, " ").trim();
+    if (c && c.toLocaleLowerCase("tr") === want) return c;
+  }
+  return null;
+}
+
 // sohbetten gelen sipariş girdisini doğrula + DB kataloğundan çöz (fiyat client'tan ALINMAZ).
 // Hem create_order hem show_order_summary buradaki tek doğrulama/fiyatlama mantığını kullanır.
 type ResolvedOrder = {
@@ -322,24 +352,32 @@ function resolveOrder(input: any): { error?: string; data?: ResolvedOrder } {
     const p = matchProduct(it.product_name);
     if (!p) return { error: `HATA: "${it.product_name}" kataloğda bulunamadı. Müşteriye mevcut ürünleri öner ve doğru adı al.` };
     const qty = Math.max(1, parseInt(it.qty, 10) || 1);
+    const color = canonChatVariant(it.color, p.colors);
+    if (color === null) {
+      return { error: `HATA: "${p.name}" için "${it.color}" diye bir renk yok. Mevcut renkler: ${p.colors.join(", ") || "(tek renk)"}. Müşteriden geçerli bir renk al.` };
+    }
+    const size = canonChatVariant(it.size, p.sizes || []);
+    if (size === null) {
+      return { error: `HATA: "${p.name}" için "${it.size}" bedeni yok. Mevcut bedenler: ${(p.sizes || []).join(", ") || "(standart)"}. Müşteriden geçerli bir beden al.` };
+    }
     const line = p.price * qty;
     subtotal += line;
     orderItems.push({
       product_id: p.id, product_name: p.name, model_desc: p.model_desc || null,
-      color: it.color || null, size: it.size || null, unit_price: p.price, qty,
+      color: color || null, size: size || null, unit_price: p.price, qty,
     });
-    cartForPaytr.push({ id: p.slug, name: p.name, qty, color: it.color || null, size: it.size || null });
+    cartForPaytr.push({ id: p.slug, name: p.name, qty, color: color || null, size: size || null });
     // renge özel görsel varsa onu kullan, yoksa ürünün birincil görseli
     let image = p.image;
-    if (it.color) {
-      const ci = p.colorImages.find((c) => c.name.toLowerCase() === String(it.color).toLowerCase());
+    if (color) {
+      const ci = p.colorImages.find((c) => c.name.toLowerCase() === color.toLowerCase());
       if (ci) image = ci.url;
     }
     cardItems.push({
       name: p.name, model_desc: p.model_desc || null, image,
-      color: it.color || null, size: it.size || null, qty, unit_price: p.price, line_total: line,
+      color: color || null, size: size || null, qty, unit_price: p.price, line_total: line,
     });
-    summary.push(`${qty} x ${p.name}${it.size ? " (" + it.size + (it.color ? ", " + it.color : "") + ")" : it.color ? " (" + it.color + ")" : ""}`);
+    summary.push(`${qty} x ${p.name}${size ? " (" + size + (color ? ", " + color : "") + ")" : color ? " (" + color + ")" : ""}`);
   }
   const shipping = 0;
   const total = subtotal + shipping;
@@ -377,7 +415,7 @@ async function handleSummary(input: any): Promise<OrderResult> {
 }
 
 // create_order fonksiyonunu çalıştır
-async function handleCreateOrder(input: any, conv: any): Promise<OrderResult> {
+async function handleCreateOrder(input: any, conv: any, ip: string): Promise<OrderResult> {
   await loadCatalog();
   const { error, data } = resolveOrder(input);
   if (error || !data) return { message: error || "HATA: Sipariş oluşturulamadı." };
@@ -396,6 +434,41 @@ async function handleCreateOrder(input: any, conv: any): Promise<OrderResult> {
   }
 
   // ---- KAPIDA ÖDEME: siparişi service_role ile oluştur ----
+  // create-order Edge Function'daki korumaların aynısı burada da uygulanır
+  // (chat farklı deploy ağacında olduğundan o fonksiyon import edilemez):
+  // sipariş hız sınırı → stok ayır → sipariş + kalemler (hataya rollback).
+
+  // 1) IP başına sipariş hız sınırı — create-order/paytr-token ile ORTAK
+  //    fn_rate_limit 'order' sayacı (10/60dk). Chat, sahte COD için arka kapı olmasın.
+  const cutoff = new Date(Date.now() - 60 * 60000).toISOString();
+  const { count: recentOrders, error: rlErr } = await admin.from("fn_rate_limit")
+    .select("id", { count: "exact", head: true })
+    .eq("ip", ip).eq("kind", "order").gte("created_at", cutoff);
+  if (rlErr) {
+    chatLog("error", "cod_rate_limit_db_error", { detail: rlErr.message });
+    return { message: "HATA: Sipariş şu an alınamıyor (sistem hatası). Müşteriden özür dile, birazdan tekrar denemesini öner." };
+  }
+  if ((recentOrders ?? 0) >= 10) {
+    chatLog("warn", "cod_rate_limited", { ip, count: recentOrders });
+    return { message: `HATA: Bu müşteri kısa sürede çok fazla sipariş oluşturdu (hız sınırı). Kibarca daha sonra tekrar denemesini ya da WhatsApp ${WHATSAPP} hattından yazmasını söyle.` };
+  }
+
+  // 2) stok ayır (atomik RPC; yetmezse sipariş açılmaz → aşırı satış yok)
+  const reserveItems = orderItems.map((r) => ({
+    product_id: r.product_id, color: r.color || "", size: r.size || "", qty: r.qty,
+  }));
+  const restoreStock = () =>
+    admin.rpc("restore_stock_bulk", { p_items: reserveItems })
+      .then(({ error }) => { if (error) chatLog("error", "cod_stock_restore_error", { detail: error.message }); });
+  const { data: reserve, error: rsErr } = await admin.rpc("reserve_stock_bulk", { p_items: reserveItems });
+  if (rsErr) {
+    chatLog("error", "cod_stock_check_error", { detail: rsErr.message });
+    return { message: "HATA: Stok kontrol edilemedi (sistem hatası). Müşteriden özür dile, birazdan tekrar denemesini öner." };
+  }
+  if (reserve && (reserve as any).ok === false) {
+    return { message: "HATA: Seçilen üründen yeterli stok kalmadı. Müşteriye durumu nazikçe açıkla; farklı beden/renk ya da benzer başka bir ürün öner." };
+  }
+
   const oid = orderNo();
   const { data: orderRow, error: oErr } = await admin.from("orders").insert({
     order_no: oid, status: "pending", user_id: conv?.user_id || null,
@@ -406,12 +479,22 @@ async function handleCreateOrder(input: any, conv: any): Promise<OrderResult> {
     postal_code: form.postal_code, note: form.note,
   }).select("id").single();
   if (oErr || !orderRow) {
-    console.error("[chat] cod order insert", oErr);
-    return { message: "HATA: Sipariş kaydedilemedi (sistem hatası). Müşteriden özür dile ve birazdan tekrar denemesini ya da temsilciye bağlanmasını öner." };
+    chatLog("error", "cod_order_insert_error", { detail: oErr?.message });
+    await restoreStock();
+    return { message: `HATA: Sipariş kaydedilemedi (sistem hatası). Müşteriden özür dile ve birazdan tekrar denemesini ya da WhatsApp ${WHATSAPP} hattından yazmasını öner.` };
   }
   const rows = orderItems.map((r) => ({ ...r, order_id: orderRow.id }));
   const { error: iErr } = await admin.from("order_items").insert(rows);
-  if (iErr) console.error("[chat] cod order_items insert", iErr);
+  if (iErr) {
+    // kalemsiz sipariş bırakma: siparişi geri al + ayrılan stoğu iade et
+    chatLog("error", "cod_order_items_insert_error", { order_no: oid, detail: iErr.message });
+    await admin.from("orders").delete().eq("id", orderRow.id);
+    await restoreStock();
+    return { message: `HATA: Sipariş kaydedilemedi (sistem hatası). Müşteriden özür dile ve birazdan tekrar denemesini ya da WhatsApp ${WHATSAPP} hattından yazmasını öner.` };
+  }
+  await admin.from("fn_rate_limit").insert({ ip, kind: "order" });
+  // NOT: onay e-postası yalnız create-order/paytr-callback'ten gider
+  // (_shared/order-email.ts); chat ayrı ağaçta → burada e-posta YOK (bilinen eksik).
 
   return {
     message:
@@ -437,15 +520,19 @@ function toGeminiContents(rows: any[]) {
 
 type AiResult = { text: string; order?: Record<string, unknown> };
 
-async function askGemini(history: any[], conv: any): Promise<AiResult> {
+async function askGemini(history: any[], conv: any, ip: string): Promise<AiResult> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) {
-    return { text: `Yapay zekâ asistanı şu an yapılandırılmamış. Lütfen "Temsilciye Bağlan" butonuna basın veya WhatsApp ${WHATSAPP} hattından yazın.` };
+    return { text: `Yapay zekâ asistanı şu an yapılandırılmamış. Lütfen WhatsApp ${WHATSAPP} hattından yazın.` };
   }
   const contents = toGeminiContents(history);
   if (!contents.length) return { text: "Merhaba! Size nasıl yardımcı olabilirim?" };
   await loadCatalog();
-  const sys = systemPrompt(catalogText);
+  let sys = systemPrompt(catalogText);
+  // önceki görüşmelerden taşınan hafıza notu (start'ta üretilir, bkz. attachMemory)
+  if (conv?.summary) {
+    sys += `\n\nÖNCEKİ GÖRÜŞME NOTU (bu müşteriyle daha önce konuşuldu; bağlamı hatırla ve müşteri değinirse doğal biçimde devam et. Bu notu müşteriye okuma, kendiliğinden gündeme getirme):\n${conv.summary}`;
+  }
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
   let order: Record<string, unknown> | undefined;
@@ -462,8 +549,8 @@ async function askGemini(history: any[], conv: any): Promise<AiResult> {
       }),
     });
     if (!res.ok) {
-      console.error("[chat] Gemini hata", res.status, await res.text());
-      return { text: `Şu an yanıt veremiyorum. Lütfen "Temsilciye Bağlan" butonunu kullanın.`, order };
+      chatLog("error", "gemini_error", { status: res.status, detail: (await res.text()).slice(0, 300) });
+      return { text: `Şu an yanıt veremiyorum. Lütfen birazdan tekrar deneyin veya WhatsApp ${WHATSAPP} hattından yazın.`, order };
     }
     const data = await res.json();
     const cand = (data.candidates || [])[0];
@@ -474,7 +561,7 @@ async function askGemini(history: any[], conv: any): Promise<AiResult> {
       const fname = fcPart.functionCall.name;
       const result = fname === "show_order_summary"
         ? await handleSummary(fcPart.functionCall.args || {})
-        : await handleCreateOrder(fcPart.functionCall.args || {}, conv);
+        : await handleCreateOrder(fcPart.functionCall.args || {}, conv, ip);
       if (result.order) order = result.order;
       // modelin function-call turunu + bizim function-response'umuzu geçmişe ekle, tekrar sor
       contents.push({ role: "model", parts });
@@ -500,11 +587,77 @@ async function verify(conversationId: string, token: string) {
   if (!conversationId || !token) return null;
   const { data } = await admin
     .from("chat_conversations")
-    .select("id,status,visitor_name,visitor_email,user_id")
+    .select("id,status,visitor_name,visitor_email,user_id,summary")
     .eq("id", conversationId)
     .eq("visitor_token", token)
     .maybeSingle();
   return data;
+}
+
+// ---- kalıcı hafıza: önceki görüşmeyi özetleyip yeni konuşmaya not düş ----
+// Girişli kullanıcı yeni konuşma başlatınca, (varsa) son konuşmasından kısa bir
+// "hafıza notu" üretilir ve yeni konuşmanın summary alanına yazılır; askGemini
+// bunu system prompt'a ekler. Böylece "geçen sefer konuştuğumuz kırmızı elbise"
+// bağlamı cihazdan ve 30-mesaj penceresinden bağımsız taşınır.
+const MEMORY_LOOKBACK_MS = 90 * 24 * 3600 * 1000;   // 90 günden eski görüşme hatırlanmaz
+const RESUME_LOOKBACK_MS = 30 * 24 * 3600 * 1000;   // 30 günden eski konuşma devralınmaz (temiz başlar)
+
+async function summarizeConversation(convId: string, prevNote: string | null): Promise<string | null> {
+  const key = Deno.env.get("GEMINI_API_KEY");
+  if (!key) return null;
+  const { data: msgs } = await admin
+    .from("chat_messages").select("role,content")
+    .eq("conversation_id", convId)
+    .order("created_at", { ascending: false }).limit(40);
+  const rows = (msgs || []).reverse().filter((r) => r.role === "user" || r.role === "ai" || r.role === "agent");
+  if (!rows.some((r) => r.role === "user")) return prevNote; // müşteri hiç yazmadıysa özetlenecek şey yok
+  const transcript = rows
+    .map((r) => (r.role === "user" ? "Müşteri" : "Danışman") + ": " + r.content)
+    .join("\n").slice(0, 12000);
+  const prompt =
+    `Aşağıda Esse Jeffe (abiye e-ticaret) müşteri danışmanı ile bir müşteri arasındaki sohbet var.` +
+    (prevNote ? `\n\nDaha önceki görüşmelerden not: ${prevNote}` : "") +
+    `\n\nSONRAKİ görüşmede danışmanın hatırlaması gerekenleri EN FAZLA 3-4 kısa cümleyle özetle: ` +
+    `ilgilenilen ürün(ler) ve renk/beden tercihi, müşterinin adı (söylediyse), verilen kararlar, yarım kalan işler ` +
+    `(ör. sipariş verilmedi / onay bekliyor). Sohbette olmayan bilgi EKLEME. Özet dışında hiçbir şey yazma.` +
+    `\n\nSOHBET:\n${transcript}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 256, temperature: 0.2 },
+    }),
+  });
+  if (!res.ok) {
+    chatLog("warn", "summary_gemini_error", { status: res.status });
+    return prevNote;
+  }
+  const data = await res.json();
+  const text = ((data.candidates || [])[0]?.content?.parts || [])
+    .filter((p: { text?: string }) => typeof p.text === "string")
+    .map((p: { text: string }) => p.text).join("\n").trim();
+  return text ? text.slice(0, 1500) : prevNote;
+}
+
+async function attachMemory(newConvId: string, userId: string | null): Promise<void> {
+  if (!userId) return;
+  try {
+    const cutoff = new Date(Date.now() - MEMORY_LOOKBACK_MS).toISOString();
+    const { data: prev } = await admin
+      .from("chat_conversations")
+      .select("id,summary")
+      .eq("user_id", userId).neq("id", newConvId)
+      .gte("last_message_at", cutoff)
+      .order("last_message_at", { ascending: false })
+      .limit(1).maybeSingle();
+    if (!prev) return;
+    const note = await summarizeConversation(prev.id, prev.summary || null);
+    if (note) await admin.from("chat_conversations").update({ summary: note }).eq("id", newConvId);
+  } catch (e) {
+    chatLog("warn", "memory_attach_error", { detail: e instanceof Error ? e.message : String(e).slice(0, 200) });
+  }
 }
 
 Deno.serve(async (req) => {
@@ -532,23 +685,75 @@ Deno.serve(async (req) => {
       // tablo şişmesin: 25 saatten eski hız-sınırı kayıtlarını temizle (günlük pencere 24s)
       await admin.from("chat_rate_limit").delete()
         .lt("created_at", new Date(Date.now() - 25 * 3600 * 1000).toISOString());
+      // KVKK saklama süresi: 12 aydan eski konuşmaları sil (mesajlar cascade ile gider)
+      await admin.from("chat_conversations").delete()
+        .lt("last_message_at", new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString());
 
+      // user_id client beyanından ALINMAZ (başkasının hesabına konuşma/hafıza
+      // bağlanamasın); girişli kullanıcı access_token gönderir, JWT doğrulanır.
+      let startUserId: string | null = null;
+      const startJwt = String(body.access_token || "");
+      if (startJwt) {
+        const { data: u } = await admin.auth.getUser(startJwt);
+        startUserId = u?.user?.id || null;
+      }
       const ins = {
         status: "ai",
         visitor_name: (body.name || "").slice(0, 120) || null,
         visitor_email: (body.email || "").slice(0, 160) || null,
-        user_id: body.user_id || null,
+        user_id: startUserId,
         page: (body.page || "").slice(0, 200) || null,
       };
       const { data: conv, error } = await admin
         .from("chat_conversations").insert(ins).select("id,visitor_token").single();
       if (error) throw error;
       await rateHit(ip, "start");
+      // girişli kullanıcıysa önceki görüşmesinin özetini bu konuşmaya not düş.
+      // Yanıtı bekletmemek için arka planda (waitUntil); desteklenmiyorsa bekle.
+      const memTask = attachMemory(conv.id, ins.user_id);
+      const er = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
+      if (er?.waitUntil) er.waitUntil(memTask);
+      else await memTask;
       const greeting = "Merhaba, ben Esse Jeffe asistanı 👗 Abiye seçimi, beden, renk veya kargo gibi her konuda yardımcı olabilirim; dilerseniz sohbetin içinde siparişinizi de oluşturabilirim. Size nasıl yardımcı olabilirim?";
       await admin.from("chat_messages").insert({
         conversation_id: conv.id, role: "ai", content: greeting,
       });
       return json({ conversation_id: conv.id, visitor_token: conv.visitor_token }, 200, cors);
+    }
+
+    // ---- konuşmayı devral (girişli kullanıcı, farklı cihaz/tarayıcı) ----
+    // localStorage'da konuşma yoksa widget, kullanıcının Supabase JWT'siyle son
+    // konuşmasını ister. visitor_token YALNIZCA JWT sahibi konuşmanın sahibiyse döner.
+    if (action === "resume") {
+      if (await rateLimited(ip, "resume")) return json({ error: "rate" }, 429, cors);
+      await rateHit(ip, "resume");
+      const jwt = String(body.access_token || "");
+      if (!jwt) return json({ error: "unauthorized" }, 403, cors);
+      const { data: u } = await admin.auth.getUser(jwt);
+      const uid = u?.user?.id;
+      if (!uid) return json({ error: "unauthorized" }, 403, cors);
+      const cutoff = new Date(Date.now() - RESUME_LOOKBACK_MS).toISOString();
+      const { data: found } = await admin
+        .from("chat_conversations")
+        .select("id,visitor_token,status")
+        .eq("user_id", uid)
+        .neq("status", "closed")            // sonlandırılan görüşme geri açılmaz
+        .gte("last_message_at", cutoff)
+        .order("last_message_at", { ascending: false })
+        .limit(1).maybeSingle();
+      if (!found) return json({ conversation_id: null }, 200, cors);
+      return json({ conversation_id: found.id, visitor_token: found.visitor_token, status: found.status }, 200, cors);
+    }
+
+    // ---- görüşmeyi sonlandır (widget'taki "Evet" onayı) ----
+    // closed konuşma resume ile geri gelmez; kullanıcı bilinçli olarak temiz başlar.
+    if (action === "end") {
+      const conv = await verify(body.conversation_id, body.visitor_token);
+      if (!conv) return json({ error: "unauthorized" }, 403, cors);
+      await admin.from("chat_conversations")
+        .update({ status: "closed", last_message_at: new Date().toISOString() })
+        .eq("id", conv.id);
+      return json({ ok: true }, 200, cors);
     }
 
     // ---- mesaj gönder ----
@@ -567,7 +772,7 @@ Deno.serve(async (req) => {
         .select("id", { count: "exact", head: true })
         .eq("conversation_id", conv.id).eq("role", "user");
       if ((convMsgs ?? 0) >= CONV_SEND_MAX) {
-        return json({ error: "conv_limit", message: `Bu sohbet epey uzadı 🙂 Dilerseniz WhatsApp ${WHATSAPP} hattından ya da "Temsilciye Bağlan" ile devam edelim.` }, 429, cors);
+        return json({ error: "conv_limit", message: `Bu sohbet epey uzadı 🙂 Bir sonraki mesajınızla yeni bir sohbet başlatacağım; dilerseniz WhatsApp ${WHATSAPP} hattından da devam edebilirsiniz.` }, 429, cors);
       }
       await rateHit(ip, "send");
 
@@ -580,10 +785,13 @@ Deno.serve(async (req) => {
 
       // AI modundaysa hemen yanıt üret; canlı destekteyse operatör yanıtlar
       if (conv.status === "ai") {
+        // SON 30 mesaj (desc + reverse); asc+limit ilk 30'u alır ve uzun
+        // sohbette AI en yeni mesajları göremezdi.
         const { data: hist } = await admin
           .from("chat_messages").select("role,content")
-          .eq("conversation_id", conv.id).order("created_at").limit(30);
-        const { text: reply, order } = await askGemini(hist || [], conv);
+          .eq("conversation_id", conv.id)
+          .order("created_at", { ascending: false }).limit(30);
+        const { text: reply, order } = await askGemini((hist || []).reverse(), conv, ip);
         await admin.from("chat_messages").insert({
           conversation_id: conv.id, role: "ai", content: reply,
         });
@@ -623,7 +831,7 @@ Deno.serve(async (req) => {
 
     return json({ error: "unknown action" }, 400, cors);
   } catch (e) {
-    console.error("[chat] hata", e);
+    chatLog("error", "unhandled", { detail: e instanceof Error ? e.message : String(e).slice(0, 300) });
     return json({ error: "server" }, 500, cors);
   }
 });

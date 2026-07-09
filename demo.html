@@ -3,206 +3,478 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Esse Jeffe — Site Demo</title>
+<meta name="robots" content="noindex,nofollow">
+<title>Esse Jeffe — Tasarım Önizleme (demo)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/fonts/fonts.css">
+<link rel="stylesheet" href="ej.css?v=6">
 <style>
-:root{
-  --bg:#ffffff;
-  --bg-warm:#f5f5f5;
-  --ink:#1b1a17;
-  --muted:#8c887f;
-  --soft:#56534c;
-  --line:#e8e8e8;
-  --line-strong:#d4d4d4;
-  --serif:"Spectral",Georgia,serif;
-  --sans:"Helvetica Neue",Helvetica,Arial,sans-serif;
+/* ---------- hero — üç varyasyon ---------- */
+.hero-block{display:none}
+body[data-hero="full"] .hero-full{display:block}
+body[data-hero="split"] .hero-split{display:grid}
+body[data-hero="center"] .hero-center{display:flex}
+
+/* V1 — full-bleed */
+.hero-full{position:relative}
+.hero-full image-slot,.hero-full .ph,.hero-full img.hbg{display:block;width:100%;height:calc(100vh - var(--hh,44px));height:calc(100svh - var(--hh,44px));min-height:460px}
+.hero-full .ph{background:repeating-linear-gradient(45deg,#e0e0e0 0 14px,#ebebeb 14px 28px)}
+.hero-full::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(to top,rgba(20,18,15,calc(.72*var(--ov,1))) 0%,rgba(20,18,15,calc(.34*var(--ov,1))) 34%,rgba(20,18,15,0) 66%)}
+.hero-cap{position:absolute;left:40px;bottom:60px;max-width:640px;z-index:2;display:flex;flex-direction:column;align-items:flex-start}
+.hero-cap .label{color:rgba(255,255,255,.78);margin-bottom:14px;display:block}
+.hero-cap h1{font-family:var(--serif);font-weight:300;font-size:clamp(38px,4.8vw,70px);line-height:1.06;color:#fff;margin-bottom:42px;letter-spacing:.005em}
+.hero-cap h1 em{font-style:normal}
+
+/* shared hero link */
+.hero-link{display:inline-flex;align-items:center;gap:11px;color:#fff;font-size:12px;letter-spacing:.18em;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.55);padding-bottom:5px;transition:gap .3s ease,border-color .3s}
+.hero-link:hover{gap:18px;border-color:#fff}
+
+/* V2 — split */
+.hero-split{grid-template-columns:1.05fr 1fr;align-items:stretch;background:var(--bg-warm);border-bottom:1px solid var(--line)}
+.hero-split .txt{display:flex;flex-direction:column;justify-content:center;padding:96px 7vw}
+.hero-split .label{display:block;margin-bottom:20px}
+.hero-split h1{font-family:var(--serif);font-weight:300;font-size:clamp(40px,4.6vw,76px);line-height:1.02;margin-bottom:26px;letter-spacing:.005em}
+.hero-split h1 em{font-style:normal}
+.hero-split p{color:var(--soft);font-size:15px;line-height:1.75;max-width:420px;margin-bottom:32px}
+.hero-split .btn{align-self:flex-start}
+.hero-split image-slot,.hero-split .ph,.hero-split img.hbg{display:block;width:100%;height:100%;min-height:620px}
+.hero-split .ph{background:repeating-linear-gradient(45deg,#e0e0e0 0 14px,#ebebeb 14px 28px)}
+
+/* V3 — centered */
+.hero-center{position:relative;height:88vh;min-height:600px;align-items:center;justify-content:center;text-align:center}
+.hero-center image-slot,.hero-center .ph,.hero-center img.hbg{position:absolute;inset:0;width:100%;height:100%}
+.hero-block img.hbg{object-fit:cover;object-position:50% 18%}
+.hero-center .ph{background:repeating-linear-gradient(45deg,#d8d8d8 0 14px,#e4e4e4 14px 28px)}
+.hero-center::after{content:"";position:absolute;inset:0;background:rgba(20,18,15,calc(.42*var(--ov,1)))}
+.hero-center .cc{position:relative;z-index:2;max-width:760px;padding:0 24px}
+.hero-center .label{color:rgba(255,255,255,.82);margin-bottom:18px;display:block}
+.hero-center h1{font-family:var(--serif);font-weight:300;font-size:clamp(46px,6.4vw,92px);line-height:1.02;color:#fff;margin-bottom:30px;letter-spacing:.01em}
+.hero-center h1 em{font-style:normal}
+.hero-center .hero-link{margin:0 auto}
+
+@media(max-width:900px){
+  .hero-split{grid-template-columns:1fr}
+  .hero-split .txt{order:1;padding:60px 24px}
+  .hero-split image-slot,.hero-split .ph{min-height:440px}
+  .hero-full .hero-cap{left:24px;right:24px}
+  /* dar ekran: geniş çift-model foto ortadaki boşluğa kırpılmasın → sol modele odakla */
+  .hero-block img.hbg{object-position:27% 42%}
 }
-*{margin:0;padding:0;box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;min-height:100vh}
 
-.top{border-bottom:1px solid var(--line);background:rgba(255,255,255,.9);position:sticky;top:0;z-index:10;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-.top-in{max-width:1200px;margin:0 auto;padding:0 40px;height:50px;display:flex;align-items:center;gap:20px}
-.top-brand{font-family:var(--serif);font-size:17px;letter-spacing:.16em}
-.top-sep{width:1px;height:16px;background:var(--line-strong)}
-.top-label{font-size:9.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--muted)}
-.top-count{margin-left:auto;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
 
-.content{max-width:1200px;margin:0 auto;padding:56px 40px 96px}
 
-/* özellik şeridi */
-.features{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);margin-bottom:64px}
-.feat{background:var(--bg);padding:20px 22px;display:flex;flex-direction:column;gap:6px}
-.feat-icon{width:28px;height:28px;stroke:var(--muted);stroke-width:1.3;fill:none;flex-shrink:0}
-.feat-name{font-size:12.5px;letter-spacing:.02em;color:var(--ink)}
-.feat-desc{font-size:11px;color:var(--muted);line-height:1.5}
+/* minimal hero: sadece CTA kalsın */
+.hero-full .label,.hero-full .hero-h1,
+.hero-center .label,.hero-center .hero-h1,
+.hero-split .txt .label,.hero-split .txt .hero-h1,.hero-split .txt p{display:none}
 
-.group{margin-bottom:56px}
-.group-head{display:flex;align-items:baseline;gap:14px;margin-bottom:24px;padding-bottom:14px;border-bottom:1px solid var(--line)}
-.group-head h2{font-family:var(--serif);font-weight:300;font-size:clamp(20px,2.2vw,28px);letter-spacing:.01em}
-.group-head span{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--muted)}
+/* chat butonu: hero ekrandayken gizli, hero çıkınca gelir */
+.chat-fab{transition:opacity .3s ease,transform .3s ease,visibility .3s}
+body:not(.scrolled) .chat-fab{opacity:0;visibility:hidden;pointer-events:none;transform:translateY(12px)}
 
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
-.card{background:var(--bg);padding:24px 22px 20px;text-decoration:none;color:var(--ink);display:flex;flex-direction:column;gap:8px;transition:background .18s;position:relative}
-.card:hover{background:var(--bg-warm)}
-.card:hover .card-arrow{opacity:1;transform:translate(2px,-2px)}
-.card-num{font-size:9.5px;letter-spacing:.18em;color:var(--muted)}
-.card-name{font-family:var(--serif);font-weight:300;font-size:18px;line-height:1.1;letter-spacing:.01em}
-.card-file{font-size:10px;color:var(--muted);letter-spacing:.04em;margin-top:auto;padding-top:10px}
-.card-arrow{position:absolute;top:18px;right:18px;opacity:0;transition:opacity .18s,transform .18s;color:var(--muted)}
-.card-arrow svg{width:13px;height:13px;stroke:currentColor;stroke-width:1.5;fill:none}
+/* chat onay ekranı */
+.ej-confirm{position:absolute;inset:0;background:rgba(255,255,255,.97);display:none;flex-direction:column;align-items:center;justify-content:center;padding:32px 28px;text-align:center;z-index:10;backdrop-filter:blur(4px)}
+.ej-confirm.show{display:flex}
+.ej-confirm p{font-family:var(--serif);font-weight:300;font-size:19px;line-height:1.45;color:var(--ink);margin-bottom:28px;max-width:230px}
+.ej-confirm-btns{display:flex;flex-direction:column;gap:10px;width:100%}
+.ej-confirm-btns button{font-family:var(--sans);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;padding:14px;border:1px solid var(--ink);background:none;color:var(--ink);cursor:pointer;transition:background .25s,color .25s}
+.ej-confirm-btns button.yes{background:var(--ink);color:#fff;border-color:var(--ink)}
+.ej-confirm-btns button.yes:hover{background:#333}
+.ej-confirm-btns button.no:hover{background:var(--ink);color:#fff}
+
+/* tam ekran hero: görsel header'ın bittiği yerde başlar */
+body:not(.scrolled) .header{background:#FFFFFF;backdrop-filter:none;-webkit-backdrop-filter:none}
+body.scrolled .header{background:#FFFFFF}
 </style>
 </head>
-<body>
+<body data-hero="full">
 
-<header class="top">
-  <div class="top-in">
-    <span class="top-brand">ESSE JEFFE</span>
-    <span class="top-sep"></span>
-    <span class="top-label">Site Demo</span>
-    <span class="top-count">15 sayfa</span>
+<!-- announce -->
+
+
+<!-- header -->
+<header class="header">
+  <div class="header-in">
+    <nav class="nav">
+      <a href="index.html" aria-current="page">Ana Sayfa</a>
+      <a href="koleksiyon.html">Koleksiyon</a>
+      <a href="atolye.html">Hakkımızda</a>
+    <a href="iletisim.html">İletişim</a>
+    </nav>
+    <a class="brand" href="index.html">ESSE JEFFE</a>
+    <div class="tools">
+      <div class="name-ticker" aria-hidden="true"><span class="t-item"></span></div>
+      <button class="icon" aria-label="Ara"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></button>
+      <button class="icon" aria-label="Hesap"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M5 21c0-3.9 3.1-7 7-7s7 3.1 7 7"></path></svg></button>
+      <button class="icon bag" aria-label="Sepet"><svg viewBox="0 0 24 24"><path d="M6 8h12l-1 13H7L6 8z"></path><path d="M9 8V6a3 3 0 0 1 6 0v2"></path></svg><span class="count" style="display:none">0</span></button>
+    </div>
   </div>
 </header>
 
-<div class="content">
+<!-- ============ HERO — V1 full-bleed ============ -->
+<section class="hero-block hero-full" data-screen-label="Hero · Full">
+  <img class="hbg" src="img/hero-model.jpg" alt="" style="object-fit: cover; margin: 0px; border-radius: 10px; border-width: 0px; border-style: solid; padding: 0px">
+  <div class="hero-cap">
+    <span class="label">Esse Jeffe · 2026</span>
+    <h1 class="hero-h1">Davetin en şık hâli.</h1>
+    <a class="hero-link" href="koleksiyon.html">Koleksiyonu Keşfet
+      <svg width="22" height="10" viewBox="0 0 22 10" fill="none" stroke="currentColor" stroke-width="1.3"><line x1="0" y1="5" x2="20" y2="5"/><polyline points="16,1 21,5 16,9"/></svg>
+    </a>
+  </div>
+</section>
 
-  <!-- Güncel Özellikler -->
-  <section class="group">
-    <div class="group-head">
-      <h2>Güncel Özellikler</h2>
-    </div>
-    <div class="features">
-      <div class="feat">
-        <svg class="feat-icon" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
-        <span class="feat-name">Akıllı Header</span>
-        <span class="feat-desc">Aşağı kaydırırken kaybolur, yukarı kaydırırken geri gelir</span>
-      </div>
-      <div class="feat">
-        <svg class="feat-icon" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
-        <span class="feat-name">Sepet Paneli</span>
-        <span class="feat-desc">İkon tıklandığında açılan dropdown, Giriş / Üye Ol butonları</span>
-      </div>
-      <div class="feat">
-        <svg class="feat-icon" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
-        <span class="feat-name">Ürün Adı Ticker</span>
-        <span class="feat-desc">Header'da ürün isimleri yukarı kayarak değişir</span>
-      </div>
-      <div class="feat">
-        <svg class="feat-icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-        <span class="feat-name">Çerez Tercih Paneli</span>
-        <span class="feat-desc">İnteraktif toggle'lar, tercihler localStorage'a kaydedilir</span>
-      </div>
-      <div class="feat">
-        <svg class="feat-icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="9" x2="9" y2="21"></line></svg>
-        <span class="feat-name">Beden Tablosu</span>
-        <span class="feat-desc">Kilo–beden rehberi ve seçim notu</span>
-      </div>
-      <div class="feat">
-        <svg class="feat-icon" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
-        <span class="feat-name">Saf Beyaz Tema</span>
-        <span class="feat-desc">Tüm sayfalarda tek CSS değişkeni üzerinden uygulanan beyaz arka plan</span>
-      </div>
-    </div>
-  </section>
+<!-- ============ HERO — V2 split ============ -->
+<section class="hero-block hero-split" data-screen-label="Hero · Split">
+  <div class="txt">
+    <span class="label">Esse Jeffe · 2026</span>
+    <h1 class="hero-h1">Davetin en şık hâli.</h1>
+    <p>Modern kadınlar için özgün tasarım abiye ve davet elbiseleri. Kaliteli krep kumaş, güçlü siluet, çok renk seçeneği.</p>
+    <a class="btn btn-solid" href="koleksiyon.html">Koleksiyonu Keşfet</a>
+  </div>
+  <img class="hbg" src="img/hero-model.jpg" alt="">
+</section>
 
-  <!-- Ana Sayfalar -->
-  <section class="group">
-    <div class="group-head">
-      <h2>Ana Sayfalar</h2>
-      <span>9 sayfa</span>
-    </div>
-    <div class="grid">
-      <a class="card" href="index.html">
-        <span class="card-num">01</span><span class="card-name">Ana Sayfa</span>
-        <span class="card-file">index.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="koleksiyon.html">
-        <span class="card-num">02</span><span class="card-name">Koleksiyon</span>
-        <span class="card-file">koleksiyon.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="urun.html">
-        <span class="card-num">03</span><span class="card-name">Ürün Detayı</span>
-        <span class="card-file">urun.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="atolye.html">
-        <span class="card-num">04</span><span class="card-name">Hakkımızda</span>
-        <span class="card-file">atolye.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="hizmetler.html">
-        <span class="card-num">05</span><span class="card-name">Kargo &amp; Değişim</span>
-        <span class="card-file">hizmetler.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="sss.html">
-        <span class="card-num">06</span><span class="card-name">SSS</span>
-        <span class="card-file">sss.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="beden-rehberi.html">
-        <span class="card-num">07</span><span class="card-name">Beden Rehberi</span>
-        <span class="card-file">beden-rehberi.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="iletisim.html">
-        <span class="card-num">08</span><span class="card-name">İletişim</span>
-        <span class="card-file">iletisim.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="odeme.html">
-        <span class="card-num">09</span><span class="card-name">Ödeme Yöntemleri</span>
-        <span class="card-file">odeme.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-    </div>
-  </section>
+<!-- ============ HERO — V3 centered ============ -->
+<section class="hero-block hero-center" data-screen-label="Hero · Center">
+  <img class="hbg" src="img/hero-model.jpg" alt="">
+  <div class="cc">
+    <span class="label">Esse Jeffe · 2026</span>
+    <h1 class="hero-h1">Davetin en şık hâli.</h1>
+    <a class="hero-link" href="koleksiyon.html">Koleksiyonu Keşfet
+      <svg width="22" height="10" viewBox="0 0 22 10" fill="none" stroke="currentColor" stroke-width="1.3"><line x1="0" y1="5" x2="20" y2="5"/><polyline points="16,1 21,5 16,9"/></svg>
+    </a>
+  </div>
+</section>
 
-  <!-- Yasal -->
-  <section class="group">
-    <div class="group-head">
-      <h2>Yasal</h2>
-      <span>6 sayfa</span>
-    </div>
-    <div class="grid">
-      <a class="card" href="gizlilik.html">
-        <span class="card-num">10</span><span class="card-name">Gizlilik &amp; Güvenlik</span>
-        <span class="card-file">gizlilik.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="kvkk.html">
-        <span class="card-num">11</span><span class="card-name">KVKK</span>
-        <span class="card-file">kvkk.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="cerez-politikasi.html">
-        <span class="card-num">12</span><span class="card-name">Çerez Politikası</span>
-        <span class="card-file">cerez-politikasi.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="mesafeli-satis.html">
-        <span class="card-num">13</span><span class="card-name">Mesafeli Satış</span>
-        <span class="card-file">mesafeli-satis.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="iade-iptal.html">
-        <span class="card-num">14</span><span class="card-name">İade &amp; İptal</span>
-        <span class="card-file">iade-iptal.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-      <a class="card" href="on-bilgilendirme.html">
-        <span class="card-num">15</span><span class="card-name">Ön Bilgilendirme</span>
-        <span class="card-file">on-bilgilendirme.html</span>
-        <span class="card-arrow"><svg viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></span>
-      </a>
-    </div>
-  </section>
+<!-- values -->
+<section class="values">
+  <div class="values-in wrap">
+    <div><b>Ücretsiz Kargo</b><span>Tüm siparişlerde, aynı gün gönderim</span></div>
+    <div><b>Kapıda Ödeme</b><span>Güvenle, ürünü görerek öde</span></div>
+    <div><b>Kolay Değişim</b><span>Sorunsuz beden ve renk değişimi</span></div>
+  </div>
+</section>
 
+<!-- products -->
+<section class="sec wrap" id="koleksiyon">
+  <div class="sec-head">
+    <span class="label">Çok Satanlar</span>
+    <h2>2026 Abiye Koleksiyonu</h2>
+  </div>
+  <div class="grid" data-ej-grid="featured" data-limit="3">
+    <a class="card" href="urun.html">
+      <div class="frame">
+        <span class="tag">Çok Satan</span>
+        <div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+        
+      </div>
+      <div class="meta">
+        <h3>Pera</h3>
+        <p class="model-desc">Uzun Yırtmaçlı Krep Abiye</p>
+        <div class="dots"><span style="background:#6e2c2c" title="Bordo"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#1b1a17" title="Siyah"></span><span style="background:#b03030" title="Kırmızı"></span><span style="background:#26384a" title="Mavi"></span></div>
+        <div class="price"><span class="old">2.199 TL</span>1.699 TL</div>
+      </div>
+    </a>
+    <a class="card" href="koleksiyon.html">
+      <div class="frame">
+        <span class="tag">İndirim</span>
+        <div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+        
+      </div>
+      <div class="meta">
+        <h3>Karya</h3>
+        <p class="model-desc">V Yaka Fırfırlı Kol Krep Abiye</p>
+        <div class="dots"><span style="background:#26384a" title="Mavi"></span><span style="background:#b03030" title="Kırmızı"></span><span style="background:#1b1a17" title="Siyah"></span><span style="background:#6e2c2c" title="Bordo"></span><span style="background:#3c4a3a" title="Yeşil"></span></div>
+        <div class="price"><span class="old">1.599 TL</span>1.299 TL</div>
+      </div>
+    </a>
+    <a class="card" href="koleksiyon.html">
+      <div class="frame">
+        <span class="tag">Yeni</span>
+        <div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+        
+      </div>
+      <div class="meta">
+        <h3>Efes</h3>
+        <p class="model-desc">Kruvaze Drapeli Krep Abiye</p>
+        <div class="dots"><span style="background:#b03030" title="Kırmızı"></span><span style="background:#6e2c2c" title="Bordo"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#1b1a17" title="Siyah"></span><span style="background:#26384a" title="Mavi"></span></div>
+        <div class="price">1.499 TL</div>
+      </div>
+    </a>
+  </div>
+  <div class="shop-all"><a class="btn" href="koleksiyon.html">Tüm Abiyeler</a></div>
+</section>
+
+<!-- about split -->
+<section class="split warm" id="hakkimizda">
+  <img class="media" src="img/about.webp" alt="Esse Jeffe">
+  <div class="txt">
+    <span class="label">Hakkımızda</span>
+    <h2>Modern kadının abiyesi.</h2>
+    <p>Esse Jeffe; şıklığı ve zarafeti kaliteli kumaşlarla buluşturan, modern kadınlar için özgün tasarımlar sunan bir moda markasıdır.</p>
+    <p>Göz alıcı detaylar, güçlü siluetler ve rahatlıkla harmanlanan koleksiyonlarımız, her kadının kendini özel hissetmesini sağlar — hem de uygun fiyatlarla.</p>
+    <a class="btn" href="atolye.html">Hakkımızda</a>
+  </div>
+</section>
+
+<!-- lookbook duo -->
+<section class="duo wrap">
+  <div class="item">
+    <img class="media" src="img/showcase.webp" alt="">
+    <span class="label">Lookbook 01</span>
+    <h3>Gece</h3>
+  </div>
+  <div class="item">
+    <img class="media" src="img/bordo-firfir.jpg" alt="">
+    <span class="label">Lookbook 02</span>
+    <h3>Nişan & Kına</h3>
+  </div>
+</section>
+
+<!-- cta -->
+<section class="cta">
+  <h2>Her özel ana hazırsın.</h2>
+  <p>Modeli, rengi ve bedeni aklına takılan her şeyi WhatsApp'tan sor; seçiminde sana yardımcı olalım.</p>
+  <a class="btn-solid btn" href="iletisim.html">WhatsApp'tan Yaz</a>
+</section>
+
+<!-- newsletter -->
+<section class="news">
+  <span class="label">Bülten</span>
+  <h2>İndirim ve kampanyalardan ilk siz haberdar olun.</h2>
+  <form onsubmit="return false">
+    <input type="email" placeholder="E-posta adresiniz" aria-label="E-posta">
+    <div aria-hidden="true" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden">
+      <label>Web sitesi<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+    </div>
+    <button type="submit">Abone Ol</button>
+  </form>
+</section>
+
+<!-- footer -->
+<footer class="footer">
+  <div class="footer-in">
+    <div>
+      <div class="brand-f">ESSE JEFFE</div>
+      <p>Modern kadınlar için özgün tasarım abiye ve davet elbiseleri. Kaliteli kumaş, güçlü siluet, uygun fiyat.</p>
+      <div class="socials"><a href="https://www.instagram.com/esse_jeffe/">Instagram</a><a href="https://www.tiktok.com/@esse_jeffe">TikTok</a><a href="https://www.facebook.com/essejeffe.tr">Facebook</a></div>
+    </div>
+    <div><h4>Koleksiyon</h4><ul><li><a href="koleksiyon.html">Tüm Abiyeler</a></li><li><a href="koleksiyon.html">Yeni Gelenler</a></li><li><a href="koleksiyon.html">Çok Satanlar</a></li><li><a href="koleksiyon.html">İndirimdekiler</a></li></ul></div>
+    <div><h4>Yardım</h4><ul><li><a href="siparis-takip.html">Sipariş Takibi</a></li><li><a href="hizmetler.html">Kargo & Değişim</a></li><li><a href="iade-iptal.html">İade & İptal</a></li><li><a href="odeme.html">Ödeme Yöntemleri</a></li><li><a href="sss.html">SSS</a></li></ul></div>
+    <div><h4>Kurumsal</h4><ul><li><a href="kvkk.html">KVKK</a></li><li><a href="gizlilik.html">Gizlilik & Güvenlik</a></li><li><a href="cerez-politikasi.html">Çerez Politikası</a><span class="soon">yakında</span></li><li><a href="mesafeli-satis.html">Mesafeli Satış Sözleşmesi</a></li><li><a href="on-bilgilendirme.html">Ön Bilgilendirme Formu</a><span class="soon">yakında</span></li></ul></div>
+    <div><h4>İletişim</h4><ul><li><a href="mailto:info@essejeffe.com">info@essejeffe.com</a></li><li><a href="https://api.whatsapp.com/send?phone=%2B908502551237">WhatsApp: 0850 255 12 37</a></li><li><a href="https://www.instagram.com/esse_jeffe/">Instagram @esse_jeffe</a></li></ul></div>
+  </div>
+  <div class="footer-bottom">
+    <span>© 2026 Esse Jeffe · Tüm hakları saklıdır. <span style="opacity:.5;letter-spacing:.12em">by tragic</span></span>
+    <span><a href="gizlilik.html">Gizlilik</a> · <a href="mesafeli-satis.html">Mesafeli Satış</a> · <a href="kvkk.html">KVKK</a></span>
+  </div>
+</footer>
+
+<!-- chat -->
+<button class="chat-fab" id="chatFab" aria-label="Sohbeti aç"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg></button>
+<div class="ej-chat" id="ejChat">
+  <div class="ej-head">
+    <div class="ej-ava">EJ</div>
+    <div class="ej-head-info"><b>Esse Jeffe Destek</b><span><i class="ej-dot"></i> Çevrimiçi · WhatsApp ile hızlı yanıt</span></div>
+    <button class="ej-close" id="chatClose">&times;</button>
+  </div>
+  <div class="ej-body">
+    <div class="ej-msg bot">Merhaba, ben Esse Jeffe asistanı. Size nasıl yardımcı olabilirim?</div>
+    <div class="ej-msg user">Hangi bedeni seçmeliyim?</div>
+    <div class="ej-msg bot">Beden rehberimizden ölçülerinize bakabilir, emin olamazsanız WhatsApp'tan birebir yardım alabilirsiniz. Kapıda ödeme ve kolay değişim de mevcut.</div>
+  </div>
+  <div class="ej-quick"><button>Beden</button><button>Kargo</button><button>Değişim</button><button>Kapıda Ödeme</button></div>
+  <div class="ej-foot">
+    <input placeholder="Mesajınızı yazın...">
+    <button class="ej-send" aria-label="Gönder"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+  </div>
+  <div class="ej-confirm" id="ejConfirm">
+    <p>Konuşmayı sonlandırmak istediğinizden emin misiniz?</p>
+    <div class="ej-confirm-btns">
+      <button class="yes" id="confirmYes">Evet, sonlandır</button>
+      <button class="no" id="confirmNo">İptal</button>
+    </div>
+  </div>
 </div>
+
+<!-- çerez onay bandı (KVKK) -->
+<div class="cookiebar" id="cookiebar" role="dialog" aria-label="Çerez bildirimi">
+  <div class="cookiebar-in">
+    <p>Size daha iyi bir alışveriş deneyimi sunmak için çerezler kullanıyoruz. Sitemizi kullanmaya devam ederek <a href="cerez-politikasi.html">Çerez Politikası</a><span class="soon">yakında</span> ve <a href="gizlilik.html">Gizlilik Politikası</a>'nı kabul etmiş olursunuz.</p>
+    <div class="cb-actions">
+      <button type="button" class="cb-reject" id="cbReject">Reddet</button>
+      <button type="button" class="cb-accept" id="cbAccept">Kabul Et</button>
+    </div>
+  </div>
+</div>
+
+<div id="tweaks-root"></div>
+
+<!-- design system bundle (registers <image-slot>) -->
+<script src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
+
+<!-- çerez onayı -->
+<script>
+(function(){
+  var bar=document.getElementById('cookiebar');
+  if(!bar) return;
+  function set(v){ try{ localStorage.setItem('ej_cookie_consent', v); }catch(e){} bar.classList.remove('show'); }
+  var saved=null; try{ saved=localStorage.getItem('ej_cookie_consent'); }catch(e){}
+  if(!saved){ setTimeout(function(){ bar.classList.add('show'); }, 1200); }
+  document.getElementById('cbAccept').addEventListener('click',function(){ set('accepted'); });
+  document.getElementById('cbReject').addEventListener('click',function(){ set('rejected'); });
+})();
+</script>
+
+<!-- chat toggle -->
+<script>
+(function(){
+  var fab=document.getElementById('chatFab'),
+      chat=document.getElementById('ejChat'),
+      close=document.getElementById('chatClose'),
+      confirm=document.getElementById('ejConfirm'),
+      confirmYes=document.getElementById('confirmYes'),
+      confirmNo=document.getElementById('confirmNo');
+  function open(){ chat.classList.add('open'); fab.style.display='none'; confirm.classList.remove('show'); }
+  function shut(){ chat.classList.remove('open'); fab.style.display='grid'; confirm.classList.remove('show'); }
+  function askConfirm(){ confirm.classList.add('show'); }
+  fab.addEventListener('click', open);
+  close.addEventListener('click', askConfirm);
+  confirmYes.addEventListener('click', shut);
+  confirmNo.addEventListener('click', function(){ confirm.classList.remove('show'); });
+})();
+</script>
+
+<!-- Tweaks: hero varyasyonları -->
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel">
+const HERO_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "heroVariant": "full",
+  "headline": "",
+  "overlay": 0.9,
+  "fontPair": "margiela"
+}/*EDITMODE-END*/;
+
+var FONT_PAIRS = {
+  cormorant: { label: "Cormorant + Helvetica (mevcut)",
+    serif: '"Cormorant Garamond",Georgia,serif',
+    sans: '"Helvetica Neue",Helvetica,Arial,sans-serif',
+    google: "Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400" },
+  playfair: { label: "Playfair Display + Jost",
+    serif: '"Playfair Display",Georgia,serif',
+    sans: '"Jost",system-ui,sans-serif',
+    google: "Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&family=Jost:wght@300;400;500" },
+  bodoni: { label: "Bodoni Moda + Montserrat",
+    serif: '"Bodoni Moda",Georgia,serif',
+    sans: '"Montserrat",system-ui,sans-serif',
+    google: "Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;1,6..96,400&family=Montserrat:wght@300;400;500" },
+  marcellus: { label: "Marcellus + Jost",
+    serif: '"Marcellus",Georgia,serif',
+    sans: '"Jost",system-ui,sans-serif',
+    google: "Marcellus&family=Jost:wght@300;400;500" },
+  caslon: { label: "Libre Caslon + Mulish",
+    serif: '"Libre Caslon Display",Georgia,serif',
+    sans: '"Mulish",system-ui,sans-serif',
+    google: "Libre+Caslon+Display&family=Mulish:wght@300;400;500;600" },
+  margiela: { label: "Spectral (sade serif)",
+    serif: '"Spectral",Georgia,serif',
+    sans: '"Helvetica Neue",Helvetica,Arial,sans-serif',
+    google: "Spectral:wght@300;400;500;600" }
+};
+var _loadedFonts = {};
+function applyFonts(key){
+  var p = FONT_PAIRS[key] || FONT_PAIRS.cormorant;
+  if(p.google && !_loadedFonts[key]){
+    var l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=' + p.google + '&display=swap';
+    document.head.appendChild(l);
+    _loadedFonts[key] = true;
+  }
+  document.documentElement.style.setProperty('--serif', p.serif);
+  document.documentElement.style.setProperty('--sans', p.sans);
+}
+
+function applyHero(t){
+  document.body.setAttribute('data-hero', t.heroVariant);
+  document.documentElement.style.setProperty('--ov', String(t.overlay));
+  document.querySelectorAll('.hero-h1').forEach(function(el){
+    el.textContent = t.headline;
+  });
+}
+
+function HeroTweaks(){
+  const [t,setTweak] = useTweaks(HERO_DEFAULTS);
+  React.useEffect(function(){ applyHero(t); },[t.heroVariant,t.headline,t.overlay]);
+  React.useEffect(function(){ applyFonts(t.fontPair); },[t.fontPair]);
+  return (
+    <TweaksPanel title="Tweaks">
+      <TweakSection label="Tipografi" />
+      <TweakSelect label="Yazı tipi" value={t.fontPair}
+        options={Object.keys(FONT_PAIRS).map(function(k){ return { value:k, label:FONT_PAIRS[k].label }; })}
+        onChange={(v)=>setTweak('fontPair',v)} />
+      <TweakSection label="Hero" />
+      <TweakRadio label="Düzen" value={t.heroVariant}
+        options={['full','split','center']}
+        onChange={(v)=>setTweak('heroVariant',v)} />
+      <TweakText label="Başlık" value={t.headline}
+        onChange={(v)=>setTweak('headline',v)} />
+      <TweakSlider label="Görsel karartma" value={t.overlay} min={0} max={1.4} step={0.1}
+        onChange={(v)=>setTweak('overlay',v)} />
+    </TweaksPanel>
+  );
+}
+ReactDOM.createRoot(document.getElementById('tweaks-root')).render(<HeroTweaks/>);
+</script>
+
+<script>
+(function(){
+  function visibleHero(){
+    var hs = document.querySelectorAll('.hero-block'), v = null;
+    hs.forEach(function(el){ if(el.offsetParent !== null) v = el; });
+    return v;
+  }
+  function setHH(){ var hd=document.querySelector('.header'); if(hd) document.documentElement.style.setProperty('--hh', hd.offsetHeight+'px'); }
+  function onScroll(){
+    // sadece header/chat durumunu güncelle — otomatik snap kaldırıldı (doğal kaydırma)
+    var y = window.scrollY;
+    var h = visibleHero();
+    var hb = h ? h.getBoundingClientRect().bottom : 0;
+    var past = h ? (hb <= 10) : (y > 10);
+    document.body.classList.toggle('scrolled', past);
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+  window.addEventListener('resize', function(){ setHH(); onScroll(); });
+  setHH();
+  setTimeout(function(){ setHH(); onScroll(); }, 60);
+  onScroll();
+})();
+</script>
+
+<!-- Sepet overlay + panel -->
+<div class="bag-overlay" id="bagOverlay"></div>
+<aside class="bag-panel" id="bagPanel" aria-label="Sepetim">
+  <div class="bag-head">
+    <span class="bag-title">Sepetim</span>
+    <button class="bag-close" id="bagClose" aria-label="Kapat">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+    </button>
+  </div>
+  <div class="bag-empty-state">
+    <p>Sepetinize henüz ürün eklemediniz.</p>
+  </div>
+  <div class="bag-auth">
+    <a href="#">Giriş Yap</a>
+    <a href="#">Üye Ol</a>
+  </div>
+</aside>
+<script src="backend/supabase-config.js"></script>
+<script src="backend/ej-supabase.js?v=10"></script>
+<script src="ej.js?v=9"></script>
+<script src="ej-chat.js?v=14"></script>
 </body>
 </html>

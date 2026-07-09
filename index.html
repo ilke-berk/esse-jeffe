@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/fonts/fonts.css">
 <link rel="stylesheet" href="ej.css?v=6">
 <style>
 /* ---------- hero — üç varyasyon ---------- */
@@ -88,7 +87,7 @@ body:not(.scrolled) .header{background:#FFFFFF;backdrop-filter:none;-webkit-back
 body.scrolled .header{background:#FFFFFF}
 </style>
 </head>
-<body data-hero="full">
+<body data-hero="full" style="--ov:.9">
 
 <!-- announce -->
 
@@ -309,8 +308,6 @@ body.scrolled .header{background:#FFFFFF}
   </div>
 </div>
 
-<div id="tweaks-root"></div>
-
 <!-- design system bundle (registers <image-slot>) -->
 <script src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
 
@@ -346,90 +343,6 @@ body.scrolled .header{background:#FFFFFF}
 })();
 </script>
 
-<!-- Tweaks: hero varyasyonları -->
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
-<script type="text/babel" src="tweaks-panel.jsx"></script>
-<script type="text/babel">
-const HERO_DEFAULTS = /*EDITMODE-BEGIN*/{
-  "heroVariant": "full",
-  "headline": "",
-  "overlay": 0.9,
-  "fontPair": "margiela"
-}/*EDITMODE-END*/;
-
-var FONT_PAIRS = {
-  cormorant: { label: "Cormorant + Helvetica (mevcut)",
-    serif: '"Cormorant Garamond",Georgia,serif',
-    sans: '"Helvetica Neue",Helvetica,Arial,sans-serif',
-    google: "Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400" },
-  playfair: { label: "Playfair Display + Jost",
-    serif: '"Playfair Display",Georgia,serif',
-    sans: '"Jost",system-ui,sans-serif',
-    google: "Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&family=Jost:wght@300;400;500" },
-  bodoni: { label: "Bodoni Moda + Montserrat",
-    serif: '"Bodoni Moda",Georgia,serif',
-    sans: '"Montserrat",system-ui,sans-serif',
-    google: "Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;1,6..96,400&family=Montserrat:wght@300;400;500" },
-  marcellus: { label: "Marcellus + Jost",
-    serif: '"Marcellus",Georgia,serif',
-    sans: '"Jost",system-ui,sans-serif',
-    google: "Marcellus&family=Jost:wght@300;400;500" },
-  caslon: { label: "Libre Caslon + Mulish",
-    serif: '"Libre Caslon Display",Georgia,serif',
-    sans: '"Mulish",system-ui,sans-serif',
-    google: "Libre+Caslon+Display&family=Mulish:wght@300;400;500;600" },
-  margiela: { label: "Spectral (sade serif)",
-    serif: '"Spectral",Georgia,serif',
-    sans: '"Helvetica Neue",Helvetica,Arial,sans-serif',
-    google: "Spectral:wght@300;400;500;600" }
-};
-var _loadedFonts = {};
-function applyFonts(key){
-  var p = FONT_PAIRS[key] || FONT_PAIRS.cormorant;
-  if(p.google && !_loadedFonts[key]){
-    var l = document.createElement('link');
-    l.rel = 'stylesheet';
-    l.href = 'https://fonts.googleapis.com/css2?family=' + p.google + '&display=swap';
-    document.head.appendChild(l);
-    _loadedFonts[key] = true;
-  }
-  document.documentElement.style.setProperty('--serif', p.serif);
-  document.documentElement.style.setProperty('--sans', p.sans);
-}
-
-function applyHero(t){
-  document.body.setAttribute('data-hero', t.heroVariant);
-  document.documentElement.style.setProperty('--ov', String(t.overlay));
-  document.querySelectorAll('.hero-h1').forEach(function(el){
-    el.textContent = t.headline;
-  });
-}
-
-function HeroTweaks(){
-  const [t,setTweak] = useTweaks(HERO_DEFAULTS);
-  React.useEffect(function(){ applyHero(t); },[t.heroVariant,t.headline,t.overlay]);
-  React.useEffect(function(){ applyFonts(t.fontPair); },[t.fontPair]);
-  return (
-    <TweaksPanel title="Tweaks">
-      <TweakSection label="Tipografi" />
-      <TweakSelect label="Yazı tipi" value={t.fontPair}
-        options={Object.keys(FONT_PAIRS).map(function(k){ return { value:k, label:FONT_PAIRS[k].label }; })}
-        onChange={(v)=>setTweak('fontPair',v)} />
-      <TweakSection label="Hero" />
-      <TweakRadio label="Düzen" value={t.heroVariant}
-        options={['full','split','center']}
-        onChange={(v)=>setTweak('heroVariant',v)} />
-      <TweakText label="Başlık" value={t.headline}
-        onChange={(v)=>setTweak('headline',v)} />
-      <TweakSlider label="Görsel karartma" value={t.overlay} min={0} max={1.4} step={0.1}
-        onChange={(v)=>setTweak('overlay',v)} />
-    </TweaksPanel>
-  );
-}
-ReactDOM.createRoot(document.getElementById('tweaks-root')).render(<HeroTweaks/>);
-</script>
 
 <script>
 (function(){
@@ -474,7 +387,7 @@ ReactDOM.createRoot(document.getElementById('tweaks-root')).render(<HeroTweaks/>
 </aside>
 <script src="backend/supabase-config.js"></script>
 <script src="backend/ej-supabase.js?v=10"></script>
-<script src="ej.js?v=8"></script>
-<script src="ej-chat.js?v=12"></script>
+<script src="ej.js?v=9"></script>
+<script src="ej-chat.js?v=14"></script>
 </body>
 </html>

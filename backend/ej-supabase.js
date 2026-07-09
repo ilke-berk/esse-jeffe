@@ -5,6 +5,16 @@
    - window.EJData ile ürün verisi sunar
    - [data-ej-grid] taşıyan kapsayıcıları ürün kartlarıyla doldurur
    ============================================================ */
+
+// cdn.jsdelivr.net'e erken bağlan (supabase-js buradan yüklenir) — bağlantı ısıtma
+(function () {
+  try {
+    var pc = document.createElement('link');
+    pc.rel = 'preconnect'; pc.href = 'https://cdn.jsdelivr.net';
+    document.head.appendChild(pc);
+  } catch (e) {}
+})();
+
 (function () {
   var cfg = window.EJ_CONFIG || {};
   if (!cfg.SUPABASE_URL || !cfg.SUPABASE_KEY) {
@@ -46,7 +56,7 @@
   function cardHTML(p) {
     var tag = p.badge ? '<span class="tag">' + esc(p.badge) + '</span>' : '';
     var media = p.image
-      ? '<img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">'
+      ? '<img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" loading="lazy" decoding="async" width="900" height="1200" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">'
       : PH_SVG;
     var dots = p.colors.map(function (c) {
       return '<span style="background:' + esc(c.hex) + '" title="' + esc(c.name) + '"></span>';
@@ -175,9 +185,17 @@
       },
       resetPassword: function (email) {
         if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+        // maildeki link kullanıcıyı yeni şifre formuna götürür (giris.html değil —
+        // aksi hâlde recovery oturumu açılır ama şifre belirlenemezdi).
+        // NOT: bu adres Supabase panelinde Auth → URL Configuration → Redirect URLs'e ekli olmalı.
         return client.auth.resetPasswordForEmail(email, {
-          redirectTo: location.origin + '/giris.html'
+          redirectTo: location.origin + '/sifre-yenile.html'
         }).then(function (res) { if (res.error) throw res.error; return res.data; });
+      },
+      updatePassword: function (password) {
+        if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+        return client.auth.updateUser({ password: password })
+          .then(function (res) { if (res.error) throw res.error; return res.data; });
       },
       session: function () {
         if (!client) return Promise.resolve(null);
@@ -446,6 +464,8 @@
     if (/Invalid login credentials/i.test(m)) return 'E-posta veya şifre hatalı.';
     if (/Email not confirmed/i.test(m)) return 'E-postanızı doğrulamanız gerekiyor. Gelen kutunuzu kontrol edin.';
     if (/Password should be at least|at least 6/i.test(m)) return 'Şifre çok kısa.';
+    if (/different from the old password/i.test(m)) return 'Yeni şifre eski şifrenizle aynı olamaz.';
+    if (/Auth session missing/i.test(m)) return 'Sıfırlama bağlantısı geçersiz veya süresi dolmuş. Giriş sayfasından yeni bir link isteyin.';
     return m || 'Bir hata oluştu, tekrar deneyin.';
   }
 
@@ -487,6 +507,36 @@
     }).catch(function (err) { authMsg(authErr(err), true); });
   }
 
+  // sifre-yenile.html — recovery linkiyle gelen kullanıcı yeni şifresini belirler.
+  // Supabase, linkteki token'ı doğrulayıp oturumu otomatik açar (detectSessionInUrl);
+  // şifre bu oturum üzerinden auth.updateUser ile yazılır.
+  function handleReset(e) {
+    e.preventDefault();
+    var pass = aVal('newPass'), pass2 = aVal('newPass2');
+    if (!pass || !pass2) return authMsg('Lütfen her iki şifre alanını da doldurun.', true);
+    if (pass.length < 8) return authMsg('Şifre en az 8 karakter olmalı.', true);
+    if (pass !== pass2) return authMsg('Şifreler birbiriyle uyuşmuyor.', true);
+    var btn = e.target.querySelector('button[type="submit"]'); setBtn(btn, true, 'Kaydediliyor...');
+    EJData.auth.session().then(function (s) {
+      if (!s) { var err = new Error('Auth session missing'); throw err; }
+      return EJData.auth.updatePassword(pass);
+    }).then(function () {
+      authMsg('Şifreniz güncellendi. Hesabınıza yönlendiriliyorsunuz...', false);
+      setTimeout(function () { location.href = 'hesap.html'; }, 1500);
+    }).catch(function (err) { authMsg(authErr(err), true); setBtn(btn, false); });
+  }
+
+  // linkin kendisi hatalıysa (süresi dolmuş / kullanılmış) Supabase hash'te error döner
+  function initResetPage(form) {
+    var h = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+    if (!h.get('error')) return;
+    var btn = form.querySelector('button[type="submit"]');
+    if (btn) btn.disabled = true;
+    authMsg(h.get('error_code') === 'otp_expired'
+      ? 'Bu sıfırlama linkinin süresi dolmuş. Lütfen giriş sayfasından yeni bir link isteyin.'
+      : 'Sıfırlama linki geçersiz. Lütfen giriş sayfasından yeni bir link isteyin.', true);
+  }
+
   function wireAuthUI() {
     var acc = document.querySelector('.tools .icon[aria-label="Hesap"]');
     if (acc && !acc.dataset.ejWired) {
@@ -499,6 +549,8 @@
     if (lf && !lf.dataset.ejWired) { lf.dataset.ejWired = '1'; lf.addEventListener('submit', handleLogin); }
     var fp = document.getElementById('forgotLink');
     if (fp && !fp.dataset.ejWired) { fp.dataset.ejWired = '1'; fp.addEventListener('click', handleForgot); }
+    var pf = document.getElementById('resetForm');
+    if (pf && !pf.dataset.ejWired) { pf.dataset.ejWired = '1'; pf.addEventListener('submit', handleReset); initResetPage(pf); }
   }
 
   function renderAll() {
@@ -524,7 +576,7 @@
   if (window.supabase && window.supabase.createClient) { init(); }
   else {
     var s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0';
     s.onload = init;
     s.onerror = function () { console.error('[EJ] Supabase SDK yüklenemedi (internet?).'); };
     document.head.appendChild(s);
