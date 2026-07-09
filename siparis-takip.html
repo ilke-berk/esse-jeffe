@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=6">
+<link rel="stylesheet" href="ej.css?v=7">
 </head>
 <body>
 
@@ -43,7 +43,7 @@
       <div class="field"><label for="trkNo">Sipariş No</label><input id="trkNo" type="text" placeholder="örn. EJ2607011234" autocomplete="off" required></div>
       <div class="field"><label for="trkTel">Telefon</label><input id="trkTel" type="tel" placeholder="0 5__ ___ __ __" autocomplete="tel" required></div>
       <button class="btn btn-solid" type="submit" style="justify-self:start">Siparişi Sorgula</button>
-      <p id="trkErr" style="display:none;color:#b03030;font-size:13px;letter-spacing:.04em"></p>
+      <p id="trkErr" role="alert" aria-live="polite" style="display:none;color:#b03030;font-size:13px;letter-spacing:.04em"></p>
     </form>
 
     <div id="trkResult" style="margin-top:30px"></div>

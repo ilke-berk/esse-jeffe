@@ -62,7 +62,13 @@
       return '<span style="background:' + esc(c.hex) + '" title="' + esc(c.name) + '"></span>';
     }).join('');
     var price = (p.old_price ? '<span class="old">' + fmt(p.old_price) + '</span>' : '') + fmt(p.price);
-    return '<a class="card" href="urun.html?slug=' + encodeURIComponent(p.slug) + '">' +
+    // koleksiyon.html filtreleri kartları data-cat üzerinden süzer
+    var cats = ['gece'];
+    if (/çok satan/i.test(p.badge || '')) cats.push('cok-satan');
+    if (/yeni/i.test(p.badge || '')) cats.push('yeni');
+    if (p.old_price) cats.push('indirim');
+    if (String(p.model_desc || '').toLocaleLowerCase('tr').indexOf('askılı') > -1) cats.push('askili');
+    return '<a class="card" data-cat="' + cats.join(' ') + '" href="urun.html?slug=' + encodeURIComponent(p.slug) + '">' +
       '<div class="frame">' + tag + media + '</div>' +
       '<div class="meta"><h3>' + esc(p.name) + '</h3>' +
         '<p class="model-desc">' + esc(p.model_desc || '') + '</p>' +
@@ -451,7 +457,43 @@
   function aVal(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
   function authMsg(msg, isErr) {
     var el = document.getElementById('authMsg');
-    if (el) { el.textContent = msg; el.style.display = 'block'; el.style.color = isErr ? '#b03030' : 'var(--zeytin)'; }
+    if (el) {
+      // ekran okuyucuya da duyur (görsel mesajla aynı anda)
+      if (!el.getAttribute('role')) { el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite'); }
+      el.textContent = msg; el.style.display = 'block'; el.style.color = isErr ? '#b03030' : 'var(--zeytin)';
+    }
+  }
+
+  // Şifre alanlarına göster/gizle düğmesi (mobilde yanlış girişi azaltır).
+  // Input bir sarmalayıcıya alınır; düğme sağa hizalanır, 44px dokunma hedefi.
+  var EYE_ON  = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  var EYE_OFF = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a21.77 21.77 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 5c7 0 11 7 11 7a21.8 21.8 0 0 1-3.22 4.31"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+  function wirePassToggles() {
+    Array.prototype.forEach.call(document.querySelectorAll('input[type="password"]'), function (inp) {
+      if (inp.dataset.ejToggle) return;
+      inp.dataset.ejToggle = '1';
+      var box = document.createElement('div');
+      box.style.cssText = 'position:relative;display:block';
+      inp.parentNode.insertBefore(box, inp);
+      box.appendChild(inp);
+      inp.style.width = '100%';
+      inp.style.paddingRight = '48px';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('aria-label', 'Şifreyi göster');
+      btn.setAttribute('aria-pressed', 'false');
+      btn.innerHTML = EYE_ON;
+      btn.style.cssText = 'position:absolute;right:0;top:50%;transform:translateY(-50%);min-width:44px;min-height:44px;background:none;border:none;cursor:pointer;color:inherit;display:grid;place-items:center;padding:0';
+      btn.addEventListener('click', function () {
+        var showing = inp.type === 'text';
+        inp.type = showing ? 'password' : 'text';
+        btn.setAttribute('aria-label', showing ? 'Şifreyi göster' : 'Şifreyi gizle');
+        btn.setAttribute('aria-pressed', showing ? 'false' : 'true');
+        btn.innerHTML = showing ? EYE_ON : EYE_OFF;
+        inp.focus();
+      });
+      box.appendChild(btn);
+    });
   }
   function setBtn(btn, busy, txt) {
     if (!btn) return;
@@ -558,7 +600,7 @@
   }
 
   function renderAll() {
-    renderGrids(); renderMega(); renderProduct(); wireForms(); wireAuthUI();
+    renderGrids(); renderMega(); renderProduct(); wireForms(); wireAuthUI(); wirePassToggles();
     EJData.auth.session().then(applyAuthState);
   }
 

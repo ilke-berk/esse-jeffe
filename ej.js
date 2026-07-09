@@ -409,7 +409,23 @@ window.EJCart = (function () {
     if (found) { found.qty += item.qty; }
     else { items.push(item); }
     save(items);
+    announce((item.name || 'Ürün') + ' sepete eklendi.');
     open();
+  }
+
+  // Ekran okuyucu duyurusu: görünmez canlı bölgeye yaz (sepete eklendi vb.)
+  function announce(msg) {
+    var live = document.getElementById('ejLive');
+    if (!live) {
+      live = document.createElement('div');
+      live.id = 'ejLive';
+      live.setAttribute('role', 'status');
+      live.setAttribute('aria-live', 'polite');
+      live.style.cssText = 'position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0';
+      document.body.appendChild(live);
+    }
+    live.textContent = '';
+    setTimeout(function () { live.textContent = msg; }, 30);
   }
 
   function setQty(key, qty) {

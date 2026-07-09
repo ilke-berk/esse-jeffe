@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=6">
+<link rel="stylesheet" href="ej.css?v=7">
 <style>
 .filters{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;padding:0 24px 54px}
 .filters button{font-family:var(--sans);font-size:11px;letter-spacing:.16em;text-transform:uppercase;background:none;border:1px solid var(--line-strong);color:var(--ink);padding:11px 22px;cursor:pointer;transition:background .25s,color .25s,border-color .25s}
@@ -52,27 +52,28 @@
 <section class="sec-tight">
   <div class="wrap">
     <div class="filters">
-      <button aria-pressed="true">Tümü</button>
-      <button>Çok Satanlar</button>
-      <button>Yeni Gelenler</button>
-      <button>Gece & Davet</button>
-      <button>Askılı</button>
-      <button>İndirimde</button>
+      <button aria-pressed="true" data-f="all">Tümü</button>
+      <button data-f="cok-satan">Çok Satanlar</button>
+      <button data-f="yeni">Yeni Gelenler</button>
+      <button data-f="gece">Gece & Davet</button>
+      <button data-f="askili">Askılı</button>
+      <button data-f="indirim">İndirimde</button>
     </div>
   </div>
 
   <div class="wrap">
     <div class="grid prod-grid" id="productGrid" data-ej-grid="all">
-    <a class="card" href="urun.html"><div class="frame"><span class="tag">Çok Satan</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Pera</h3><p class="model-desc">Uzun Yırtmaçlı Krep Abiye</p><div class="dots"><span style="background:#6e2c2c" title="Bordo"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#1b1a17" title="Siyah"></span><span style="background:#b03030" title="Kırmızı"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price"><span class="old">2.199 TL</span>1.699 TL</div></div></a>
-    <a class="card" href="urun.html"><div class="frame"><span class="tag">Yeni</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Asos</h3><p class="model-desc">Fakir Kol V Yaka Davet Elbisesi</p><div class="dots"><span style="background:#6e2c2c" title="Bordo"></span><span style="background:#1b1a17" title="Siyah"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price">1.399 TL</div></div></a>
-    <a class="card" href="urun.html"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Efes</h3><p class="model-desc">Kruvaze Drapeli Krep Abiye</p><div class="dots"><span style="background:#b03030" title="Kırmızı"></span><span style="background:#6e2c2c" title="Bordo"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#1b1a17" title="Siyah"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price">1.499 TL</div></div></a>
-    <a class="card" href="urun.html"><div class="frame"><span class="tag">İndirim</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Karya</h3><p class="model-desc">V Yaka Fırfırlı Kol Krep Abiye</p><div class="dots"><span style="background:#26384a" title="Mavi"></span><span style="background:#b03030" title="Kırmızı"></span><span style="background:#1b1a17" title="Siyah"></span><span style="background:#6e2c2c" title="Bordo"></span><span style="background:#3c4a3a" title="Yeşil"></span></div><div class="price"><span class="old">1.599 TL</span>1.299 TL</div></div></a>
-    <a class="card" href="urun.html"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Likya</h3><p class="model-desc">Kruvaze Drapeli Askılı Krep Abiye</p><div class="dots"><span style="background:#1b1a17" title="Siyah"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#b03030" title="Kırmızı"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price">1.599 TL</div></div></a>
-    <a class="card" href="urun.html"><div class="frame"><span class="tag">Yeni</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Side</h3><p class="model-desc">Diz Üstü Ön Drape Detaylı Abiye</p><div class="dots"><span style="background:#b03030" title="Kırmızı"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price">1.399 TL</div></div></a>
-    <a class="card" href="urun.html"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Truva</h3><p class="model-desc">Dekolte Detaylı Krep Abiye</p><div class="dots"><span style="background:#1b1a17" title="Siyah"></span></div><div class="price">1.299 TL</div></div></a>
-    <a class="card" href="urun.html"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Milet</h3><p class="model-desc">Yarasa Kol Kruvaze Drapeli Abiye</p><div class="dots"><span style="background:#1b1a17" title="Siyah"></span><span style="background:#b03030" title="Kırmızı"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price">1.499 TL</div></div></a>
-    <a class="card" href="urun.html"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Lidya</h3><p class="model-desc">Ön Fırfır Bodycone Fermuarlı Abiye</p><div class="dots"><span style="background:#1b1a17" title="Siyah"></span></div><div class="price">1.299 TL</div></div></a>
+    <a class="card" href="urun.html?slug=pera" data-cat="cok-satan gece"><div class="frame"><span class="tag">Çok Satan</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Pera</h3><p class="model-desc">Uzun Yırtmaçlı Krep Abiye</p><div class="dots"><span style="background:#6e2c2c" title="Bordo"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#1b1a17" title="Siyah"></span><span style="background:#b03030" title="Kırmızı"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price"><span class="old">2.199 TL</span>1.699 TL</div></div></a>
+    <a class="card" href="urun.html?slug=asos" data-cat="yeni gece"><div class="frame"><span class="tag">Yeni</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Asos</h3><p class="model-desc">Fakir Kol V Yaka Davet Elbisesi</p><div class="dots"><span style="background:#6e2c2c" title="Bordo"></span><span style="background:#1b1a17" title="Siyah"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price">1.399 TL</div></div></a>
+    <a class="card" href="urun.html?slug=efes" data-cat="gece"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Efes</h3><p class="model-desc">Kruvaze Drapeli Krep Abiye</p><div class="dots"><span style="background:#b03030" title="Kırmızı"></span><span style="background:#6e2c2c" title="Bordo"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#1b1a17" title="Siyah"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price">1.499 TL</div></div></a>
+    <a class="card" href="urun.html?slug=karya" data-cat="indirim gece"><div class="frame"><span class="tag">İndirim</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Karya</h3><p class="model-desc">V Yaka Fırfırlı Kol Krep Abiye</p><div class="dots"><span style="background:#26384a" title="Mavi"></span><span style="background:#b03030" title="Kırmızı"></span><span style="background:#1b1a17" title="Siyah"></span><span style="background:#6e2c2c" title="Bordo"></span><span style="background:#3c4a3a" title="Yeşil"></span></div><div class="price"><span class="old">1.599 TL</span>1.299 TL</div></div></a>
+    <a class="card" href="urun.html?slug=likya" data-cat="askili gece"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Likya</h3><p class="model-desc">Kruvaze Drapeli Askılı Krep Abiye</p><div class="dots"><span style="background:#1b1a17" title="Siyah"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#b03030" title="Kırmızı"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price">1.599 TL</div></div></a>
+    <a class="card" href="urun.html?slug=side" data-cat="yeni gece"><div class="frame"><span class="tag">Yeni</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Side</h3><p class="model-desc">Diz Üstü Ön Drape Detaylı Abiye</p><div class="dots"><span style="background:#b03030" title="Kırmızı"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price">1.399 TL</div></div></a>
+    <a class="card" href="urun.html?slug=truva" data-cat="gece"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Truva</h3><p class="model-desc">Dekolte Detaylı Krep Abiye</p><div class="dots"><span style="background:#1b1a17" title="Siyah"></span></div><div class="price">1.299 TL</div></div></a>
+    <a class="card" href="urun.html?slug=milet" data-cat="gece"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Milet</h3><p class="model-desc">Yarasa Kol Kruvaze Drapeli Abiye</p><div class="dots"><span style="background:#1b1a17" title="Siyah"></span><span style="background:#b03030" title="Kırmızı"></span><span style="background:#3c4a3a" title="Yeşil"></span><span style="background:#26384a" title="Mavi"></span></div><div class="price">1.499 TL</div></div></a>
+    <a class="card" href="urun.html?slug=lidya" data-cat="gece"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Lidya</h3><p class="model-desc">Ön Fırfır Bodycone Fermuarlı Abiye</p><div class="dots"><span style="background:#1b1a17" title="Siyah"></span></div><div class="price">1.299 TL</div></div></a>
     </div>
+    <p id="filterEmpty" style="display:none;text-align:center;color:var(--muted);padding:48px 0" role="status">Bu filtreye uyan ürün bulunamadı.</p>
   </div>
 </section>
 
@@ -102,12 +103,40 @@
 
 <script src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
 <script>
-document.querySelectorAll('.filters button').forEach(function(b){
-  b.addEventListener('click',function(){
-    document.querySelectorAll('.filters button').forEach(function(x){x.setAttribute('aria-pressed','false');});
-    b.setAttribute('aria-pressed','true');
+// Filtreler artık kartları gerçekten süzer. Etiket önce data-cat'ten okunur;
+// Supabase gridleri doldurduğunda kartlar data-cat'siz gelirse rozet/fiyat/
+// açıklamadan türetilir (catsOf fallback) — filtre iki durumda da çalışır.
+(function(){
+  function catsOf(card){
+    var c = card.getAttribute('data-cat');
+    if (c) return c.split(' ');
+    var cats = ['gece'];
+    var tag = (card.querySelector('.tag')||{}).textContent || '';
+    if (/çok satan/i.test(tag)) cats.push('cok-satan');
+    if (/yeni/i.test(tag)) cats.push('yeni');
+    if (card.querySelector('.price .old') || /indirim/i.test(tag)) cats.push('indirim');
+    var md = (card.querySelector('.model-desc')||{}).textContent || '';
+    if (md.toLocaleLowerCase('tr').indexOf('askılı') > -1) cats.push('askili');
+    return cats;
+  }
+  function applyFilter(f){
+    var any = false;
+    document.querySelectorAll('#productGrid .card').forEach(function(card){
+      var show = f === 'all' || catsOf(card).indexOf(f) > -1;
+      card.style.display = show ? '' : 'none';
+      if (show) any = true;
+    });
+    var empty = document.getElementById('filterEmpty');
+    if (empty) empty.style.display = any ? 'none' : '';
+  }
+  document.querySelectorAll('.filters button').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('.filters button').forEach(function(x){x.setAttribute('aria-pressed','false');});
+      b.setAttribute('aria-pressed','true');
+      applyFilter(b.getAttribute('data-f') || 'all');
+    });
   });
-});
+})();
 </script>
 
 <!-- Sepet overlay + panel -->
@@ -123,8 +152,8 @@ document.querySelectorAll('.filters button').forEach(function(b){
     <p>Sepetinize henüz ürün eklemediniz.</p>
   </div>
   <div class="bag-auth">
-    <a href="#">Giriş Yap</a>
-    <a href="#">Üye Ol</a>
+    <a href="giris.html">Giriş Yap</a>
+    <a href="kayit.html">Üye Ol</a>
   </div>
 </aside>
 <script src="backend/supabase-config.js"></script>

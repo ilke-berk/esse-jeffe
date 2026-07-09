@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=6">
+<link rel="stylesheet" href="ej.css?v=7">
 </head>
 <body>
 
@@ -64,7 +64,7 @@
       </div>
       <div class="field"><label for="mesaj">Mesajınız</label><textarea id="mesaj" placeholder="Mesajınız, ilgilendiğiniz model veya sipariş numaranız..."></textarea></div>
       <button class="btn btn-solid" type="submit" style="justify-self:start">Talebi Gönder</button>
-      <p id="sent" style="display:none;color:var(--zeytin);font-size:13px;letter-spacing:.04em">Teşekkürler — talebiniz alındı, kısa sürede dönüş yapacağız.</p>
+      <p id="sent" role="status" aria-live="polite" style="display:none;color:var(--zeytin);font-size:13px;letter-spacing:.04em">Teşekkürler — talebiniz alındı, kısa sürede dönüş yapacağız.</p>
     </form>
 
     <aside class="aside">
@@ -135,8 +135,8 @@
     <p>Sepetinize henüz ürün eklemediniz.</p>
   </div>
   <div class="bag-auth">
-    <a href="#">Giriş Yap</a>
-    <a href="#">Üye Ol</a>
+    <a href="giris.html">Giriş Yap</a>
+    <a href="kayit.html">Üye Ol</a>
   </div>
 </aside>
 <script src="backend/supabase-config.js"></script>

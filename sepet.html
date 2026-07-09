@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=6">
+<link rel="stylesheet" href="ej.css?v=7">
 <style>
 .checkout{display:grid;grid-template-columns:1.15fr .85fr;gap:64px;align-items:start;max-width:1180px;margin:0 auto}
 .checkout h2{font-family:var(--serif);font-weight:400;font-size:22px;margin-bottom:20px;letter-spacing:.01em}
@@ -38,6 +38,14 @@
 .checkout-submit{margin-top:10px;width:100%;text-align:center;padding:17px}
 .form-err{color:#b03030;font-size:13px;margin-top:6px;display:none}
 .form-err.show{display:block}
+/* alan-bazlı inline hata */
+.f-err{color:#b03030;font-size:12px;margin:0}
+input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
+/* yasal onay kutusu */
+.consent{display:flex;align-items:flex-start;gap:10px;margin:18px 0 14px}
+.consent input{margin-top:3px;width:16px;height:16px;accent-color:var(--ink);flex-shrink:0}
+.consent label{font-size:13px;color:var(--soft);line-height:1.65;text-transform:none;letter-spacing:0}
+.consent a{text-decoration:underline}
 /* boş & başarı */
 .cart-empty,.order-done{text-align:center;max-width:520px;margin:0 auto;padding:40px 24px}
 .cart-empty h2,.order-done h2{font-family:var(--serif);font-weight:300;font-size:clamp(26px,3vw,38px);line-height:1.15;margin-bottom:16px}
@@ -128,8 +136,13 @@
       </div>
 
       <div>
+        <div class="consent">
+          <input type="checkbox" id="consentBox">
+          <label for="consentBox"><a href="on-bilgilendirme.html" target="_blank" rel="noopener">Ön Bilgilendirme Formu</a>'nu ve <a href="mesafeli-satis.html" target="_blank" rel="noopener">Mesafeli Satış Sözleşmesi</a>'ni okudum, onaylıyorum. *</label>
+        </div>
         <button class="btn btn-solid checkout-submit" type="submit" id="submitBtn">Siparişi Ver</button>
-        <p class="form-err" id="formErr"></p>
+        <p style="font-size:11px;letter-spacing:.08em;color:var(--muted);text-align:center;margin-top:12px">PayTR güvenli ödeme · 256-bit SSL · 3D Secure</p>
+        <p class="form-err" id="formErr" role="alert" aria-live="polite"></p>
       </div>
     </form>
 
@@ -181,8 +194,8 @@
     <p>Sepetinize henüz ürün eklemediniz.</p>
   </div>
   <div class="bag-auth">
-    <a href="#">Giriş Yap</a>
-    <a href="#">Üye Ol</a>
+    <a href="giris.html">Giriş Yap</a>
+    <a href="kayit.html">Üye Ol</a>
   </div>
 </aside>
 
@@ -315,11 +328,44 @@
     document.getElementById('payNoteCard').classList.toggle('show', v==='card');
   });
 
+  // --- alan-bazlı doğrulama yardımcıları ---
+  function clearFieldErrors(form){
+    Array.prototype.forEach.call(form.querySelectorAll('.f-err'), function(p){ p.remove(); });
+    Array.prototype.forEach.call(form.querySelectorAll('[aria-invalid]'), function(i){ i.removeAttribute('aria-invalid'); });
+  }
+  function markField(id, msg){
+    var input = document.getElementById(id);
+    if(!input) return;
+    input.setAttribute('aria-invalid','true');
+    var fld = input.closest('.field') || input.parentElement;
+    var p = document.createElement('p');
+    p.className = 'f-err';
+    p.id = id + 'Err';
+    p.textContent = msg;
+    fld.appendChild(p);
+    input.setAttribute('aria-describedby', p.id);
+  }
+  function validateCheckout(data){
+    var errs = [];
+    if(!data.full_name) errs.push(['ad','Ad soyad gerekli.']);
+    var digits = data.phone.replace(/\D+/g,'').replace(/^90/,'').replace(/^0/,'');
+    if(!data.phone) errs.push(['tel','Telefon gerekli.']);
+    else if(digits.length !== 10) errs.push(['tel','Geçerli bir telefon girin (örn. 05xx xxx xx xx).']);
+    if(data.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email)) errs.push(['mail','Geçerli bir e-posta adresi girin.']);
+    if(data.payment_method==='card' && !data.email) errs.push(['mail','Kart ödemesi için e-posta adresi zorunludur.']);
+    if(!data.city) errs.push(['il','İl gerekli.']);
+    if(!data.district) errs.push(['ilce','İlçe gerekli.']);
+    if(!data.address) errs.push(['adres','Açık adres gerekli.']);
+    return errs;
+  }
+
   // gönder
   document.getElementById('checkoutForm').addEventListener('submit', function(e){
     e.preventDefault();
+    var form = document.getElementById('checkoutForm');
     var err = document.getElementById('formErr');
     err.classList.remove('show');
+    clearFieldErrors(form);
     var list = items();
     if(!list.length){ show('empty'); return; }
 
@@ -334,9 +380,20 @@
       note:      document.getElementById('not').value.trim(),
       payment_method: (document.querySelector('input[name="pay"]:checked')||{}).value || 'cod'
     };
-    if(!data.full_name || !data.phone || !data.city || !data.district || !data.address){
-      err.textContent = 'Lütfen yıldızlı (*) alanları doldurun.';
+
+    var errs = validateCheckout(data);
+    if(errs.length){
+      errs.forEach(function(pair){ markField(pair[0], pair[1]); });
+      err.textContent = 'Lütfen işaretli alanları düzeltin.';
       err.classList.add('show');
+      var first = document.getElementById(errs[0][0]);
+      if(first) first.focus();
+      return;
+    }
+    if(!document.getElementById('consentBox').checked){
+      err.textContent = 'Devam etmek için Ön Bilgilendirme Formu ve Mesafeli Satış Sözleşmesi\'ni onaylamanız gerekir.';
+      err.classList.add('show');
+      document.getElementById('consentBox').focus();
       return;
     }
     if(!window.EJData || !window.EJData.createOrder){
@@ -347,12 +404,8 @@
 
     var btn = document.getElementById('submitBtn');
 
-    // --- KART: PayTR güvenli ödeme akışı ---
+    // --- KART: PayTR güvenli ödeme akışı (e-posta zorunluluğu validateCheckout'ta) ---
     if(data.payment_method==='card'){
-      if(!data.email){
-        err.textContent='Kart ödemesi için geçerli bir e-posta adresi gerekli.';
-        err.classList.add('show'); return;
-      }
       var client = window.EJData.client && window.EJData.client();
       if(!client || !client.functions){
         err.textContent='Ödeme servisi hazır değil, birkaç saniye sonra tekrar deneyin.';

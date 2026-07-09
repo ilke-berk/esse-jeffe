@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=6">
+<link rel="stylesheet" href="ej.css?v=7">
 <style>
 /* ---------- hero — üç varyasyon ---------- */
 .hero-block{display:none}
@@ -113,7 +113,7 @@ body.scrolled .header{background:#FFFFFF}
 
 <!-- ============ HERO — V1 full-bleed ============ -->
 <section class="hero-block hero-full" data-screen-label="Hero · Full">
-  <img class="hbg" src="img/hero-model.jpg" alt="" style="object-fit: cover; margin: 0px; border-radius: 10px; border-width: 0px; border-style: solid; padding: 0px">
+  <img class="hbg" src="img/hero-model.jpg" alt="Esse Jeffe 2026 abiye koleksiyonu" fetchpriority="high" style="object-fit: cover; margin: 0px; border-radius: 10px; border-width: 0px; border-style: solid; padding: 0px">
   <div class="hero-cap">
     <span class="label">Esse Jeffe · 2026</span>
     <h1 class="hero-h1">Davetin en şık hâli.</h1>
@@ -131,12 +131,12 @@ body.scrolled .header{background:#FFFFFF}
     <p>Modern kadınlar için özgün tasarım abiye ve davet elbiseleri. Kaliteli krep kumaş, güçlü siluet, çok renk seçeneği.</p>
     <a class="btn btn-solid" href="koleksiyon.html">Koleksiyonu Keşfet</a>
   </div>
-  <img class="hbg" src="img/hero-model.jpg" alt="">
+  <img class="hbg" src="img/hero-model.jpg" alt="Esse Jeffe 2026 abiye koleksiyonu" loading="lazy" decoding="async">
 </section>
 
 <!-- ============ HERO — V3 centered ============ -->
 <section class="hero-block hero-center" data-screen-label="Hero · Center">
-  <img class="hbg" src="img/hero-model.jpg" alt="">
+  <img class="hbg" src="img/hero-model.jpg" alt="Esse Jeffe 2026 abiye koleksiyonu" loading="lazy" decoding="async">
   <div class="cc">
     <span class="label">Esse Jeffe · 2026</span>
     <h1 class="hero-h1">Davetin en şık hâli.</h1>
@@ -162,7 +162,7 @@ body.scrolled .header{background:#FFFFFF}
     <h2>2026 Abiye Koleksiyonu</h2>
   </div>
   <div class="grid" data-ej-grid="featured" data-limit="3">
-    <a class="card" href="urun.html">
+    <a class="card" href="urun.html?slug=pera">
       <div class="frame">
         <span class="tag">Çok Satan</span>
         <div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
@@ -175,7 +175,7 @@ body.scrolled .header{background:#FFFFFF}
         <div class="price"><span class="old">2.199 TL</span>1.699 TL</div>
       </div>
     </a>
-    <a class="card" href="koleksiyon.html">
+    <a class="card" href="urun.html?slug=karya">
       <div class="frame">
         <span class="tag">İndirim</span>
         <div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
@@ -188,7 +188,7 @@ body.scrolled .header{background:#FFFFFF}
         <div class="price"><span class="old">1.599 TL</span>1.299 TL</div>
       </div>
     </a>
-    <a class="card" href="koleksiyon.html">
+    <a class="card" href="urun.html?slug=efes">
       <div class="frame">
         <span class="tag">Yeni</span>
         <div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
@@ -207,7 +207,7 @@ body.scrolled .header{background:#FFFFFF}
 
 <!-- about split -->
 <section class="split warm" id="hakkimizda">
-  <img class="media" src="img/about.webp" alt="Esse Jeffe">
+  <img class="media" src="img/about.webp" alt="Esse Jeffe atölyesi" loading="lazy" decoding="async">
   <div class="txt">
     <span class="label">Hakkımızda</span>
     <h2>Modern kadının abiyesi.</h2>
@@ -220,12 +220,12 @@ body.scrolled .header{background:#FFFFFF}
 <!-- lookbook duo -->
 <section class="duo wrap">
   <div class="item">
-    <img class="media" src="img/showcase.webp" alt="">
+    <img class="media" src="img/showcase.webp" alt="Gece koleksiyonu lookbook" loading="lazy" decoding="async">
     <span class="label">Lookbook 01</span>
     <h3>Gece</h3>
   </div>
   <div class="item">
-    <img class="media" src="img/bordo-firfir.jpg" alt="">
+    <img class="media" src="img/bordo-firfir.jpg" alt="Nişan ve kına koleksiyonu lookbook" loading="lazy" decoding="async">
     <span class="label">Lookbook 02</span>
     <h3>Nişan & Kına</h3>
   </div>
@@ -381,8 +381,8 @@ body.scrolled .header{background:#FFFFFF}
     <p>Sepetinize henüz ürün eklemediniz.</p>
   </div>
   <div class="bag-auth">
-    <a href="#">Giriş Yap</a>
-    <a href="#">Üye Ol</a>
+    <a href="giris.html">Giriş Yap</a>
+    <a href="kayit.html">Üye Ol</a>
   </div>
 </aside>
 <script src="backend/supabase-config.js"></script>
