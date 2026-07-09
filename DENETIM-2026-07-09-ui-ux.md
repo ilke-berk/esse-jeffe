@@ -3,6 +3,9 @@
 **Tarih:** 2026-07-09
 **Kapsam:** Satın alma hunisi, formlar, mobil, erişilebilirlik, geri bildirim/boş durumlar, tutarlılık, performans algısı, güven sinyalleri, e-ticaret kalıpları.
 
+> **DURUM (2026-07-10):** Şu maddeler uygulandı: **#1** dokunma hedefleri 44px + **#8** global `:focus-visible` (ej.css v7); **#2** ürün kartı slug linkleri (koleksiyon 9 kart + index Karya/Efes); **#3** checkout zorunlu Ön Bilgilendirme/Mesafeli Satış onay kutusu; **#4** alan-bazlı doğrulama (telefon/e-posta format, inline hata, ilk hataya focus, `aria-invalid`, formErr `role=alert`); **#5** authMsg `role=status`, sepete eklemede aria-live duyurusu, trkErr/sent `aria-live`; **#6** koleksiyon filtreleri gerçek süzme (data-cat, statik+dinamik); **#7** şifre göster/gizle; **#9** sepet paneli auth linkleri; **#12** hero alt metinleri; **#13** lazy loading + hero `fetchpriority`; **#15** PayTR·SSL·3D Secure güven şeridi.
+> **KALAN:** #10 (favori/stok göstergesi), #11 (footer birleştirme), #14 (font preload), #16 (skip-to-content) ve #12'nin overlay kontrast kısmı.
+
 ---
 
 ## EN DEĞERLİ 5 İYİLEŞTİRME (öncelik sırası)
