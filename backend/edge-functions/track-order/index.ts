@@ -24,23 +24,18 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createLogger } from "../_shared/log.ts";
 import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
 import { clientIp, isValidOrderNo, normPhone } from "../_shared/util.ts";
-
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...cors, "Content-Type": "application/json" },
-  });
+import { corsHeaders } from "../_shared/cors.ts";
 
 // IP başına, pencere (dakika) içinde izin verilen sorgu sayısı
 const RATE = { max: 15, windowMin: 10 };
 
 Deno.serve(async (req) => {
+  const cors = corsHeaders(req.headers.get("origin"));
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST bekleniyor" }, 405);
   const log = createLogger("track-order", req);

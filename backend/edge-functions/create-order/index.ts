@@ -17,24 +17,19 @@ import { sendOrderEmails } from "../_shared/order-email.ts";
 import { createLogger, errMsg } from "../_shared/log.ts";
 import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
 import { canonVariant, clientIp, makeOrderNo } from "../_shared/util.ts";
-
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...cors, "Content-Type": "application/json" },
-  });
+import { corsHeaders } from "../_shared/cors.ts";
 
 // IP başına sipariş oluşturma sınırı (paytr-token ile ORTAK 'order' sayacı).
 // Dürüst müşteri için bol; bot'un sahte COD siparişi yağdırmasını keser.
 const ORDER_RATE = { table: "fn_rate_limit", kind: "order", max: 10, windowMin: 60 };
 
 Deno.serve(async (req) => {
+  const cors = corsHeaders(req.headers.get("origin"));
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST bekleniyor" }, 405);
   const log = createLogger("create-order", req);
@@ -112,6 +107,11 @@ Deno.serve(async (req) => {
     const size = canonVariant(it.size, p.sizes);
     if (color === null) return json({ error: "Geçersiz renk seçimi: " + p.name }, 400);
     if (size === null) return json({ error: "Geçersiz beden seçimi: " + p.name }, 400);
+    // GÜVENLİK — ürünün beden listesi varsa boş beden reddet. Aksi hâlde
+    // size="" satırı reserve_stock_bulk'ta bulunamayıp "takipsiz → sınırsız"
+    // sayılır ve beden bazlı stok limiti atlanarak aşırı satış olurdu.
+    if (size === "" && Array.isArray(p.sizes) && p.sizes.length)
+      return json({ error: "Beden seçimi zorunlu: " + p.name }, 400);
     subtotal += p.price * qty;
     orderItems.push({
       product_id: p.id,

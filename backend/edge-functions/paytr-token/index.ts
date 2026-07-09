@@ -22,6 +22,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createLogger, errMsg } from "../_shared/log.ts";
 import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
 import { canonVariant, clientIp, makeOrderNo, parseOriginList, resolveOrigin } from "../_shared/util.ts";
+import { corsHeaders } from "../_shared/cors.ts";
 
 // ok/fail yönlendirmesi için izinli origin'ler (client kontrolüne bırakılmaz)
 const ALLOWED_ORIGINS = parseOriginList(
@@ -32,18 +33,6 @@ const ALLOWED_ORIGINS = parseOriginList(
 
 // IP başına sipariş/ödeme başlatma sınırı (create-order ile ORTAK 'order' sayacı).
 const ORDER_RATE = { table: "fn_rate_limit", kind: "order", max: 10, windowMin: 60 };
-
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...cors, "Content-Type": "application/json" },
-  });
 
 // UTF-8 güvenli base64 (Türkçe karakterli sepet için)
 function b64(bytes: Uint8Array): string {
@@ -69,6 +58,12 @@ async function hmacB64(message: string, key: string): Promise<string> {
 }
 
 Deno.serve(async (req) => {
+  const cors = corsHeaders(req.headers.get("origin"));
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...cors, "Content-Type": "application/json" },
+    });
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST bekleniyor" }, 405);
   const log = createLogger("paytr-token", req);
@@ -157,6 +152,9 @@ Deno.serve(async (req) => {
     const size = canonVariant(it.size, p.sizes);
     if (color === null) return json({ error: "Geçersiz renk seçimi: " + p.name }, 400);
     if (size === null) return json({ error: "Geçersiz beden seçimi: " + p.name }, 400);
+    // GÜVENLİK — ürünün beden listesi varsa boş beden reddet (aşırı satış koruması).
+    if (size === "" && Array.isArray(p.sizes) && p.sizes.length)
+      return json({ error: "Beden seçimi zorunlu: " + p.name }, 400);
     const line = p.price * qty;
     subtotal += line;
     basket.push([p.name, Number(p.price).toFixed(2), qty]);

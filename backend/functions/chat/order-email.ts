@@ -1,7 +1,9 @@
 // ============================================================
-//  Esse Jeffe — Sipariş onay e-postası (paylaşılan modül)
-//  create-order (COD/havale) ve paytr-callback (kart) fonksiyonları
-//  bu modülü çağırır. Gönderim Resend REST API üzerinden yapılır.
+//  Esse Jeffe — Sipariş onay e-postası (chat KOPYASI)
+//  KAYNAK: backend/edge-functions/_shared/order-email.ts — chat farklı
+//  deploy ağacında olduğundan _shared import edilemez; bu dosya birebir
+//  kopyadır. Kaynak değişirse BURAYI DA güncelleyin (yalnız bu başlık farklı).
+//  Gönderim Resend REST API üzerinden yapılır.
 //
 //  TASARIM İLKESİ: E-posta gönderimi ASLA siparişi bozmaz. Herhangi
 //  bir hata (secret yok, Resend down, geçersiz adres) sessizce loglanır;

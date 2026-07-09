@@ -27,8 +27,8 @@
   // ---- yardımcılar ----
   function fmt(n) { return (n || 0).toLocaleString('tr-TR') + ' TL'; }
   function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
-      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
   function bySort(a, b) { return (a.sort || 0) - (b.sort || 0); }
@@ -493,7 +493,11 @@
     if (!email || !pass) return authMsg('E-posta ve şifre gerekli.', true);
     var btn = e.target.querySelector('button[type="submit"]'); setBtn(btn, true, 'Giriş yapılıyor...');
     EJData.auth.signIn(email, pass).then(function () {
+      // GÜVENLİK — sadece yerel .html yollarına yönlendir. Aksi hâlde
+      // ?next=https://sahte-site (open redirect / phishing) veya
+      // ?next=javascript:... (XSS) mümkün olurdu.
       var to = new URLSearchParams(location.search).get('next') || 'hesap.html';
+      if (!/^[a-z0-9._\-]+(\/[a-z0-9._\-]+)*\.html([?#].*)?$/i.test(to)) to = 'hesap.html';
       location.href = to;
     }).catch(function (err) { authMsg(authErr(err), true); setBtn(btn, false); });
   }

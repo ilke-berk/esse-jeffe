@@ -154,7 +154,7 @@
   var colors = [];      // çalışma kopyası
   var images = [];      // çalışma kopyası
 
-  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function el(id){ return document.getElementById(id); }
   function val(id){ var e=el(id); return e?e.value.trim():''; }
   function num(id){ var v=val(id); return v===''?null:parseInt(v.replace(/[^\d]/g,''),10); }

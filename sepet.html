@@ -187,13 +187,13 @@
 </aside>
 
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=10"></script>
-<script src="ej.js?v=9"></script>
-<script src="ej-chat.js?v=14"></script>
+<script src="backend/ej-supabase.js?v=11"></script>
+<script src="ej.js?v=10"></script>
+<script src="ej-chat.js?v=15"></script>
 <script>
 (function(){
   function fmt(n){ return (n||0).toLocaleString('tr-TR') + ' TL'; }
-  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 
   var elEmpty   = document.getElementById('cartEmpty');
   var elDone    = document.getElementById('orderDone');

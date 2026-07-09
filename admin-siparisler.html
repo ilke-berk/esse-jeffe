@@ -181,12 +181,16 @@
   function showLogin(msg){ bootEl.style.display='none'; nav.style.display='none'; app.style.display='none'; loginBox.style.display='flex'; if(msg) document.getElementById('loginErr').textContent=msg; }
   function showApp(){ bootEl.style.display='none'; loginBox.style.display='none'; nav.style.display='flex'; app.style.display='grid'; }
 
-  var orders = [];       // tüm siparişler (order_items dahil)
+  var orders = [];       // yüklenen siparişler (order_items dahil, sayfalı)
   var current = null;    // seçilen sipariş
   var filter = 'all';    // durum filtresi
   var query = '';        // arama metni
+  var PAGE = 50;         // sayfa boyu (bellek + gereksiz PII transferini sınırlar)
+  var totalCount = 0;    // sunucudaki toplam sipariş sayısı
+  var loadedAll = false; // hepsi çekildi mi?
+  var loading = false;
 
-  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function el(id){ return document.getElementById(id); }
   function val(id){ var e=el(id); return e?e.value.trim():''; }
   function tl(n){ return (n||0).toLocaleString('tr-TR') + ' TL'; }
@@ -234,19 +238,30 @@
     });
   }
 
-  // ---------- veri ----------
-  function loadOrders() {
+  // ---------- veri (sayfalı: PAGE kayıtlık dilimler halinde çekilir) ----------
+  function loadOrders(reset) {
+    if (loading) return;
+    loading = true;
+    if (reset) { orders = []; loadedAll = false; }
     el('cnt').textContent = 'yükleniyor…';
-    sb.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }).then(function (r) {
-      if (r.error) { olistEl.innerHTML = '<div style="padding:18px;color:#b03030;font-size:13px">Yüklenemedi: ' + esc(r.error.message) + '</div>'; el('cnt').textContent=''; return; }
-      orders = r.data || [];
-      // seçili sipariş güncel veriyle tazelensin
-      if (current) { var f = orders.filter(function(o){return o.id===current.id;})[0]; current = f || null; }
-      renderList();
-      if (current) renderDetail();
-    });
+    var from = orders.length;
+    sb.from('orders').select('*, order_items(*)', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(from, from + PAGE - 1)
+      .then(function (r) {
+        loading = false;
+        if (r.error) { olistEl.innerHTML = '<div style="padding:18px;color:#b03030;font-size:13px">Yüklenemedi: ' + esc(r.error.message) + '</div>'; el('cnt').textContent=''; return; }
+        var batch = r.data || [];
+        orders = orders.concat(batch);
+        totalCount = (typeof r.count === 'number') ? r.count : orders.length;
+        loadedAll = batch.length < PAGE || orders.length >= totalCount;
+        // seçili sipariş güncel veriyle tazelensin (listede yoksa mevcut detay korunur)
+        if (current) { var f = orders.filter(function(o){return o.id===current.id;})[0]; if (f) current = f; }
+        renderList();
+        if (current) renderDetail();
+      });
   }
-  el('refresh').addEventListener('click', loadOrders);
+  el('refresh').addEventListener('click', function () { loadOrders(true); });
 
   // ---------- filtre + arama ----------
   function renderFilters() {
@@ -273,8 +288,15 @@
 
   function renderList() {
     var list = visibleOrders();
-    el('cnt').textContent = list.length + (filter === 'all' && !query ? ' sipariş' : ' / ' + orders.length);
-    if (!list.length) { olistEl.innerHTML = '<div style="padding:20px;color:#aaa;font-size:13px">Eşleşen sipariş yok.</div>'; return; }
+    el('cnt').textContent = list.length + (filter === 'all' && !query
+      ? (totalCount > orders.length ? ' / ' + totalCount : '') + ' sipariş'
+      : ' / ' + orders.length);
+    var moreBtn = loadedAll ? '' :
+      '<div style="padding:12px 14px"><button id="loadMore" class="rf" style="width:100%">' +
+      'Daha fazla yükle (' + (totalCount - orders.length) + ' sipariş daha)</button>' +
+      (query || filter !== 'all' ? '<p class="muted" style="margin:8px 0 0">Arama/filtre yalnız yüklenen ' + orders.length + ' siparişte geçerli.</p>' : '') +
+      '</div>';
+    if (!list.length) { olistEl.innerHTML = '<div style="padding:20px;color:#aaa;font-size:13px">Eşleşen sipariş yok.</div>' + moreBtn; bindLoadMore(); return; }
     olistEl.innerHTML = list.map(function (o) {
       var sel = current && current.id === o.id ? ' sel' : '';
       var st = STATUS_T[o.status] || o.status;
@@ -289,10 +311,16 @@
           '<div class="od">' + fmtDateShort(o.created_at) + '</div>' +
         '</div>' +
       '</div>';
-    }).join('');
+    }).join('') + moreBtn;
     Array.prototype.forEach.call(olistEl.querySelectorAll('.orow'), function (row) {
       row.addEventListener('click', function () { selectOrder(row.dataset.id); });
     });
+    bindLoadMore();
+  }
+
+  function bindLoadMore() {
+    var b = el('loadMore');
+    if (b) b.addEventListener('click', function () { loadOrders(); });
   }
 
   function selectOrder(id) {

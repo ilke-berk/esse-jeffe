@@ -363,7 +363,7 @@
 
 <script src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=10"></script>
+<script src="backend/ej-supabase.js?v=11"></script>
 <script>
 function ejInitFerris(){
   if (window.__ferrisInited) return;
@@ -654,7 +654,7 @@ function ejRecent(){
     // innerHTML stored XSS olurdu. ej.js bu inline script'ten sonra yüklendiği
     // için ejEsc'e güvenilmez; yerel esc kullanılır. href de yalnız ürün
     // sayfasına izin verilir (localStorage'a yazılmış javascript: vb. çalışmasın).
-    var esc=function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); };
+    var esc=function(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
     recent.forEach(function(p){
       var a=document.createElement('a'); a.className='card';
       a.href=(typeof p.href==='string' && p.href.indexOf('urun.html?slug=')===0) ? p.href : 'urun.html?slug='+encodeURIComponent(p.id||'');
@@ -670,7 +670,7 @@ if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
   ejRecent();
 }
 </script>
-<script src="ej.js?v=9"></script>
-<script src="ej-chat.js?v=14"></script>
+<script src="ej.js?v=10"></script>
+<script src="ej-chat.js?v=15"></script>
 </body>
 </html>

@@ -18,12 +18,15 @@
 // Gerekli secrets (Supabase → Edge Functions → Secrets):
 //   GEMINI_API_KEY   → Google AI Studio API anahtarınız (https://aistudio.google.com/apikey)
 //   GEMINI_MODEL     → (opsiyonel) varsayılan "gemini-2.5-flash"
+//   RESEND_API_KEY / ORDER_FROM_EMAIL / ORDER_NOTIFY_EMAIL → (opsiyonel)
+//     COD sipariş onay e-postası (./order-email.ts); yoksa gönderim atlanır.
 //   (SUPABASE_URL ve SUPABASE_SERVICE_ROLE_KEY otomatik gelir)
 //
 // Model: gemini-2.5-flash (hızlı + uygun maliyetli, function-calling destekli).
 // Daha güçlü yanıt için GEMINI_MODEL'i "gemini-2.5-pro" yapabilirsiniz.
 // ============================================================
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { sendOrderEmails } from "./order-email.ts";
 
 const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
 const WHATSAPP = "0850 255 12 37";
@@ -360,6 +363,10 @@ function resolveOrder(input: any): { error?: string; data?: ResolvedOrder } {
     if (size === null) {
       return { error: `HATA: "${p.name}" için "${it.size}" bedeni yok. Mevcut bedenler: ${(p.sizes || []).join(", ") || "(standart)"}. Müşteriden geçerli bir beden al.` };
     }
+    // GÜVENLİK — beden listesi varsa boş beden reddet (aşırı satış koruması).
+    if (size === "" && Array.isArray(p.sizes) && p.sizes.length) {
+      return { error: `HATA: "${p.name}" için beden seçimi zorunlu. Mevcut bedenler: ${p.sizes.join(", ")}. Müşteriden geçerli bir beden al.` };
+    }
     const line = p.price * qty;
     subtotal += line;
     orderItems.push({
@@ -493,8 +500,35 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
     return { message: `HATA: Sipariş kaydedilemedi (sistem hatası). Müşteriden özür dile ve birazdan tekrar denemesini ya da WhatsApp ${WHATSAPP} hattından yazmasını öner.` };
   }
   await admin.from("fn_rate_limit").insert({ ip, kind: "order" });
-  // NOT: onay e-postası yalnız create-order/paytr-callback'ten gider
-  // (_shared/order-email.ts); chat ayrı ağaçta → burada e-posta YOK (bilinen eksik).
+
+  // Onay e-postası (müşteri + işletme) — create-order ile aynı modülün chat
+  // kopyası (./order-email.ts). Hata fırlatmaz; e-posta gitmese de sipariş geçerli.
+  await sendOrderEmails({
+    order_no: oid,
+    payment_method: "cod",
+    full_name: form.full_name,
+    phone: form.phone,
+    email: form.email,
+    city: form.city,
+    district: form.district,
+    address: form.address,
+    postal_code: form.postal_code,
+    note: form.note,
+    subtotal,
+    shipping_fee: shipping,
+    total,
+    items: orderItems.map((r) => ({
+      product_name: r.product_name,
+      model_desc: r.model_desc,
+      color: r.color,
+      size: r.size,
+      unit_price: r.unit_price,
+      qty: r.qty,
+    })),
+  }, {
+    warn: (e, f) => chatLog("warn", e, f),
+    error: (e, f) => chatLog("error", e, f),
+  });
 
   return {
     message:

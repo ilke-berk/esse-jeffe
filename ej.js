@@ -127,8 +127,8 @@ var EJ_PH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 
 function ejFmt(n) { return (n || 0).toLocaleString('tr-TR') + ' TL'; }
 function ejEsc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   });
 }
 // Türkçe + aksan duyarsız normalizasyon (arama eşleşmesi için)

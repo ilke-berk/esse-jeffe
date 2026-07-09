@@ -467,7 +467,16 @@ create policy product_images_admin_write on product_images
 drop policy if exists "kendi profilini gör" on profiles;
 create policy "kendi profilini gör" on profiles for select using (auth.uid() = id);
 drop policy if exists "kendi profilini güncelle" on profiles;
-create policy "kendi profilini güncelle" on profiles for update using (auth.uid() = id);
+create policy "kendi profilini güncelle" on profiles for update
+  using (auth.uid() = id) with check (auth.uid() = id);
+
+-- GÜVENLİK — yetki yükseltmeyi engelle: üye kendi is_admin bayrağını
+-- değiştiremesin. Tablo seviyesi UPDATE grant'i kolon-bazlı REVOKE'u
+-- geçersiz kıldığından, tablo UPDATE'ini kaldırıp yalnızca meşru
+-- düzenlenebilir kolonlara (full_name, phone) grant veriyoruz.
+-- Böylece is_admin (ve id/created_at) client'tan güncellenemez.
+revoke update on profiles from authenticated, anon;
+grant update (full_name, phone) on profiles to authenticated;
 
 -- Adresler: kişi yalnızca kendi adreslerini yönetir
 drop policy if exists "kendi adreslerim" on addresses;
