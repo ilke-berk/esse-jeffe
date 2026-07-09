@@ -20,7 +20,7 @@ create table if not exists products (
   old_price   integer,                          -- üstü çizili fiyat (indirim yoksa null)
   badge       text,                             -- "Çok Satan" / "Yeni" / "İndirim" / null
   category    text,                             -- "cok-satan" / "yeni" / "askili" / "indirim" ...
-  sizes       text[] not null default '{XS,S,M,L,XL,2XL,3XL}',
+  sizes       text[] not null default '{S,M,L,XL,2XL,3XL}',
   featured    boolean not null default false,   -- ana sayfada öne çıkar
   active      boolean not null default true,    -- yayında mı
   sort        integer not null default 0,

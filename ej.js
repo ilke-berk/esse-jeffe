@@ -559,7 +559,15 @@ window.EJCart = (function () {
       var pdBtn = e.target.closest('.pd-actions .btn-solid');
       if (pdBtn && pdBtn.tagName === 'BUTTON') {
         e.preventDefault(); e.stopPropagation();
-        add(fromProduct());
+        // beden zorunlu: seçilmeden sepete eklenemez → uyarı göster
+        var pdSizes = document.querySelector('.pd-sizes');
+        if (pdSizes && !pdSizes.querySelector('button.sel')) {
+          warnSelectSize(pdSizes);
+          return;
+        }
+        var pdItem = fromProduct();
+        flyToCart(pdItem);
+        add(pdItem);
         return;
       }
       // sepet panelindeki adım / kaldır
@@ -575,6 +583,55 @@ window.EJCart = (function () {
       // checkout → sepet/ödeme sayfası
       if (e.target.closest('[data-checkout]')) { window.location.href = 'sepet.html'; return; }
     });
+  }
+
+  // beden seçilmeden "Sepete Ekle"ye basılırsa: ürün sayfasındaki beden seçme
+  // popup'ını aç. (Modalın açılışı/bedenleri/chat yönlendirmesi urun.html'de.)
+  function warnSelectSize() {
+    document.dispatchEvent(new CustomEvent('ej:need-size'));
+  }
+
+  // sepete ekleme animasyonu: ürün görselinin bir kopyası, görselin bulunduğu
+  // yerden köşedeki sepet ikonuna küçülerek + solarak uçar. Salt görsel efekt.
+  function flyToCart(item) {
+    var cart = document.querySelector('.icon.bag');
+    var srcEl = document.getElementById('pgMain') || document.querySelector('.pd-gallery .pg-item');
+    if (!cart || !srcEl) return;
+    var s = srcEl.getBoundingClientRect();
+    var c = cart.getBoundingClientRect();
+
+    // başlangıç: görselin ekranda GÖRÜNEN kısmının ortası (uzun galeri için güvenli)
+    var startX = s.left + s.width / 2;
+    var startY = (Math.max(s.top, 70) + Math.min(s.bottom, window.innerHeight)) / 2;
+    var w = Math.min(s.width, 130), h = w * 1.25;
+
+    var fly = document.createElement('div');
+    fly.className = 'ej-fly';
+    if (item && item.img) { fly.style.backgroundImage = 'url("' + item.img + '")'; }
+    else { fly.style.background = (item && item.color_hex) || '#6e2c2c'; }
+    fly.style.left = (startX - w / 2) + 'px';
+    fly.style.top = (startY - h / 2) + 'px';
+    fly.style.width = w + 'px';
+    fly.style.height = h + 'px';
+    document.body.appendChild(fly);
+
+    // hedef: sepet ikonunun merkezi
+    var tx = (c.left + c.width / 2) - startX;
+    var ty = (c.top + c.height / 2) - startY;
+    requestAnimationFrame(function () {
+      fly.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(.06)';
+      fly.style.opacity = '0.15';
+      fly.style.borderRadius = '50%';
+    });
+    var done = false;
+    function finish() {
+      if (done) return; done = true;
+      if (fly.parentNode) fly.parentNode.removeChild(fly);
+      cart.classList.add('ej-cart-bump');
+      setTimeout(function () { cart.classList.remove('ej-cart-bump'); }, 340);
+    }
+    fly.addEventListener('transitionend', finish, { once: true });
+    setTimeout(finish, 900);   // emniyet: transitionend gelmezse temizle
   }
 
   // ürün detay sayfasından sepet kalemi çıkar
