@@ -8,6 +8,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="ej.css?v=7">
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+</script>
 <style>
 /* ---------- product detail ---------- */
 .pd{display:grid;grid-template-columns:0.92fr 1.08fr;gap:0;align-items:flex-start;padding:0;max-width:1280px;margin:0 auto}
@@ -45,21 +48,14 @@
 .pd-color-label{margin-top:18px;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
 .pd-color-label b{color:var(--ink);font-weight:500;margin-left:6px}
 
-/* ---------- 3D cylinder / ferris carousel ---------- */
+/* ---------- 3D model carousel (döner elbiseler) ---------- */
 .carousel{display:flex;align-items:center;gap:8px;margin-top:8px;user-select:none}
-.ferris{position:relative;flex:1;height:168px;perspective:1150px;perspective-origin:50% 46%;overflow:hidden}
-.cstage{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .65s cubic-bezier(.22,.75,.25,1)}
-.ccard{position:absolute;left:50%;top:50%;width:132px;height:176px;margin:-88px 0 0 -66px;border:none;padding:0;cursor:pointer;background:none;
-  transform-style:preserve-3d;will-change:transform,opacity;transition:opacity .35s ease}
-.ccard .face{position:absolute;inset:0;background:var(--c);box-shadow:inset 0 0 0 1px rgba(255,255,255,.10),0 16px 34px rgba(20,18,15,.22);
-  display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden}
-.ccard .face::before{content:"";position:absolute;inset:0;background:linear-gradient(150deg,rgba(255,255,255,.22),rgba(255,255,255,0) 42%,rgba(0,0,0,.28))}
-.ccard .nm{position:relative;z-index:2;color:#fff;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;padding:12px;text-align:left;text-shadow:0 1px 3px rgba(0,0,0,.4)}
-.ccard .ring{position:absolute;inset:0;outline:0 solid var(--ink);outline-offset:5px;transition:outline-width .3s}
-.ccard.active .ring{outline-width:2px}
-.ccard .chk{position:absolute;top:10px;right:10px;z-index:3;width:22px;height:22px;border-radius:50%;background:var(--bg);color:var(--ink);display:grid;place-items:center;opacity:0;transform:scale(.6);transition:opacity .3s,transform .3s}
-.ccard.active .chk{opacity:1;transform:scale(1)}
-.ccard .chk svg{width:12px;height:12px;stroke:currentColor;stroke-width:2;fill:none}
+.ferris{position:relative;flex:1;height:300px;background:radial-gradient(ellipse at 50% 78%,rgba(20,18,15,.07),rgba(20,18,15,0) 62%)}
+.ferris canvas{display:block;width:100%;height:100%;cursor:grab;touch-action:pan-y}
+.ferris.dragging canvas{cursor:grabbing}
+.ferris .mv-note{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);pointer-events:none;white-space:nowrap}
+.ferris .mv-loading{position:absolute;inset:0;display:grid;place-items:center;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);transition:opacity .4s}
+.ferris.loaded .mv-loading{opacity:0;visibility:hidden}
 
 .cbtn{flex-shrink:0;width:46px;height:46px;border-radius:50%;border:1px solid var(--line-strong);background:var(--bg);color:var(--ink);cursor:pointer;display:grid;place-items:center;transition:background .25s,color .25s,border-color .25s}
 .cbtn:hover{background:var(--ink);color:var(--bg);border-color:var(--ink)}
@@ -74,10 +70,7 @@
 @media(max-width:900px){
   .pd{grid-template-columns:1fr;gap:0;padding:0}
   .pd-info{position:static}
-  .ferris{height:200px}
-}
-@media(max-width:560px){
-  .ccard{width:138px;height:184px;margin:-92px 0 0 -69px}
+  .ferris{height:260px}
 }
 /* size guide drawer */
 .sg-overlay{position:fixed;inset:0;background:rgba(20,18,15,.38);z-index:200;opacity:0;visibility:hidden;transition:opacity .35s,visibility .35s}
@@ -200,20 +193,16 @@
     <span class="label">Çok Satan</span>
     <h1>Pera <em style="font-style:normal;display:block;font-family:var(--sans);font-size:clamp(13px,1.2vw,16px);letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:400;margin-top:8px">Uzun Yırtmaçlı Krep Abiye</em></h1>
     <div class="pd-price"><span class="old">2.199 TL</span>1.699 TL</div>
-    <p class="pd-desc">Uzun yırtmaç detayı ve dökümlü krep kumaşıyla güçlü, zarif bir siluet. Aşağıdaki atlıkarıncadan rengi seçin — model üzerinde anında görün.</p>
+    <p class="pd-desc">Uzun yırtmaç detayı ve dökümlü krep kumaşıyla güçlü, zarif bir siluet. Renk seçeneklerini aşağıdaki 3 boyutlu atlıkarıncada döndürün — öndeki elbise seçili renktir.</p>
 
     <p class="pd-color-label">Renk —<b id="colorName">Bordo</b></p>
 
     <div class="carousel">
       <button class="cbtn" id="prevBtn" aria-label="Önceki renk"><svg viewBox="0 0 24 24"><polyline points="15 5 8 12 15 19"/></svg></button>
-      <div class="ferris">
-        <div class="cstage" id="cstage">
-          <button class="ccard" data-name="Bordo"   data-model="m-bordo"   data-img=""                            style="--c:#6e2c2c"><span class="face"><span class="nm">Bordo</span></span><span class="ring"></span><span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>
-          <button class="ccard" data-name="Yeşil"   data-model="m-yesil"   data-img="img/yesil-yirtmacli.jpg"   style="--c:#1d3b2a"><span class="face"><span class="nm">Yeşil</span></span><span class="ring"></span><span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>
-          <button class="ccard" data-name="Siyah"   data-model="m-siyah"   data-img="img/siyah-yirtmacli.jpg"   style="--c:#111111"><span class="face"><span class="nm">Siyah</span></span><span class="ring"></span><span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>
-          <button class="ccard" data-name="Kırmızı" data-model="m-kirmizi" data-img="img/kirmizi-yirtmacli.jpg" style="--c:#9e2b2b"><span class="face"><span class="nm">Kırmızı</span></span><span class="ring"></span><span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>
-          <button class="ccard" data-name="Mavi"    data-model="m-mavi"    data-img=""                            style="--c:#26384a"><span class="face"><span class="nm">Mavi</span></span><span class="ring"></span><span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>
-        </div>
+      <div class="ferris" id="ferris">
+        <canvas id="dressCanvas" aria-label="Renk seçenekleri — 3D elbise atlıkarıncası"></canvas>
+        <span class="mv-loading" id="mvLoading">3D modeller yükleniyor…</span>
+        <span class="mv-note">Sürükleyerek çevirebilirsiniz</span>
       </div>
       <button class="cbtn" id="nextBtn" aria-label="Sonraki renk"><svg viewBox="0 0 24 24"><polyline points="9 5 16 12 9 19"/></svg></button>
     </div>
@@ -364,122 +353,244 @@
 <script src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
 <script src="backend/supabase-config.js"></script>
 <script src="backend/ej-supabase.js?v=11"></script>
-<script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
 function ejInitFerris(){
   if (window.__ferrisInited) return;
-  var stage   = document.getElementById('cstage');
-  if (!stage || !stage.querySelector('.ccard')) return;
+  const canvas = document.getElementById('dressCanvas');
+  if (!canvas) return;
   window.__ferrisInited = true;
-  var cards   = Array.prototype.slice.call(stage.querySelectorAll('.ccard'));
-  var N       = cards.length;
-  var step    = 360 / N;
-  var ferris  = stage.parentElement;
-  var pgMainImg = document.getElementById('pgMainImg');
-  var pgMainPh  = document.getElementById('pgMainPh');
-  var colorName = document.getElementById('colorName');
-  var swName = document.getElementById('swName');
-  var swDot  = document.getElementById('swDot');
 
-  var radius = 250, angle = 0, cur = 0;
+  const ferris    = document.getElementById('ferris');
+  const pgMainImg = document.getElementById('pgMainImg');
+  const pgMainPh  = document.getElementById('pgMainPh');
+  const colorName = document.getElementById('colorName');
+  const swName    = document.getElementById('swName');
+  const swDot     = document.getElementById('swDot');
+  const loadingEl = document.getElementById('mvLoading');
 
-  function computeRadius(){
-    var w = ferris.clientWidth || 520;
-    radius = Math.max(190, Math.min(260, Math.round(w * 0.40)));
+  // Renkler: ürün DB'den geldiyse onu kullan, yoksa sabit liste
+  let COLORS = [
+    {name:'Bordo',   hex:'#6e2c2c', img:''},
+    {name:'Yeşil',   hex:'#1d3b2a', img:'img/yesil-yirtmacli.jpg'},
+    {name:'Siyah',   hex:'#111111', img:'img/siyah-yirtmacli.jpg'},
+    {name:'Kırmızı', hex:'#9e2b2b', img:'img/kirmizi-yirtmacli.jpg'},
+    {name:'Mavi',    hex:'#26384a', img:''}
+  ];
+  if (window.EJ_PRODUCT && window.EJ_PRODUCT.colors && window.EJ_PRODUCT.colors.length){
+    COLORS = window.EJ_PRODUCT.colors.map(c => ({ name:c.name, hex:c.hex, img:c.image_url || '' }));
   }
+  const N = COLORS.length;
+  const STEP = 360 / N;
+  const RAD = Math.PI / 180;
+
+  // test modeli siyah elbise — siyah kopya orijinal dokusunu korur, onunla başla
+  let cur = Math.max(0, COLORS.findIndex(c => /siyah/i.test(c.name)));
+
+  // ---- sahne ----
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+  const scene  = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 50);
+  camera.position.set(0, 1.0, 4.4);
+  camera.lookAt(0, 0.52, 0);
+
+  // HDR ortam haritası — stüdyo yumuşaklığında aydınlatma; kumaş env'den aydınlanır
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  pmrem.dispose();
+  const key = new THREE.DirectionalLight(0xffffff, 0.45); key.position.set(3, 5, 4); scene.add(key);
+
+  const ring = new THREE.Group();
+  scene.add(ring);
+  const R = 0.92;        // elbiselerin dizildiği daire yarıçapı
+  const holders  = [];   // renk başına elbise tutucusu
+  const fadeMats = [];   // holder index → materyaller (derinlik soluklaştırması)
+
+  // kontak gölgesi — radyal degrade doku
+  const shadowTex = (() => {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+    const g = cv.getContext('2d');
+    const gr = g.createRadialGradient(64, 64, 6, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(0,0,0,.5)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(cv);
+  })();
+
+  // seçili rengin altındaki ince podyum halkası
+  const podium = new THREE.Mesh(
+    new THREE.RingGeometry(0.30, 0.318, 72),
+    new THREE.MeshBasicMaterial({ color: 0x14120f, transparent: true, opacity: 0.6, depthWrite: false })
+  );
+  podium.rotation.x = -Math.PI / 2; podium.position.y = 0.008;
+  function placePodium(){ if (holders[cur]) holders[cur].add(podium); }
+
+  function resize(){
+    const w = ferris.clientWidth, h = ferris.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(ferris);
+  resize();
+
+  // ---- model: bir kez yükle, her renk için kopyala (geometri paylaşılır) ----
+  new GLTFLoader().load('models/test-elbise.glb', (gltf) => {
+    const src = gltf.scene;
+    // normalize: boy 1.1 birim, ayaklar y=0, merkezde
+    let box = new THREE.Box3().setFromObject(src);
+    const size = box.getSize(new THREE.Vector3());
+    src.scale.setScalar(1.1 / size.y);
+    box = new THREE.Box3().setFromObject(src);
+    const c = box.getCenter(new THREE.Vector3());
+    src.position.set(src.position.x - c.x, src.position.y - box.min.y, src.position.z - c.z);
+
+    COLORS.forEach((col, i) => {
+      const inst = src.clone(true);
+      const keepTexture = /siyah/i.test(col.name);   // test modelinin kendi rengi siyah
+      const mats = [];
+      inst.traverse(o => {
+        if (!o.isMesh) return;
+        o.material = o.material.clone();
+        o.material.transparent = true;               // arkadakiler soluklaşabilsin
+        if (!keepTexture){
+          // doku koyu olduğundan tint görünmez; bu kopyayı düz renge boya
+          o.material.map = null;
+          o.material.color = new THREE.Color(col.hex);
+          o.material.needsUpdate = true;
+        }
+        mats.push(o.material);
+      });
+      const holder = new THREE.Group();
+      holder.add(inst);
+      // kontak gölgesi
+      const shadow = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.72, 0.72),
+        new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, opacity: 0.45 })
+      );
+      shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.004;
+      holder.add(shadow);
+      holder.userData.shadowMat = shadow.material;
+      const a = i * STEP * RAD;
+      holder.position.set(Math.sin(a) * R, 0, Math.cos(a) * R);
+      holder.rotation.y = a;                          // elbise dışa baksın
+      ring.add(holder);
+      holders.push(holder);
+      fadeMats.push(mats);
+    });
+    placePodium();
+    ferris.classList.add('loaded');
+  }, (ev) => {
+    if (ev.total) loadingEl.textContent = '3D modeller yükleniyor… %' + Math.round(ev.loaded / ev.total * 100);
+  }, (err) => {
+    console.error('[EJ] 3D model yüklenemedi:', err);
+    loadingEl.textContent = '3D model yüklenemedi';
+  });
+
+  // ---- dönüş: hedef açıya yumuşak yaklaş + boşta otomatik dön ----
+  let angle  = -cur * STEP;   // ring açısı (derece); cur öndeyken -cur*STEP
+  let target = angle;
+  let autoOn = true, dragging = false;
 
   function apply(){
-    stage.style.transform = 'translateZ(-' + radius + 'px) rotateY(' + angle + 'deg)';
-    cards.forEach(function(c,i){
-      c.style.transform = 'rotateY(' + (i*step) + 'deg) translateZ(' + radius + 'px)';
-      var world = (((angle + i*step) % 360) + 360) % 360;
-      var facing = Math.cos(world * Math.PI/180);          // 1 = front, -1 = back
-      c.style.opacity = (0.18 + 0.82 * Math.max(0, facing)).toFixed(3);
-      c.style.zIndex = Math.round(facing * 100) + 200;
-      c.classList.toggle('active', i === cur);
-      c.style.pointerEvents = facing > -0.2 ? 'auto' : 'none';
-    });
-    var act = cards[cur];
-    var name = act.getAttribute('data-name');
-    var col  = act.style.getPropertyValue('--c').trim();
-    colorName.textContent = name;
-    swName.textContent = name;
-    swDot.style.background = col;
-    var imgSrc = act.getAttribute('data-img') || '';
-    if(imgSrc){
-      pgMainImg.src = imgSrc; pgMainImg.style.opacity = '1';
+    const col = COLORS[cur];
+    colorName.textContent = col.name;
+    if (swName) swName.textContent = col.name;
+    if (swDot)  swDot.style.background = col.hex;
+    if (col.img){
+      pgMainImg.src = col.img; pgMainImg.style.opacity = '1';
       pgMainPh.style.opacity = '0';
     } else {
       pgMainImg.style.opacity = '0';
-      pgMainPh.style.background = col;
+      pgMainPh.style.background = col.hex;
       pgMainPh.style.opacity = '1';
     }
+    placePodium();   // podyum halkası seçili elbisenin altına geçer
   }
 
-  function rotateTo(j){
-    var diff = j - cur;
-    diff = ((diff % N) + N) % N;          // 0..N-1
-    if (diff > N/2) diff -= N;            // shortest path
-    angle -= diff * step;
-    cur = j;
+  function snapTargetToCur(){
+    // cur'u öne getiren en yakın tam tur açısı
+    const want = -cur * STEP;
+    target = want + Math.round((target - want) / 360) * 360;
+  }
+
+  let autoTimer = null;
+  function pauseAutoThenResume(ms){
+    autoOn = false;
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(() => { if (!dragging) autoOn = true; }, ms);
+  }
+
+  function rotate(dir){
+    cur = (cur + dir + N) % N;
+    snapTargetToCur();
     apply();
+    pauseAutoThenResume(2200);
   }
 
-  document.getElementById('prevBtn').addEventListener('click', function(){ rotateTo((cur - 1 + N) % N); });
-  document.getElementById('nextBtn').addEventListener('click', function(){ rotateTo((cur + 1) % N); });
-  cards.forEach(function(c,i){ c.addEventListener('click', function(){ rotateTo(i); }); });
-  document.addEventListener('keydown', function(e){
-    if(e.key==='ArrowLeft'){ rotateTo((cur - 1 + N) % N); }
-    if(e.key==='ArrowRight'){ rotateTo((cur + 1) % N); }
+  document.getElementById('prevBtn').addEventListener('click', () => rotate(-1));
+  document.getElementById('nextBtn').addEventListener('click', () => rotate(1));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft')  rotate(-1);
+    if (e.key === 'ArrowRight') rotate(1);
   });
 
-  // drag / swipe to spin
-  var down=false, sx=0, moved=false;
-  ferris.addEventListener('pointerdown', function(e){ down=true; moved=false; sx=e.clientX; });
-  window.addEventListener('pointermove', function(e){
-    if(!down) return;
-    if(Math.abs(e.clientX - sx) > 48){
-      if(e.clientX < sx){ rotateTo((cur + 1) % N); } else { rotateTo((cur - 1 + N) % N); }
-      sx = e.clientX; moved=true;
-    }
+  // sürükleyerek çevir; bırakınca öndeki elbise seçili renk olur
+  let sx = 0;
+  canvas.addEventListener('pointerdown', (e) => {
+    dragging = true; autoOn = false; sx = e.clientX;
+    ferris.classList.add('dragging');
+    canvas.setPointerCapture(e.pointerId);
   });
-  window.addEventListener('pointerup', function(){ down=false; setTimeout(startAuto, 800); });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - sx; sx = e.clientX;
+    target += dx * 0.45; angle = target;   // sürüklerken birebir takip
+  });
+  canvas.addEventListener('pointerup', () => {
+    dragging = false;
+    ferris.classList.remove('dragging');
+    cur = ((Math.round(-target / STEP) % N) + N) % N;
+    snapTargetToCur();
+    apply();
+    pauseAutoThenResume(1500);
+  });
+  ferris.addEventListener('mouseenter', () => { autoOn = false; });
+  ferris.addEventListener('mouseleave', () => { if (!dragging) autoOn = true; });
 
-  window.addEventListener('resize', function(){ computeRadius(); apply(); });
-  computeRadius();
+  (function loop(){
+    requestAnimationFrame(loop);
+    if (autoOn && !dragging) target += 0.12;   // eski carousel'in boşta dönüş hızı
+    angle += (target - angle) * 0.09;
+    ring.rotation.y = angle * RAD;
+    // derinlik hiyerarşisi: öndeki büyük ve net, arkadakiler soluk ve küçük
+    holders.forEach((h, i) => {
+      const f = Math.max(0, Math.cos((angle + i * STEP) * RAD));   // 1 = tam önde
+      h.scale.setScalar(0.94 + 0.18 * f);
+      const op = 0.30 + 0.70 * f;
+      fadeMats[i].forEach(m => { m.opacity = op; });
+      h.userData.shadowMat.opacity = 0.45 * op;
+    });
+    renderer.render(scene, camera);
+  })();
+
   apply();
-
-  // Auto-rotate — smooth, seçili kart değişmez
-  var autoAF = null;
-  var isAuto = false;
-  function startAuto(){
-    if(isAuto) return;
-    isAuto = true;
-    stage.style.transition = 'none';
-    function tick(){
-      if(!isAuto) return;
-      angle += 0.12;
-      apply();
-      autoAF = requestAnimationFrame(tick);
-    }
-    if(autoAF) cancelAnimationFrame(autoAF);
-    autoAF = requestAnimationFrame(tick);
-  }
-  function stopAuto(){
-    isAuto = false;
-    if(autoAF){ cancelAnimationFrame(autoAF); autoAF = null; }
-    stage.style.transition = '';
-  }
-
-  ferris.addEventListener('pointerdown', stopAuto);
-  ferris.addEventListener('mouseenter', stopAuto);
-  ferris.addEventListener('mouseleave', startAuto);
-
-  startAuto();
 }
+
 // Supabase varsa ürün DB'den yüklenince başlat; yoksa hemen.
 if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
-  window.addEventListener('ej:product-loaded', ejInitFerris, { once:true });
-  setTimeout(ejInitFerris, 2500);   // emniyet: SDK gecikirse/yüklenmezse
+  if (window.EJ_PRODUCT) ejInitFerris();
+  else {
+    window.addEventListener('ej:product-loaded', ejInitFerris, { once:true });
+    setTimeout(ejInitFerris, 2500);   // emniyet: SDK gecikirse/yüklenmezse
+  }
 } else {
   ejInitFerris();
 }
