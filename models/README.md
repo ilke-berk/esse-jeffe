@@ -1,7 +1,10 @@
 # 3D modeller
 
 `urun.html` atlıkarıncası `*.min.glb` dosyalarını kullanır (meshopt sıkıştırmalı,
-dokular WebP). `*.glb` orijinaller kaynak olarak duruyor; siteden referans edilmez.
+dokular WebP). `*.glb` orijinaller kaynak dosyadır; siteden referans edilmez ve
+repo şişmesin diye **git'e dahil değildir** (`.gitignore`: `models/*.glb`,
+`!models/*.min.glb`). Kaynaklar yalnız yerel diskte/OneDrive'da durur — silmeden
+önce yedekleyin.
 
 Yeni/güncellenen bir modeli yayına hazırlamak için:
 

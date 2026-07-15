@@ -9,6 +9,10 @@ _ds/
 screenshots/
 uploads/
 
+# 3D model kaynakları (siteden yalnız *.min.glb kullanılır, bkz. models/README.md)
+models/*.glb
+!models/*.min.glb
+
 # OS / editör
 Thumbs.db
 .DS_Store
