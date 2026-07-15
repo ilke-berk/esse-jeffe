@@ -44,6 +44,7 @@
       for (var i = 0; i < colors.length; i++) { if (colors[i].image_url) { primary = colors[i].image_url; break; } }
     }
     return {
+      id: row.id,
       slug: row.slug, name: row.name, model_desc: row.model_desc,
       description: row.description, price: row.price, old_price: row.old_price,
       badge: row.badge, category: row.category,
@@ -68,8 +69,14 @@
     if (/yeni/i.test(p.badge || '')) cats.push('yeni');
     if (p.old_price) cats.push('indirim');
     if (String(p.model_desc || '').toLocaleLowerCase('tr').indexOf('askılı') > -1) cats.push('askili');
+    // favori kalbi: kart <a> içinde buton — tıklama EJWish delegasyonunda
+    // preventDefault ile yakalanır, karta gitmez
+    var fav = '<button type="button" class="card-fav" data-slug="' + esc(p.slug) +
+      '" data-name="' + esc(p.name) + '" data-price="' + (parseInt(p.price, 10) || 0) +
+      '" data-img="' + esc(p.image || '') + '" aria-label="Favorilere ekle" aria-pressed="false">' +
+      '<svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>';
     return '<a class="card" data-cat="' + cats.join(' ') + '" href="urun.html?slug=' + encodeURIComponent(p.slug) + '">' +
-      '<div class="frame">' + tag + media + '</div>' +
+      '<div class="frame">' + tag + fav + media + '</div>' +
       '<div class="meta"><h3>' + esc(p.name) + '</h3>' +
         '<p class="model-desc">' + esc(p.model_desc || '') + '</p>' +
         '<div class="dots">' + dots + '</div>' +
@@ -101,6 +108,20 @@
         .limit(1).maybeSingle().then(function (res) {
           if (res.error) throw res.error;
           return res.data ? normalize(res.data) : null;
+        });
+    },
+    // beden bazlı stok haritası — {"Renk|Beden": {stock, track}}; UX göstergesi
+    // içindir, gerçek stok kontrolü sipariş anında sunucuda (reserve_stock_bulk)
+    stock: function (productId) {
+      if (!productId) return Promise.resolve({});
+      return client.from('product_stock').select('color,size,stock,track')
+        .eq('product_id', productId).then(function (res) {
+          if (res.error) throw res.error;
+          var map = {};
+          (res.data || []).forEach(function (r) {
+            map[(r.color || '') + '|' + (r.size || '')] = { stock: r.stock, track: r.track };
+          });
+          return map;
         });
     },
     // sipariş oluştur (kapıda ödeme / havale) — form: teslimat+ödeme, items: sepet kalemleri
@@ -370,7 +391,13 @@
     };
     if (!slug) { done(); return; }                  // slug yoksa sabit içerik + init
     EJData.product(slug).then(function (p) {
-      if (p) applyProduct(p);
+      if (p) {
+        applyProduct(p);
+        EJData.stock(p.id).then(function (map) {
+          window.EJ_STOCK = map;
+          document.dispatchEvent(new CustomEvent('ej:stock-loaded', { detail: map }));
+        }).catch(function (e) { console.warn('[EJ] Stok okunamadı:', e.message || e); });
+      }
       done();
     }).catch(function (e) { console.error('[EJ] Ürün yüklenemedi:', e.message || e); done(); });
   }

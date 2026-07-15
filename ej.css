@@ -28,6 +28,34 @@ a{color:inherit;text-decoration:none}
 .wrap{max-width:1280px;margin:0 auto;padding:0 40px}
 .serif{font-family:var(--serif)}
 
+/* favoriler (wishlist) — kart kalbi, ürün sayfası kalbi, favoriler.html */
+.card-fav{position:absolute;top:10px;right:10px;z-index:3;width:36px;height:36px;border:none;border-radius:50%;background:rgba(255,255,255,.88);color:var(--ink);cursor:pointer;display:grid;place-items:center;transition:transform .2s,color .2s;padding:0}
+.card-fav svg{width:17px;height:17px;stroke:currentColor;stroke-width:1.6;fill:none;transition:fill .2s}
+.card-fav:hover{transform:scale(1.1)}
+.card-fav.active{color:var(--gece)}
+.card-fav.active svg{fill:currentColor}
+.pd-fav{min-width:52px;min-height:52px;border:1px solid var(--ink);background:none;color:var(--ink);cursor:pointer;display:grid;place-items:center;transition:background .3s,color .3s;padding:0 16px}
+.pd-fav svg{width:20px;height:20px;stroke:currentColor;stroke-width:1.4;fill:none;transition:fill .2s}
+.pd-fav:hover{background:var(--ink);color:var(--bg)}
+.pd-fav.active{color:var(--gece);border-color:var(--gece)}
+.pd-fav.active:hover{background:var(--gece);color:#fff}
+.pd-fav.active svg{fill:currentColor}
+.fav-empty{text-align:center;padding:90px 24px;color:var(--soft)}
+.fav-empty p{font-family:var(--serif);font-weight:300;font-size:24px;margin-bottom:24px}
+.fav-card{position:relative}
+.fav-rm{margin-top:10px;background:none;border:none;color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;padding:6px 0;text-decoration:underline;text-underline-offset:3px}
+.fav-rm:hover{color:var(--ink)}
+
+/* beden stok göstergesi (urun.html) — tükendi + "son X" rozeti */
+.pd-sizes button:disabled,#sizeModalSizes button:disabled{opacity:.35;text-decoration:line-through;cursor:not-allowed}
+.pd-sizes button[data-stock-note],#sizeModalSizes button[data-stock-note]{position:relative}
+.pd-sizes button[data-stock-note]::after,#sizeModalSizes button[data-stock-note]::after{content:attr(data-stock-note);position:absolute;top:-9px;right:-8px;background:var(--gece);color:#fff;font-size:9px;letter-spacing:.06em;padding:2px 5px;line-height:1;white-space:nowrap;pointer-events:none}
+
+/* içeriğe atla — yalnız klavye odağında görünür */
+.skip-link{position:absolute;left:-9999px;top:0;z-index:2000;background:var(--ink);color:#fff;padding:10px 18px;font-size:12px;letter-spacing:.12em;text-transform:uppercase}
+.skip-link:focus{left:0}
+[id="main"]:focus{outline:none}
+
 /* ---------- announce ---------- */
 .announce{border-bottom:1px solid var(--line);background:var(--bg);position:sticky;top:0;z-index:42;transition:transform .18s cubic-bezier(.4,0,.2,1)}
 .announce.ann-hide{transform:translateY(-100%)}
@@ -51,8 +79,9 @@ a{color:inherit;text-decoration:none}
 /* WCAG 2.5.5: dokunma hedefi min 44×44px — görsel ikon boyutu değişmez */
 .icon{background:none;border:none;color:var(--ink);cursor:pointer;display:grid;place-items:center;min-width:44px;min-height:44px}
 .icon svg{width:19px;height:19px;stroke:currentColor;stroke-width:1.3;fill:none}
-.bag{position:relative}
-.bag .count{position:absolute;top:-6px;right:-8px;font-size:9px;font-family:var(--sans);background:var(--ink);color:var(--bg);border-radius:999px;min-width:15px;height:15px;display:grid;place-items:center;padding:0 4px;letter-spacing:0}
+.bag,.heart{position:relative}
+.bag .count,.heart .count{position:absolute;top:-6px;right:-8px;font-size:9px;font-family:var(--sans);background:var(--ink);color:var(--bg);border-radius:999px;min-width:15px;height:15px;display:grid;place-items:center;padding:0 4px;letter-spacing:0}
+.heart .count{top:2px;right:0}
 
 /* ---------- buttons ---------- */
 .btn{display:inline-block;font-family:var(--sans);font-size:11px;letter-spacing:.2em;text-transform:uppercase;cursor:pointer;border:1px solid var(--ink);background:none;color:var(--ink);padding:16px 42px;transition:background .3s,color .3s}

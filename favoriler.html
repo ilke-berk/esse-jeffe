@@ -3,13 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Hesabım — Esse Jeffe</title>
+<title>Favorilerim — Esse Jeffe</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M5kng.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M3knj-SA.woff2">
   <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="ej.css?v=10">
+<style>
+.img-ph{width:100%;aspect-ratio:3/4;background:var(--surface,#f2ede8);display:flex;align-items:center;justify-content:center;}
+.img-ph svg{width:36px;height:36px;opacity:.25;}
+.prod-grid{padding-bottom:56px}
+</style>
 </head>
 <body>
 <a class="skip-link" href="#main">İçeriğe atla</a>
@@ -20,45 +25,34 @@
       <a href="index.html">Ana Sayfa</a>
       <a href="koleksiyon.html">Koleksiyon</a>
       <a href="atolye.html">Hakkımızda</a>
-      <a href="iletisim.html">İletişim</a>
+    <a href="iletisim.html">İletişim</a>
     </nav>
     <a class="brand" href="index.html">ESSE JEFFE</a>
     <div class="tools">
       <div class="name-ticker" aria-hidden="true"><span class="t-item"></span></div>
       <button class="icon" aria-label="Ara"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></button>
       <button class="icon" aria-label="Hesap"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M5 21c0-3.9 3.1-7 7-7s7 3.1 7 7"></path></svg></button>
-      <a class="icon heart" href="favoriler.html" aria-label="Favoriler"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg><span class="count" style="display:none">0</span></a>
+      <a class="icon heart" href="favoriler.html" aria-label="Favoriler" aria-current="page"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg><span class="count" style="display:none">0</span></a>
       <button class="icon bag" aria-label="Sepet"><svg viewBox="0 0 24 24"><path d="M6 8h12l-1 13H7L6 8z"></path><path d="M9 8V6a3 3 0 0 1 6 0v2"></path></svg><span class="count" style="display:none">0</span></button>
     </div>
   </div>
 </header>
 
-<section id="main" tabindex="-1" class="phead" data-screen-label="Hesabım">
+<section id="main" tabindex="-1" class="phead" data-screen-label="Favoriler">
   <div class="phead-in">
-    <p class="crumb"><a href="index.html">Ana Sayfa</a> · Hesabım</p>
-    <h1>Hesabım</h1>
+    <p class="crumb"><a href="index.html">Ana Sayfa</a> · Favorilerim</p>
+    <h1>Favori <em>Seçimleriniz</em></h1>
+    <p>Beğendiğiniz modeller bu cihazda saklanır; üyelik gerektirmez. Fiyatlar bilgi amaçlıdır, güncel fiyat ürün sayfasındadır.</p>
   </div>
 </section>
 
-<section class="sec wrap">
-  <div class="acct">
-    <div class="acct-top">
-      <div>
-        <div id="acctName" style="font-family:var(--serif);font-size:20px"></div>
-        <div class="email" id="acctEmail">—</div>
-      </div>
-      <button class="acct-logout" id="acctLogout" type="button">Çıkış Yap</button>
+<section class="sec-tight">
+  <div class="wrap">
+    <div class="grid prod-grid" id="favGrid"></div>
+    <div class="fav-empty" id="favEmpty" style="display:none" role="status">
+      <p>Favori listeniz henüz boş.</p>
+      <a class="btn" href="koleksiyon.html">Koleksiyonu Keşfet</a>
     </div>
-
-    <!-- yalnız adminlere görünür -->
-    <div id="acctAdmin" style="display:none;align-items:center;gap:14px;flex-wrap:wrap;border:1px solid var(--line);background:var(--bg-warm,#f6f5f1);padding:16px 18px;margin:8px 0 30px">
-      <span style="font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)">Yönetici</span>
-      <a href="admin-urunler.html" class="btn btn-solid" style="padding:9px 18px;font-size:13px">Ürün Yönetimi</a>
-      <a href="admin.html" class="btn" style="padding:9px 18px;font-size:13px">Destek Paneli</a>
-    </div>
-
-    <h2>Siparişlerim</h2>
-    <div id="acctOrders"><p class="acct-empty">Siparişler yükleniyor…</p></div>
   </div>
 </section>
 
@@ -97,63 +91,51 @@
     <a href="kayit.html">Üye Ol</a>
   </div>
 </aside>
-
 <script src="backend/supabase-config.js"></script>
 <script src="backend/ej-supabase.js?v=15"></script>
 <script src="ej.js?v=12"></script>
 <script src="ej-chat.js?v=18"></script>
 <script>
+// Favori listesi: EJWish (ej.js) localStorage'ından basılır. Kart görünümü
+// koleksiyon kartlarıyla aynı; fiyat kaydedildiği andaki değerdir.
 (function(){
-  var STATUS = { pending:'Hazırlanıyor', preparing:'Hazırlanıyor', shipped:'Kargoda', delivered:'Teslim edildi', cancelled:'İptal edildi' };
+  function esc(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
   function fmt(n){ return (n||0).toLocaleString('tr-TR') + ' TL'; }
-  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
-  function dt(iso){ try{ return new Date(iso).toLocaleDateString('tr-TR',{day:'2-digit',month:'long',year:'numeric'}); }catch(e){ return ''; } }
-
-  function whenReady(cb){
-    if(window.ejSupabase && window.EJData) return cb();
-    var n=0, t=setInterval(function(){ if((window.ejSupabase && window.EJData) || n++>120){ clearInterval(t); cb(); } }, 50);
+  var PH = '<div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>';
+  function cardOf(it){
+    var media = it.img
+      ? '<img src="'+esc(it.img)+'" alt="'+esc(it.name)+'" loading="lazy" decoding="async" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">'
+      : PH;
+    return '<div class="fav-card">'+
+      '<a class="card" href="urun.html?slug='+encodeURIComponent(it.slug)+'">'+
+        '<div class="frame">'+media+'</div>'+
+        '<div class="meta"><h3>'+esc(it.name)+'</h3>'+
+          (it.price ? '<div class="price">'+fmt(it.price)+'</div>' : '')+
+        '</div>'+
+      '</a>'+
+      '<button type="button" class="fav-rm" data-slug="'+esc(it.slug)+'">Kaldır</button>'+
+    '</div>';
   }
-
-  function renderOrders(list){
-    var wrap = document.getElementById('acctOrders');
-    if(!list || !list.length){ wrap.innerHTML = '<p class="acct-empty">Henüz siparişiniz yok. <a href="koleksiyon.html" style="text-decoration:underline">Koleksiyona göz atın.</a></p>'; return; }
-    wrap.innerHTML = list.map(function(o){
-      var items = (o.order_items||[]).map(function(it){
-        var d=[]; if(it.color) d.push(esc(it.color)); if(it.size) d.push(esc(it.size));
-        return '<div class="oc-line"><span>'+esc(it.product_name)+(d.length?' ('+d.join(', ')+')':'')+' × '+it.qty+'</span><span>'+fmt((it.unit_price||0)*(it.qty||0))+'</span></div>';
-      }).join('');
-      return '<div class="order-card">'+
-        '<div class="oc-top"><span class="oc-no">'+esc(o.order_no)+' <span class="oc-date">· '+dt(o.created_at)+'</span></span>'+
-        '<span class="oc-status">'+(STATUS[o.status]||esc(o.status))+'</span></div>'+
-        items+
-        '<div class="oc-total"><span>Toplam</span><span>'+fmt(o.total)+'</span></div></div>';
-    }).join('');
+  function render(){
+    var items = window.EJWish ? EJWish.load() : [];
+    var grid = document.getElementById('favGrid');
+    var empty = document.getElementById('favEmpty');
+    grid.innerHTML = items.map(cardOf).join('');
+    grid.style.display = items.length ? '' : 'none';
+    empty.style.display = items.length ? 'none' : '';
   }
-
-  whenReady(function(){
-    if(!window.EJData){ document.getElementById('acctOrders').innerHTML='<p class="acct-empty">Bağlantı kurulamadı.</p>'; return; }
-    window.EJData.auth.session().then(function(session){
-      if(!session){ location.href = 'giris.html?next=hesap.html'; return; }
-      var u = session.user;
-      document.getElementById('acctEmail').textContent = u.email || '';
-      var nm = (u.user_metadata && u.user_metadata.full_name) || '';
-      document.getElementById('acctName').textContent = nm ? ('Merhaba, ' + nm) : 'Merhaba';
-      document.getElementById('acctLogout').addEventListener('click', function(){
-        window.EJData.auth.signOut().then(function(){ location.href='index.html'; });
-      });
-      // admin ise yönetim panel linklerini göster
-      window.EJData.client().from('profiles').select('is_admin').eq('id', u.id).single()
-        .then(function(r){ if(r.data && r.data.is_admin){ document.getElementById('acctAdmin').style.display='flex'; } });
-      window.EJData.client()
-        .from('orders')
-        .select('order_no,status,total,created_at,order_items(product_name,color,size,qty,unit_price)')
-        .order('created_at',{ascending:false})
-        .then(function(res){
-          if(res.error){ document.getElementById('acctOrders').innerHTML='<p class="acct-empty">Siparişler yüklenemedi.</p>'; console.error(res.error); return; }
-          renderOrders(res.data||[]);
-        });
-    });
+  document.addEventListener('click', function(e){
+    var b = e.target.closest('.fav-rm');
+    if(!b) return;
+    EJWish.remove(b.getAttribute('data-slug'));   // ej:wishlist-changed -> render
   });
+  document.addEventListener('ej:wishlist-changed', render);
+  window.addEventListener('storage', render);
+  render();
 })();
 </script>
 </body>

@@ -6,8 +6,10 @@
 <title>Pera — Esse Jeffe</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=7">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M5kng.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M3knj-SA.woff2">
+  <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ej.css?v=10">
 <script type="importmap">
 {"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
 </script>
@@ -150,6 +152,7 @@
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">İçeriğe atla</a>
 
 
 
@@ -166,12 +169,13 @@
       <div class="name-ticker" aria-hidden="true"><span class="t-item"></span></div>
       <button class="icon" aria-label="Ara"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg></button>
       <button class="icon" aria-label="Hesap"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M5 21c0-3.9 3.1-7 7-7s7 3.1 7 7"></path></svg></button>
+      <a class="icon heart" href="favoriler.html" aria-label="Favoriler"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg><span class="count" style="display:none">0</span></a>
       <button class="icon bag" aria-label="Sepet"><svg viewBox="0 0 24 24"><path d="M6 8h12l-1 13H7L6 8z"></path><path d="M9 8V6a3 3 0 0 1 6 0v2"></path></svg><span class="count" style="display:none">0</span></button>
     </div>
   </div>
 </header>
 
-<section class="pd" data-screen-label="Ürün">
+<section id="main" tabindex="-1" class="pd" data-screen-label="Ürün">
   <!-- ürün görselleri — dikey scroll -->
   <div class="pd-gallery-outer">
   <div class="pd-gallery" id="pdGallery">
@@ -227,6 +231,7 @@
 
     <div class="pd-actions">
       <button class="btn btn-solid" type="button">Sepete Ekle</button>
+      <button class="pd-fav" type="button" aria-label="Favorilere ekle" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
       <a class="btn" href="iletisim.html">WhatsApp'tan Sor</a>
     </div>
 
@@ -348,8 +353,8 @@
       <div class="socials"><a href="https://www.instagram.com/esse_jeffe/">Instagram</a><a href="https://www.tiktok.com/@esse_jeffe">TikTok</a><a href="https://www.facebook.com/essejeffe.tr">Facebook</a></div>
     </div>
     <div><h4>Koleksiyon</h4><ul><li><a href="koleksiyon.html">Tüm Abiyeler</a></li><li><a href="koleksiyon.html">Yeni Gelenler</a></li><li><a href="koleksiyon.html">Çok Satanlar</a></li><li><a href="koleksiyon.html">İndirimdekiler</a></li></ul></div>
-    <div><h4>Yardım</h4><ul><li><a href="siparis-takip.html">Sipariş Takibi</a></li><li><a href="hizmetler.html">Kargo & Değişim</a></li><li><a href="odeme.html">Ödeme Yöntemleri</a></li><li><a href="beden-rehberi.html">Beden Rehberi</a></li><li><a href="sss.html">SSS</a></li></ul></div>
-    <div><h4>Kurumsal</h4><ul><li><a href="kvkk.html">KVKK</a></li><li><a href="gizlilik.html">Gizlilik & Güvenlik</a></li><li><a href="cerez-politikasi.html">Çerez Politikası</a><span class="soon">yakında</span></li><li><a href="mesafeli-satis.html">Mesafeli Satış Sözleşmesi</a></li><li><a href="on-bilgilendirme.html">Ön Bilgilendirme Formu</a><span class="soon">yakında</span></li></ul></div>
+    <div><h4>Yardım</h4><ul><li><a href="siparis-takip.html">Sipariş Takibi</a></li><li><a href="hizmetler.html">Kargo &amp; Değişim</a></li><li><a href="degisim-iptal.html">Değişim &amp; İptal</a></li><li><a href="odeme.html">Ödeme Yöntemleri</a></li><li><a href="beden-rehberi.html">Beden Rehberi</a></li><li><a href="sss.html">SSS</a></li></ul></div>
+    <div><h4>Kurumsal</h4><ul><li><a href="kvkk.html">KVKK</a></li><li><a href="gizlilik.html">Gizlilik &amp; Güvenlik</a></li><li><a href="cerez-politikasi.html">Çerez Politikası</a><span class="soon">yakında</span></li><li><a href="mesafeli-satis.html">Mesafeli Satış Sözleşmesi</a></li><li><a href="on-bilgilendirme.html">Ön Bilgilendirme Formu</a><span class="soon">yakında</span></li></ul></div>
     <div><h4>İletişim</h4><ul><li><a href="mailto:info@essejeffe.com">info@essejeffe.com</a></li><li><a href="https://api.whatsapp.com/send?phone=%2B908502551237">WhatsApp: 0850 255 12 37</a></li><li><a href="https://www.instagram.com/esse_jeffe/">Instagram @esse_jeffe</a></li></ul></div>
   </div>
   <div class="footer-bottom">
@@ -360,7 +365,7 @@
 
 <script src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=12"></script>
+<script src="backend/ej-supabase.js?v=15"></script>
 <script type="module">
 // three.js + model (~2.6 MB) ancak atlıkarınca görünür olunca iner; sayfa açılışını bloklamaz.
 // WebGL yoksa ya da CDN/model inemezse fotoğraflı renk seçiciye düşülür.
@@ -419,6 +424,7 @@ async function ejInitFerris(){
       pgMainPh.style.background = col.hex;
       pgMainPh.style.opacity = '1';
     }
+    document.dispatchEvent(new CustomEvent('ej:color-changed', { detail: col.name }));
   }
 
   // ---- 3D'siz mod: kumaş kartı + renk noktaları, ok tuşları ve butonlar aynı çalışır ----
@@ -777,6 +783,32 @@ document.addEventListener('click',function(e){
   ejSelectSize(b.textContent.trim());
 });
 
+// beden bazlı stok göstergesi: EJ_STOCK haritası (renk|beden) + seçili renge göre
+// butonları işaretler. Yalnız UX — gerçek stok kontrolü sipariş anında sunucuda.
+function ejUpdateSizeStock(){
+  var map = window.EJ_STOCK;
+  if(!map) return;
+  var colEl = document.getElementById('colorName');
+  var color = colEl ? colEl.textContent.trim() : '';
+  document.querySelectorAll('.pd-sizes button').forEach(function(b){
+    var size = b.textContent.trim();
+    var rec = map[color+'|'+size] || map['|'+size];   // renksiz (genel) kayıt da geçerli
+    b.disabled = false;
+    b.classList.remove('soldout');
+    b.removeAttribute('data-stock-note');
+    if(!rec || !rec.track) return;                    // kayıt yok / track=false → sınırsız
+    if(rec.stock <= 0){
+      b.disabled = true;
+      b.classList.add('soldout');
+      b.classList.remove('sel');
+    } else if(rec.stock <= 3){
+      b.setAttribute('data-stock-note','son '+rec.stock);
+    }
+  });
+}
+document.addEventListener('ej:stock-loaded', ejUpdateSizeStock);
+document.addEventListener('ej:color-changed', ejUpdateSizeStock);
+
 // Beden seçme popup (modal): beden seçmeden "Sepete Ekle"ye basılınca ej.js
 // 'ej:need-size' olayını yollar → burada modal açılır. Bedenler modalda listelenir;
 // modaldan seçilince gerçek beden işaretlenir, modal kapanır ve ürün sepete eklenir.
@@ -797,6 +829,9 @@ document.addEventListener('click',function(e){
       mb.type = 'button';
       mb.textContent = s;
       if(rb.classList.contains('sel')) mb.classList.add('sel');
+      if(rb.disabled){ mb.disabled = true; mb.classList.add('soldout'); }
+      var note = rb.getAttribute('data-stock-note');
+      if(note) mb.setAttribute('data-stock-note', note);
       sizesEl.appendChild(mb);
     });
     modal.hidden = false;
@@ -875,7 +910,7 @@ if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
   ejRecent();
 }
 </script>
-<script src="ej.js?v=11"></script>
+<script src="ej.js?v=12"></script>
 <script src="ej-chat.js?v=18"></script>
 </body>
 </html>
