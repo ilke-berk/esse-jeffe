@@ -5,6 +5,25 @@
 
 ---
 
+## GÜNCELLEME — 2026-07-15 (aynı gün): kalan işlerin TAMAMI kapatıldı ✅
+
+`feat/denetim-kalan-isler` dalında 4 fazda uygulandı, Playwright ile 29/29 test doğrulandı:
+
+| Madde | Commit | Not |
+|-------|--------|-----|
+| #16 skip-link | `f80a0a1` | 22 müşteri sayfası + favoriler.html; `.skip-link` ej.css'te |
+| #14 Spectral 400 preload | `f80a0a1` | latin + latin-ext woff2; gstatic hash değişirse preload boşa gider, zararsız |
+| #12-kalan hero kontrast | `f80a0a1` | .92 alfa + text-shadow; etiketler hâlâ `display:none` — açılırsa hazır |
+| #11 footer tekleştirme | `9bc5dfd` | Kanonik: Yardım 6 link (Değişim & İptal + Beden Rehberi birlikte), Kurumsal 5 link, `&amp;` normalize |
+| #10a beden-stok göstergesi | `322de9a` | `EJData.stock()` + `ejUpdateSizeStock()`; seçili renk+beden bazında tükendi/disabled + "son X" rozeti (`data-stock-note`); kayıt yok/track=false → sınırsız |
+| #10b wishlist | `43a0636` | `EJWish` (localStorage `ej_wishlist`), kart/ürün kalpleri, header sayaç, yeni **favoriler.html** |
+| CART_CRON_SECRET | — | **Eklenmiş ve çalışıyor**: cart-reminder cron'u 15 dk'da bir 200 dönüyor (401'ler yalnız ilk kurulum sürümünde) |
+| E-posta secrets | — | Son 24 saat loglarında hata yok |
+
+Sürümler: `ej.css?v=10`, `ej.js?v=12`, `ej-chat.js?v=18`, `backend/ej-supabase.js?v=15` (tüm sayfalarda tutarlı; eski v12/v13 tutarsızlığı giderildi).
+
+---
+
 ## 1. Güvenlik Denetimi — TAMAMLANDI ✅
 
 `DENETIM-2026-07-09-guvenlik.md` raporundaki **7 maddenin tamamı** düzeltildi, `fix/sifre-sifirlama-akisi` dalına commit'lendi ve canlıya deploy edildi. Kalan güvenlik maddesi **yok**.
