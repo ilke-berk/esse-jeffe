@@ -6,8 +6,10 @@
 <title>Pera — Esse Jeffe</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=7">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M5kng.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M3knj-SA.woff2">
+  <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ej.css?v=8">
 <script type="importmap">
 {"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
 </script>
@@ -150,6 +152,7 @@
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main">İçeriğe atla</a>
 
 
 
@@ -171,7 +174,7 @@
   </div>
 </header>
 
-<section class="pd" data-screen-label="Ürün">
+<section id="main" tabindex="-1" class="pd" data-screen-label="Ürün">
   <!-- ürün görselleri — dikey scroll -->
   <div class="pd-gallery-outer">
   <div class="pd-gallery" id="pdGallery">
@@ -360,7 +363,7 @@
 
 <script src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=12"></script>
+<script src="backend/ej-supabase.js?v=13"></script>
 <script type="module">
 // three.js + model (~2.6 MB) ancak atlıkarınca görünür olunca iner; sayfa açılışını bloklamaz.
 // WebGL yoksa ya da CDN/model inemezse fotoğraflı renk seçiciye düşülür.

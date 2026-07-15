@@ -6,8 +6,10 @@
 <title>Esse Jeffe — 2026 Abiye & Davet Elbiseleri</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=7">
+<link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M5kng.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M3knj-SA.woff2">
+  <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="ej.css?v=8">
 <style>
 /* ---------- hero — üç varyasyon ---------- */
 .hero-block{display:none}
@@ -21,7 +23,7 @@ body[data-hero="center"] .hero-center{display:flex}
 .hero-full .ph{background:repeating-linear-gradient(45deg,#e0e0e0 0 14px,#ebebeb 14px 28px)}
 .hero-full::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(to top,rgba(20,18,15,calc(.72*var(--ov,1))) 0%,rgba(20,18,15,calc(.34*var(--ov,1))) 34%,rgba(20,18,15,0) 66%)}
 .hero-cap{position:absolute;left:40px;bottom:60px;max-width:640px;z-index:2;display:flex;flex-direction:column;align-items:flex-start}
-.hero-cap .label{color:rgba(255,255,255,.78);margin-bottom:14px;display:block}
+.hero-cap .label{color:rgba(255,255,255,.92);text-shadow:0 1px 8px rgba(20,18,15,.45);margin-bottom:14px;display:block}
 .hero-cap h1{font-family:var(--serif);font-weight:300;font-size:clamp(38px,4.8vw,70px);line-height:1.06;color:#fff;margin-bottom:42px;letter-spacing:.005em}
 .hero-cap h1 em{font-style:normal}
 
@@ -47,7 +49,7 @@ body[data-hero="center"] .hero-center{display:flex}
 .hero-center .ph{background:repeating-linear-gradient(45deg,#d8d8d8 0 14px,#e4e4e4 14px 28px)}
 .hero-center::after{content:"";position:absolute;inset:0;background:rgba(20,18,15,calc(.42*var(--ov,1)))}
 .hero-center .cc{position:relative;z-index:2;max-width:760px;padding:0 24px}
-.hero-center .label{color:rgba(255,255,255,.82);margin-bottom:18px;display:block}
+.hero-center .label{color:rgba(255,255,255,.92);text-shadow:0 1px 8px rgba(20,18,15,.45);margin-bottom:18px;display:block}
 .hero-center h1{font-family:var(--serif);font-weight:300;font-size:clamp(46px,6.4vw,92px);line-height:1.02;color:#fff;margin-bottom:30px;letter-spacing:.01em}
 .hero-center h1 em{font-style:normal}
 .hero-center .hero-link{margin:0 auto}
@@ -88,6 +90,7 @@ body.scrolled .header{background:#FFFFFF}
 </style>
 </head>
 <body data-hero="full" style="--ov:.9">
+<a class="skip-link" href="#main">İçeriğe atla</a>
 
 <!-- announce -->
 
@@ -112,7 +115,7 @@ body.scrolled .header{background:#FFFFFF}
 </header>
 
 <!-- ============ HERO — V1 full-bleed ============ -->
-<section class="hero-block hero-full" data-screen-label="Hero · Full">
+<section id="main" tabindex="-1" class="hero-block hero-full" data-screen-label="Hero · Full">
   <img class="hbg" src="img/hero-model.jpg" alt="Esse Jeffe 2026 abiye koleksiyonu" fetchpriority="high" style="object-fit: cover; margin: 0px; border-radius: 10px; border-width: 0px; border-style: solid; padding: 0px">
   <div class="hero-cap">
     <span class="label">Esse Jeffe · 2026</span>
@@ -386,7 +389,7 @@ body.scrolled .header{background:#FFFFFF}
   </div>
 </aside>
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=12"></script>
+<script src="backend/ej-supabase.js?v=13"></script>
 <script src="ej.js?v=11"></script>
 <script src="ej-chat.js?v=18"></script>
 </body>
