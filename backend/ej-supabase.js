@@ -44,6 +44,7 @@
       for (var i = 0; i < colors.length; i++) { if (colors[i].image_url) { primary = colors[i].image_url; break; } }
     }
     return {
+      id: row.id,
       slug: row.slug, name: row.name, model_desc: row.model_desc,
       description: row.description, price: row.price, old_price: row.old_price,
       badge: row.badge, category: row.category,
@@ -101,6 +102,20 @@
         .limit(1).maybeSingle().then(function (res) {
           if (res.error) throw res.error;
           return res.data ? normalize(res.data) : null;
+        });
+    },
+    // beden bazlı stok haritası — {"Renk|Beden": {stock, track}}; UX göstergesi
+    // içindir, gerçek stok kontrolü sipariş anında sunucuda (reserve_stock_bulk)
+    stock: function (productId) {
+      if (!productId) return Promise.resolve({});
+      return client.from('product_stock').select('color,size,stock,track')
+        .eq('product_id', productId).then(function (res) {
+          if (res.error) throw res.error;
+          var map = {};
+          (res.data || []).forEach(function (r) {
+            map[(r.color || '') + '|' + (r.size || '')] = { stock: r.stock, track: r.track };
+          });
+          return map;
         });
     },
     // sipariş oluştur (kapıda ödeme / havale) — form: teslimat+ödeme, items: sepet kalemleri
@@ -370,7 +385,13 @@
     };
     if (!slug) { done(); return; }                  // slug yoksa sabit içerik + init
     EJData.product(slug).then(function (p) {
-      if (p) applyProduct(p);
+      if (p) {
+        applyProduct(p);
+        EJData.stock(p.id).then(function (map) {
+          window.EJ_STOCK = map;
+          document.dispatchEvent(new CustomEvent('ej:stock-loaded', { detail: map }));
+        }).catch(function (e) { console.warn('[EJ] Stok okunamadı:', e.message || e); });
+      }
       done();
     }).catch(function (e) { console.error('[EJ] Ürün yüklenemedi:', e.message || e); done(); });
   }
