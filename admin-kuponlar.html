@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Esse Jeffe — Kupon Yönetimi</title>
+<style>
+  :root{--zeytin:#5d6347;--ink:#2a2a26;--line:#e7e5dd;--bg:#f6f5f1}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:var(--zeytin)}
+  /* açılış yükleme ekranı (login flash'ını önler) */
+  #boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg);z-index:10}
+  #boot .sp{width:30px;height:30px;border:3px solid #d8d6cd;border-top-color:var(--zeytin);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* ortak admin header */
+  .admin-nav{height:52px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:22px;padding:0 18px}
+  .admin-nav .anav-brand{font-size:13px;letter-spacing:.18em;font-weight:700;text-transform:uppercase}
+  .admin-nav nav{display:flex;gap:6px}
+  .admin-nav nav a{font-size:13px;text-decoration:none;color:#6a6a62;padding:7px 13px;border-radius:8px;letter-spacing:.03em}
+  .admin-nav nav a:hover{background:#f0eee7}
+  .admin-nav nav a.active{background:#eef0e8;color:var(--zeytin);font-weight:600}
+  .admin-nav .out{margin-left:auto;background:none;border:1px solid var(--line);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;color:#6a6a62}
+  /* giriş */
+  #login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  #login .card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:32px;width:340px;max-width:100%;box-shadow:0 10px 40px rgba(0,0,0,.06)}
+  #login h1{font-size:18px;margin:0 0 4px;letter-spacing:.16em;text-transform:uppercase}
+  #login p{margin:0 0 22px;color:#8a877d;font-size:13px}
+  #login label{display:block;font-size:12px;margin:0 0 5px;color:#6a6a62}
+  #login input{width:100%;padding:11px 12px;border:1px solid #ddd9cf;border-radius:10px;font:inherit;margin-bottom:14px;outline:none}
+  #login input:focus{border-color:var(--zeytin)}
+  #login button{width:100%;padding:12px;border:none;border-radius:10px;background:var(--zeytin);color:#fff;font-weight:600;cursor:pointer}
+  #login .err{color:#b03030;font-size:12.5px;min-height:18px;margin-bottom:8px}
+  /* uygulama */
+  #app{display:none;max-width:1060px;margin:0 auto;padding:22px 18px 60px}
+  .sec{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:24px}
+  .sec-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .sec-head h2{margin:0;font-size:14px;letter-spacing:.1em;text-transform:uppercase}
+  .sec-head .new{margin-left:auto;background:var(--zeytin);color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:12.5px;cursor:pointer}
+  .muted{color:#9a978d;font-size:12.5px;margin:0 0 14px}
+  /* form */
+  #edBox{border:1px solid var(--line);border-radius:12px;background:#faf9f5;padding:18px;margin-bottom:18px;display:none}
+  #edBox h3{margin:0 0 14px;font-size:13.5px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}
+  .f{margin-bottom:13px}
+  .f label{display:block;font-size:12px;color:#6a6a62;margin-bottom:5px;letter-spacing:.03em}
+  .f input,.f textarea{width:100%;padding:9px 11px;border:1px solid #ddd9cf;border-radius:9px;font:inherit;font-size:14px;outline:none;background:#fff}
+  .f input:focus,.f textarea:focus{border-color:var(--zeytin)}
+  .f input[readonly]{background:#f0eee7;color:#8a877d}
+  .chk{display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;padding-top:24px}
+  .chk input{width:17px;height:17px;accent-color:var(--zeytin)}
+  .bar{display:flex;gap:10px;align-items:center;margin-top:6px}
+  .bar .save{background:var(--zeytin);color:#fff;border:none;border-radius:9px;padding:10px 22px;font-weight:600;font-size:13.5px;cursor:pointer}
+  .bar .cancel{background:none;border:1px solid var(--line);border-radius:9px;padding:10px 16px;font-size:13px;cursor:pointer;color:#6a6a62}
+  .bar .msg{font-size:13px}
+  /* tablo */
+  .tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .tbl th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#9a978d;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .tbl td{padding:9px 10px;border-bottom:1px solid #f0eee7;vertical-align:middle}
+  .tbl tr:hover td{background:#faf9f5}
+  .code{font-family:ui-monospace,Consolas,monospace;font-weight:600;letter-spacing:.05em}
+  .badge{display:inline-block;font-size:10.5px;padding:2px 8px;border-radius:20px;background:#eef0e8;color:#5d6347;white-space:nowrap}
+  .badge.off{background:#f3dede;color:#9a3b3b}
+  .badge.dim{background:#eeece6;color:#8a877d}
+  .act{border:1px solid var(--line);background:#fff;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;color:#4c4c45;margin-right:5px;white-space:nowrap}
+  .act.danger{color:#b03030;border-color:#e0c4c4}
+  .tblwrap{overflow-x:auto}
+  .busy{opacity:.55;pointer-events:none}
+  @media(max-width:760px){.grid3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<!-- açılış yükleme (oturum kontrol edilirken) -->
+<div id="boot"><div class="sp"></div></div>
+
+<!-- giriş -->
+<div id="login" style="display:none">
+  <form class="card" id="loginForm">
+    <h1>Kupon Yönetimi</h1>
+    <p>Esse Jeffe — yönetici girişi</p>
+    <div class="err" id="loginErr"></div>
+    <label>E-posta</label>
+    <input type="email" id="email" autocomplete="username" required>
+    <label>Şifre</label>
+    <input type="password" id="pass" autocomplete="current-password" required>
+    <button type="submit">Giriş Yap</button>
+  </form>
+</div>
+
+<!-- ortak admin header -->
+<header class="admin-nav" id="adminNav" style="display:none">
+  <a href="index.html" class="anav-brand" style="text-decoration:none;color:inherit">Esse Jeffe · Admin</a>
+  <nav>
+    <a href="admin.html">Destek</a>
+    <a href="admin-urunler.html">Ürünler</a>
+    <a href="admin-siparisler.html">Siparişler</a>
+    <a href="admin-kuponlar.html" class="active">Kuponlar</a>
+  </nav>
+  <a href="index.html" class="out" style="text-decoration:none;margin-left:auto">← Siteye Dön</a>
+  <button class="out" id="logout">Çıkış</button>
+</header>
+
+<!-- uygulama -->
+<div id="app">
+
+  <!-- Kampanya kuponları -->
+  <section class="sec">
+    <div class="sec-head">
+      <h2>Kampanya Kuponları</h2>
+      <button class="new" id="newBtn">+ Yeni Kupon</button>
+    </div>
+    <p class="muted">Çok kullanımlı kodlar (örn. YAZ20). Müşteri başına 1 kullanım otomatik uygulanır; kullanım limiti ve min. sepet tutarı isteğe bağlıdır. İndirim %0 + kargo bedava = yalnız kargo kuponu.</p>
+
+    <div id="edBox">
+      <h3 id="edTitle">Yeni Kupon</h3>
+      <div class="grid3">
+        <div class="f"><label>Kod (3-24; A-Z, 0-9, tire)</label><input id="cCode" maxlength="24" autocomplete="off" placeholder="YAZ20"></div>
+        <div class="f"><label>İndirim % (0-90)</label><input id="cPercent" type="number" min="0" max="90" value="10"></div>
+        <div class="f"><label class="chk" style="padding-top:24px"><input type="checkbox" id="cFreeShip"> Kargo bedava</label></div>
+        <div class="f"><label>Min. sepet tutarı (TL, 0 = yok)</label><input id="cMinSub" type="number" min="0" value="0"></div>
+        <div class="f"><label>Kullanım limiti (boş = sınırsız)</label><input id="cMaxUses" type="number" min="1" placeholder="örn. 100"></div>
+        <div class="f"><label>Son geçerlilik (boş = süresiz)</label><input id="cExpires" type="datetime-local"></div>
+      </div>
+      <div class="f"><label>Not (yalnız admin görür)</label><input id="cNote" maxlength="200" placeholder="örn. Instagram yaz kampanyası"></div>
+      <label class="chk" style="padding:0 0 12px"><input type="checkbox" id="cActive" checked> Aktif</label>
+      <div class="bar">
+        <button class="save" id="saveBtn">Kaydet</button>
+        <button class="cancel" id="cancelBtn">Vazgeç</button>
+        <span class="msg" id="edMsg"></span>
+      </div>
+    </div>
+
+    <div class="tblwrap">
+      <table class="tbl">
+        <thead><tr><th>Kod</th><th>İndirim</th><th>Kargo</th><th>Min. Sepet</th><th>Kullanım</th><th>Bitiş</th><th>Durum</th><th></th></tr></thead>
+        <tbody id="campBody"><tr><td colspan="8" style="color:#9a978d">Yükleniyor…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Otomatik sepet kodları -->
+  <section class="sec">
+    <div class="sec-head"><h2>Sepet Kodları (otomatik)</h2></div>
+    <p class="muted">Terk edilmiş sepet hatırlatma e-postalarıyla otomatik üretilen tek kullanımlık kodlar (son 200). Kullanılmamış bir kodu iptal edebilirsin.</p>
+    <div class="tblwrap">
+      <table class="tbl">
+        <thead><tr><th>Kod</th><th>E-posta</th><th>İndirim</th><th>Bitiş</th><th>Durum</th><th></th></tr></thead>
+        <tbody id="singleBody"><tr><td colspan="6" style="color:#9a978d">Yükleniyor…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script src="backend/supabase-config.js"></script>
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0"></script>
+<script>
+(function () {
+  var cfg = window.EJ_CONFIG || {};
+  var sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
+
+  var bootEl = document.getElementById('boot');
+  var loginBox = document.getElementById('login');
+  var nav = document.getElementById('adminNav');
+  var app = document.getElementById('app');
+
+  function showLogin(msg){ bootEl.style.display='none'; nav.style.display='none'; app.style.display='none'; loginBox.style.display='flex'; if(msg) document.getElementById('loginErr').textContent=msg; }
+  function showApp(){ bootEl.style.display='none'; loginBox.style.display='none'; nav.style.display='flex'; app.style.display='block'; }
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function el(id){ return document.getElementById(id); }
+  function val(id){ var e=el(id); return e?e.value.trim():''; }
+  function fmtDate(d){ return d ? new Date(d).toLocaleString('tr-TR',{dateStyle:'short',timeStyle:'short'}) : '—'; }
+
+  // ---------- giriş ----------
+  el('loginForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var err = el('loginErr'); err.textContent = '';
+    sb.auth.signInWithPassword({ email: val('email'), password: el('pass').value }).then(function (r) {
+      if (r.error) { err.textContent = 'Giriş başarısız: ' + r.error.message; return; }
+      boot();
+    });
+  });
+  el('logout').addEventListener('click', function () {
+    sb.auth.signOut().then(function () { location.reload(); });
+  });
+  // oturum kontrolü bitene kadar yükleme ekranı; flash YOK
+  sb.auth.getSession().then(function (r) { if (r.data.session) boot(); else showLogin(); });
+
+  // admin mi? profiles.is_admin
+  function boot() {
+    sb.auth.getUser().then(function (u) {
+      var uid = u.data.user && u.data.user.id;
+      if (!uid) { showLogin(); return; }
+      sb.from('profiles').select('is_admin').eq('id', uid).single().then(function (r) {
+        if (r.error || !r.data || r.data.is_admin !== true) {
+          sb.auth.signOut();
+          showLogin('Bu hesabın kupon yönetim yetkisi yok.');
+          return;
+        }
+        showApp();
+        loadAll();
+      });
+    });
+  }
+
+  // ---------- veri ----------
+  var campaigns = [];
+  var editing = null; // düzenlenen kampanya kuponu (yeni için null)
+
+  function loadAll(){ loadCampaigns(); loadSingles(); }
+
+  function loadCampaigns(){
+    sb.from('discount_codes')
+      .select('id, code, percent, free_shipping, min_subtotal, max_uses, used_count, expires_at, active, note, created_at')
+      .eq('kind','campaign')
+      .order('created_at', { ascending:false })
+      .then(function(r){
+        var tb = el('campBody');
+        if (r.error){ tb.innerHTML = '<tr><td colspan="8" style="color:#b03030">Yüklenemedi: '+esc(r.error.message)+'</td></tr>'; return; }
+        campaigns = r.data || [];
+        renderCampaigns();
+      });
+  }
+
+  function campStatus(c){
+    if (!c.active) return '<span class="badge off">pasif</span>';
+    if (c.expires_at && new Date(c.expires_at) <= new Date()) return '<span class="badge dim">süresi doldu</span>';
+    if (c.max_uses != null && c.used_count >= c.max_uses) return '<span class="badge dim">limit doldu</span>';
+    return '<span class="badge">aktif</span>';
+  }
+
+  function renderCampaigns(){
+    var tb = el('campBody');
+    if (!campaigns.length){ tb.innerHTML = '<tr><td colspan="8" style="color:#9a978d">Henüz kampanya kuponu yok.</td></tr>'; return; }
+    tb.innerHTML = campaigns.map(function(c){
+      return '<tr data-id="'+esc(c.id)+'">' +
+        '<td class="code">'+esc(c.code)+(c.note?'<div style="font-weight:400;color:#9a978d;font-size:11px;font-family:system-ui">'+esc(c.note)+'</div>':'')+'</td>' +
+        '<td>'+(c.percent>0?('%'+c.percent):'—')+'</td>' +
+        '<td>'+(c.free_shipping?'Bedava':'—')+'</td>' +
+        '<td>'+(c.min_subtotal>0?(Number(c.min_subtotal).toLocaleString('tr-TR')+' TL'):'—')+'</td>' +
+        '<td>'+c.used_count+(c.max_uses!=null?(' / '+c.max_uses):' / ∞')+'</td>' +
+        '<td>'+fmtDate(c.expires_at)+'</td>' +
+        '<td>'+campStatus(c)+'</td>' +
+        '<td style="text-align:right;white-space:nowrap">' +
+          '<button class="act" data-act="edit">Düzenle</button>' +
+          '<button class="act" data-act="toggle">'+(c.active?'Pasifleştir':'Aktifleştir')+'</button>' +
+          '<button class="act danger" data-act="del">Sil</button>' +
+        '</td></tr>';
+    }).join('');
+  }
+
+  el('campBody').addEventListener('click', function(e){
+    var btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    var id = btn.closest('tr').getAttribute('data-id');
+    var c = campaigns.find(function(x){ return x.id === id; });
+    if (!c) return;
+    var act = btn.getAttribute('data-act');
+    if (act === 'edit') openEditor(c);
+    if (act === 'toggle'){
+      sb.from('discount_codes').update({ active: !c.active }).eq('id', c.id).then(function(r){
+        if (r.error) alert('Güncellenemedi: ' + r.error.message); else loadCampaigns();
+      });
+    }
+    if (act === 'del'){
+      if (c.used_count > 0){ alert('Kullanılmış kupon silinemez (raporlama bozulur). Bunun yerine pasifleştirin.'); return; }
+      if (!confirm('"'+c.code+'" kuponu silinsin mi?')) return;
+      sb.from('discount_codes').delete().eq('id', c.id).then(function(r){
+        if (r.error) alert('Silinemedi: ' + r.error.message); else loadCampaigns();
+      });
+    }
+  });
+
+  // ---------- form ----------
+  function openEditor(c){
+    editing = c || null;
+    el('edTitle').textContent = c ? ('Kuponu Düzenle: ' + c.code) : 'Yeni Kupon';
+    el('cCode').value = c ? c.code : '';
+    el('cCode').readOnly = !!c; // kod, oluşturulduktan sonra değişmez
+    el('cPercent').value = c ? c.percent : 10;
+    el('cFreeShip').checked = c ? !!c.free_shipping : false;
+    el('cMinSub').value = c ? (c.min_subtotal || 0) : 0;
+    el('cMaxUses').value = (c && c.max_uses != null) ? c.max_uses : '';
+    // datetime-local, saniyesiz yerel biçim ister
+    el('cExpires').value = (c && c.expires_at) ? toLocalInput(c.expires_at) : '';
+    el('cNote').value = c ? (c.note || '') : '';
+    el('cActive').checked = c ? !!c.active : true;
+    el('edMsg').textContent = '';
+    el('edBox').style.display = 'block';
+    el('cCode').focus();
+  }
+  function toLocalInput(iso){
+    var d = new Date(iso);
+    var p = function(n){ return String(n).padStart(2,'0'); };
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
+  }
+  el('newBtn').addEventListener('click', function(){ openEditor(null); });
+  el('cancelBtn').addEventListener('click', function(){ el('edBox').style.display='none'; editing = null; });
+  el('cCode').addEventListener('input', function(){ this.value = this.value.toUpperCase().replace(/[^A-Z0-9-]/g,''); });
+
+  el('saveBtn').addEventListener('click', function(){
+    var msg = el('edMsg'); msg.style.color = '#b03030'; msg.textContent = '';
+    var code = val('cCode').toUpperCase();
+    if (!/^[A-Z0-9-]{3,24}$/.test(code)){ msg.textContent = 'Kod 3-24 karakter olmalı (A-Z, 0-9, tire).'; return; }
+    if (/^SEPET-/.test(code)){ msg.textContent = '"SEPET-" öneki otomatik kodlara ayrılmıştır.'; return; }
+    var percent = Math.max(0, Math.min(90, parseInt(val('cPercent'), 10) || 0));
+    var freeShip = el('cFreeShip').checked;
+    if (percent === 0 && !freeShip){ msg.textContent = 'İndirim %0 ise "Kargo bedava" işaretli olmalı (kupon bir şey sağlamalı).'; return; }
+    var maxUses = val('cMaxUses') === '' ? null : Math.max(1, parseInt(val('cMaxUses'), 10) || 1);
+    var expires = val('cExpires') === '' ? null : new Date(val('cExpires')).toISOString();
+    var row = {
+      kind: 'campaign',
+      code: code,
+      percent: percent,
+      free_shipping: freeShip,
+      min_subtotal: Math.max(0, parseInt(val('cMinSub'), 10) || 0),
+      max_uses: maxUses,
+      expires_at: expires,
+      active: el('cActive').checked,
+      note: val('cNote') || null
+    };
+    var box = el('edBox'); box.classList.add('busy');
+    var q = editing
+      ? sb.from('discount_codes').update(row).eq('id', editing.id)
+      : sb.from('discount_codes').insert(row);
+    q.then(function(r){
+      box.classList.remove('busy');
+      if (r.error){
+        msg.textContent = /duplicate|unique/i.test(r.error.message) ? 'Bu kod zaten var.' : ('Kaydedilemedi: ' + r.error.message);
+        return;
+      }
+      msg.style.color = 'var(--zeytin)'; msg.textContent = 'Kaydedildi.';
+      el('edBox').style.display = 'none'; editing = null;
+      loadCampaigns();
+    });
+  });
+
+  // ---------- otomatik SEPET kodları ----------
+  function singleStatus(s){
+    if (s.used_at) return '<span class="badge dim">kullanıldı</span>';
+    if (!s.active) return '<span class="badge off">iptal</span>';
+    if (s.expires_at && new Date(s.expires_at) <= new Date()) return '<span class="badge dim">süresi doldu</span>';
+    return '<span class="badge">aktif</span>';
+  }
+  function loadSingles(){
+    sb.from('discount_codes')
+      .select('id, code, percent, email, expires_at, used_at, active, created_at')
+      .eq('kind','single')
+      .order('created_at', { ascending:false })
+      .limit(200)
+      .then(function(r){
+        var tb = el('singleBody');
+        if (r.error){ tb.innerHTML = '<tr><td colspan="6" style="color:#b03030">Yüklenemedi: '+esc(r.error.message)+'</td></tr>'; return; }
+        var rows = r.data || [];
+        if (!rows.length){ tb.innerHTML = '<tr><td colspan="6" style="color:#9a978d">Henüz otomatik kod üretilmedi.</td></tr>'; return; }
+        tb.innerHTML = rows.map(function(s){
+          var cancellable = !s.used_at && s.active && !(s.expires_at && new Date(s.expires_at) <= new Date());
+          return '<tr data-id="'+esc(s.id)+'">' +
+            '<td class="code">'+esc(s.code)+'</td>' +
+            '<td>'+esc(s.email || '—')+'</td>' +
+            '<td>%'+s.percent+'</td>' +
+            '<td>'+fmtDate(s.expires_at)+'</td>' +
+            '<td>'+singleStatus(s)+'</td>' +
+            '<td style="text-align:right">'+(cancellable?'<button class="act danger" data-act="cancel">İptal Et</button>':'')+'</td>' +
+            '</tr>';
+        }).join('');
+      });
+  }
+  el('singleBody').addEventListener('click', function(e){
+    var btn = e.target.closest('button[data-act="cancel"]');
+    if (!btn) return;
+    var id = btn.closest('tr').getAttribute('data-id');
+    if (!confirm('Bu kod iptal edilsin mi? Müşteri artık kullanamaz.')) return;
+    sb.from('discount_codes').update({ active: false }).eq('id', id).then(function(r){
+      if (r.error) alert('İptal edilemedi: ' + r.error.message); else loadSingles();
+    });
+  });
+})();
+</script>
+</body>
+</html>

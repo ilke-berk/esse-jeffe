@@ -113,6 +113,10 @@ input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
           <div class="field"><label for="tel">Telefon *</label><input id="tel" type="tel" placeholder="0 5__ ___ __ __" required></div>
         </div>
         <div class="field"><label for="mail">E-posta</label><input id="mail" type="email" placeholder="ornek@eposta.com"></div>
+        <div class="consent" style="margin:-6px 0 14px">
+          <input type="checkbox" id="remindBox">
+          <label for="remindBox">Siparişimi tamamlamazsam sepetimi e-postayla hatırlatın; bana özel indirim fırsatları gönderin. (<a href="kvkk.html" target="_blank" rel="noopener">KVKK Aydınlatma Metni</a>)</label>
+        </div>
         <div class="field two">
           <div class="field"><label for="il">İl *</label><input id="il" type="text" placeholder="İstanbul" required></div>
           <div class="field"><label for="ilce">İlçe *</label><input id="ilce" type="text" placeholder="Esenler" required></div>
@@ -156,8 +160,14 @@ input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
     <aside class="order-summary" id="orderSummary">
       <div class="os-title">Sipariş Özeti</div>
       <div id="osItems"></div>
+      <div style="display:flex;gap:8px;margin:0 0 6px">
+        <input id="couponCode" placeholder="İndirim kodu" autocomplete="off" style="flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line,#ddd);background:transparent;font:inherit;font-size:13px;letter-spacing:.06em">
+        <button type="button" id="couponBtn" style="padding:10px 16px;border:1px solid currentColor;background:none;cursor:pointer;font:inherit;font-size:12px;letter-spacing:.1em">UYGULA</button>
+      </div>
+      <p id="couponMsg" role="status" aria-live="polite" style="display:none;font-size:12px;letter-spacing:.04em;margin:0 0 10px"></p>
       <div class="os-row"><span>Ara Toplam</span><span id="osSub">—</span></div>
-      <div class="os-row"><span>Kargo</span><span>Ücretsiz</span></div>
+      <div class="os-row" id="osDiscountRow" style="display:none;color:var(--zeytin,#3c4a3a)"><span id="osDiscountLbl">İndirim</span><span id="osDiscount">—</span></div>
+      <div class="os-row"><span>Kargo</span><span id="osShip">Ücretsiz</span></div>
       <div class="os-total"><span>Toplam</span><span id="osTotal">—</span></div>
     </aside>
   </div>
@@ -200,9 +210,9 @@ input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
 </aside>
 
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=11"></script>
-<script src="ej.js?v=10"></script>
-<script src="ej-chat.js?v=15"></script>
+<script src="backend/ej-supabase.js?v=13"></script>
+<script src="ej.js?v=11"></script>
+<script src="ej-chat.js?v=18"></script>
 <script>
 (function(){
   function fmt(n){ return (n||0).toLocaleString('tr-TR') + ' TL'; }
@@ -213,6 +223,10 @@ input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
   var elCheckout= document.getElementById('checkout');
 
   function items(){ return (window.EJCart ? window.EJCart.load() : []); }
+
+  // Uygulanan indirim kodu (yalnız GÖRÜNTÜ — gerçek tutar sunucuda,
+  // create-order/paytr-token kodu atomik doğrulayıp kendisi hesaplar).
+  var appliedCoupon = null; // {code, percent, freeShipping, minSubtotal}
 
   function renderSummary(){
     var list = items();
@@ -232,8 +246,111 @@ input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
     }).join('');
     var sub = list.reduce(function(s,it){ return s+(it.price||0)*(it.qty||0); },0);
     document.getElementById('osSub').textContent = fmt(sub);
-    document.getElementById('osTotal').textContent = fmt(sub);
+    var row = document.getElementById('osDiscountRow');
+    var ship = document.getElementById('osShip');
+    var discount = 0;
+    // Sepet, kuponun min. tutarının altına düşerse indirimi ön izlemeden
+    // çıkar ve uyar (sunucuya tekrar sormadan — asıl kontrol siparişte).
+    var belowMin = appliedCoupon && sub < (appliedCoupon.minSubtotal || 0);
+    if(appliedCoupon && belowMin){
+      couponMsg('Kupon için en az '+fmt(appliedCoupon.minSubtotal)+' sepet tutarı gerekli.', false);
+    }
+    if(appliedCoupon && !belowMin){
+      discount = Math.min(sub, Math.floor(sub * (appliedCoupon.percent||0) / 100));
+      if(discount > 0){
+        document.getElementById('osDiscountLbl').textContent = 'İndirim ('+esc(appliedCoupon.code)+')';
+        document.getElementById('osDiscount').textContent = '−' + fmt(discount);
+        row.style.display = '';
+      } else {
+        row.style.display = 'none';
+      }
+      ship.textContent = appliedCoupon.freeShipping ? 'Ücretsiz (kupon)' : 'Ücretsiz';
+    } else {
+      row.style.display = 'none';
+      ship.textContent = 'Ücretsiz';
+    }
+    document.getElementById('osTotal').textContent = fmt(sub - discount);
   }
+
+  // --- indirim kodu kutusu ---
+  function couponMsg(msg, ok){
+    var p = document.getElementById('couponMsg');
+    p.textContent = msg; p.style.display = msg ? '' : 'none';
+    p.style.color = ok ? 'var(--zeytin,#3c4a3a)' : '#b03030';
+  }
+  function applyCoupon(){
+    var inp = document.getElementById('couponCode');
+    var code = inp.value.replace(/\s+/g,'').toUpperCase();
+    inp.value = code;
+    if(!code){ appliedCoupon = null; couponMsg('', true); renderSummary(); return; }
+    if(!window.EJData || !window.EJData.cart){
+      couponMsg('Bağlantı hazırlanıyor, birkaç saniye sonra tekrar deneyin.', false); return;
+    }
+    var btn = document.getElementById('couponBtn');
+    btn.disabled = true;
+    var email = document.getElementById('mail').value.trim().toLowerCase();
+    var sub = items().reduce(function(s,it){ return s+(it.price||0)*(it.qty||0); },0);
+    window.EJData.cart.checkCoupon(code, email, sub).then(function(r){
+      if(r.valid){
+        appliedCoupon = {
+          code: code,
+          percent: r.percent || 0,
+          freeShipping: !!r.free_shipping,
+          minSubtotal: r.min_subtotal || 0
+        };
+        var parts = [];
+        if(appliedCoupon.percent > 0) parts.push('%'+appliedCoupon.percent+' indirim');
+        if(appliedCoupon.freeShipping) parts.push('kargo bedava');
+        couponMsg((parts.join(' + ') || 'Kupon') + ' uygulandı.', true);
+      } else {
+        appliedCoupon = null;
+        couponMsg(r.error || 'Kod geçersiz.', false);
+      }
+      renderSummary();
+    }).catch(function(){
+      couponMsg('Kod doğrulanamadı, lütfen tekrar deneyin.', false);
+    }).then(function(){ btn.disabled = false; });
+  }
+  document.getElementById('couponBtn').addEventListener('click', applyCoupon);
+  document.getElementById('couponCode').addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){ e.preventDefault(); applyCoupon(); }
+  });
+
+  // --- sepet hatırlatma onayı (KVKK) ---
+  // İşaretli + geçerli e-posta → tercih localStorage'a yazılır; ej-supabase.js
+  // sepet her değiştiğinde cart-sync'e gönderir. İşaret kaldırılınca durur.
+  // Üyede e-posta alanı boş olsa da oturum e-postası sunucuda kullanılır.
+  function saveReminderPref(){
+    var box = document.getElementById('remindBox');
+    var email = document.getElementById('mail').value.trim().toLowerCase();
+    var validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email);
+    var isMember = document.body.classList.contains('is-auth');
+    if(!box.checked){
+      try{ localStorage.removeItem('ej_reminder'); }catch(e){}
+      return;
+    }
+    if(!validEmail && !isMember) return;             // misafirde e-posta şart
+    try{
+      localStorage.setItem('ej_reminder', JSON.stringify({
+        email: validEmail ? email : '', consent: true, ts: Date.now()
+      }));
+    }catch(e){}
+    // Senkronizasyonu ej-supabase.js'in debounce'lu dinleyicisine bırak:
+    // SDK henüz yüklenmediyse dinleyici kurulurken localStorage'daki tercihi
+    // görüp kendisi gönderir; yüklendiyse bu olay debounce'u tetikler.
+    try { document.dispatchEvent(new CustomEvent('ej:cart-changed')); } catch(e){}
+  }
+  document.getElementById('remindBox').addEventListener('change', saveReminderPref);
+  document.getElementById('mail').addEventListener('blur', saveReminderPref);
+  // önceki tercih varsa kutuyu ve e-postayı geri getir
+  try{
+    var _pref = JSON.parse(localStorage.getItem('ej_reminder') || 'null');
+    if(_pref && _pref.consent === true){
+      document.getElementById('remindBox').checked = true;
+      var _mail = document.getElementById('mail');
+      if(!_mail.value && _pref.email) _mail.value = _pref.email;
+    }
+  }catch(e){}
 
   function show(which){
     elEmpty.style.display    = which==='empty'    ? '' : 'none';
@@ -275,6 +392,39 @@ input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
 
   function init(){
     var params = new URLSearchParams(location.search);
+
+    // --- hatırlatma mailindeki "sepetime dön" linki: ?sepet=<token>[&kupon=KOD] ---
+    // Sepet sunucudan güncel fiyatlarla geri yüklenir, kupon kutusu doldurulur.
+    // EJData (Supabase SDK) asenkron yüklendiği için kısa bir bekleme yapılır.
+    var restoreTok = params.get('sepet');
+    if(restoreTok){
+      var kupon = (params.get('kupon') || '').replace(/\s+/g,'').toUpperCase();
+      var finishRestore = function(){
+        try{
+          history.replaceState(null, '', 'sepet.html' + (kupon ? '?kupon=' + encodeURIComponent(kupon) : ''));
+        }catch(e){}
+        if(!items().length){ show('empty'); return; }
+        show('checkout'); renderSummary();
+        if(kupon){ document.getElementById('couponCode').value = kupon; applyCoupon(); }
+      };
+      var tries = 0;
+      (function waitRestore(){
+        // EJData objesi hemen tanımlanır ama Supabase SDK'sı CDN'den asenkron
+        // yüklenir — client() dolana kadar bekle, yoksa restore anında düşer.
+        if(window.EJData && window.EJData.cart && window.EJData.client && window.EJData.client()){
+          window.EJData.cart.restore(restoreTok).then(function(r){
+            if(r.items && r.items.length){
+              try{ localStorage.setItem('ej_cart', JSON.stringify(r.items)); }catch(e){}
+              if(window.EJCart && window.EJCart.render) window.EJCart.render();
+            }
+          }).catch(function(e){ console.warn('[EJ] sepet geri yüklenemedi:', (e&&e.message)||e); })
+            .then(finishRestore);
+        } else if(++tries < 40){ setTimeout(waitRestore, 250); }  // ~10 sn bekle
+        else { finishRestore(); }
+      })();
+      return;
+    }
+
     var pr = params.get('paytr');
     if(pr){
       // PayTR ok/fail yönlendirmesi iframe içinde geldiyse üst pencereyi taşı
@@ -315,6 +465,17 @@ input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
     if(!items().length){ show('empty'); return; }
     show('checkout');
     renderSummary();
+    // maildeki linkten gelen hazır kupon: ?kupon=KOD
+    var kp = (params.get('kupon') || '').replace(/\s+/g,'').toUpperCase();
+    if(kp){
+      document.getElementById('couponCode').value = kp;
+      // EJData asenkron yüklenir — hazır olunca doğrula
+      var kTries = 0;
+      (function waitCoupon(){
+        if(window.EJData && window.EJData.cart && window.EJData.client && window.EJData.client()) applyCoupon();
+        else if(++kTries < 40) setTimeout(waitCoupon, 250);
+      })();
+    }
   }
 
   // ödeme yöntemi seçimi
@@ -353,6 +514,8 @@ input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
     else if(digits.length !== 10) errs.push(['tel','Geçerli bir telefon girin (örn. 05xx xxx xx xx).']);
     if(data.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(data.email)) errs.push(['mail','Geçerli bir e-posta adresi girin.']);
     if(data.payment_method==='card' && !data.email) errs.push(['mail','Kart ödemesi için e-posta adresi zorunludur.']);
+    // kupon e-postaya bağlanır (kampanyada kişi başı tek kullanım) → e-posta şart
+    if(data.coupon && !data.email) errs.push(['mail','İndirim kuponu için e-posta adresinizi girin.']);
     if(!data.city) errs.push(['il','İl gerekli.']);
     if(!data.district) errs.push(['ilce','İlçe gerekli.']);
     if(!data.address) errs.push(['adres','Açık adres gerekli.']);
@@ -378,7 +541,9 @@ input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
       address:   document.getElementById('adres').value.trim(),
       postal_code: document.getElementById('posta').value.trim(),
       note:      document.getElementById('not').value.trim(),
-      payment_method: (document.querySelector('input[name="pay"]:checked')||{}).value || 'cod'
+      payment_method: (document.querySelector('input[name="pay"]:checked')||{}).value || 'cod',
+      // kupon: sunucu (create-order/paytr-token) atomik doğrulayıp tutarı kendisi hesaplar
+      coupon: (appliedCoupon && appliedCoupon.code) || document.getElementById('couponCode').value.replace(/\s+/g,'').toUpperCase()
     };
 
     var errs = validateCheckout(data);

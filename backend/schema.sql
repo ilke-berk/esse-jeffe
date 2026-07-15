@@ -592,3 +592,203 @@ from product_colors pc
 join products p on p.id = pc.product_id
 cross join lateral unnest(p.sizes) as s(size)
 on conflict (product_id, color, size) do nothing;
+
+-- ============================================================
+--  TERK EDİLMİŞ SEPET (abandoned cart) + İNDİRİM KODLARI
+--  Akış: sepet değişince cart-sync EF buraya yazar; pg_cron her 15 dk
+--  cart-reminder EF'yi tetikler → 3 saattir dokunulmamış, siparişe
+--  dönmemiş sepetlere indirim kodlu hatırlatma e-postası gider.
+--  Client erişimi YOK (RLS açık, politika yok) → yalnız Edge Function'lar
+--  (cart-sync, cart-reminder, create-order, paytr-token/callback) erişir.
+--  Rate limit: fn_rate_limit tablosuna yeni kind'lar ('cart_sync','coupon').
+-- ============================================================
+create table if not exists abandoned_carts (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid references auth.users(id) on delete cascade, -- üye ise
+  email         text,                            -- lower(); misafirde zorunlu, üyede oturumdan
+  channel       text not null default 'email',   -- ileride 'whatsapp' | 'sms'
+  consent       boolean not null default false,  -- KVKK/ETK pazarlama onayı (checkbox)
+  consent_at    timestamptz,
+  items         jsonb not null default '[]',     -- [{id(slug),color,size,qty, name,img,color_hex,desc,price(yalnız görüntü)}]
+  restore_token uuid unique not null default gen_random_uuid(), -- maildeki "sepetine dön" linki
+  reminded_at   timestamptz,                     -- hatırlatma gönderildi
+  clicked_at    timestamptz,                     -- restore linki tıklandı
+  recovered_at  timestamptz,                     -- sonrasında sipariş verildi
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+-- kimlik başına TEK satır: üye → user_id; misafir → email
+create unique index if not exists idx_ac_user  on abandoned_carts(user_id) where user_id is not null;
+create unique index if not exists idx_ac_email on abandoned_carts(email)   where user_id is null and email is not null;
+-- hatırlatma taraması: gönderilmemiş satırlar updated_at'e göre
+create index if not exists idx_ac_due on abandoned_carts(updated_at) where reminded_at is null;
+
+-- Hatırlatma mailindeki tek kullanımlık indirim kodları.
+-- Claim ATOMİK yapılır: update ... set used_at=now() where used_at is null returning *.
+create table if not exists discount_codes (
+  id                uuid primary key default gen_random_uuid(),
+  code              text unique not null,        -- "SEPET-XXXXXX" (upper)
+  percent           integer not null check (percent between 1 and 90),
+  email             text,                        -- bağlıysa yalnız bu e-posta kullanabilir
+  abandoned_cart_id uuid references abandoned_carts(id) on delete set null,
+  expires_at        timestamptz not null,
+  used_at           timestamptz,
+  order_id          uuid references orders(id) on delete set null,
+  created_at        timestamptz not null default now()
+);
+
+-- Hatırlatma e-postasından çıkanlar (tekrar gönderim engeli).
+-- Checkbox'ı yeniden işaretlemek (açık rıza) kaydı siler.
+create table if not exists reminder_optout (
+  email      text primary key,
+  created_at timestamptz not null default now()
+);
+
+-- Siparişe uygulanan indirim (yoksa 0). total = subtotal - discount + shipping_fee.
+alter table orders add column if not exists discount_code text;
+alter table orders add column if not exists discount integer not null default 0;
+
+alter table abandoned_carts enable row level security;
+alter table discount_codes  enable row level security;
+alter table reminder_optout enable row level security;
+-- politika YOK → yalnız service_role erişir (fn_rate_limit deseniyle aynı).
+-- (discount_codes'a aşağıda admin CRUD politikası eklenir.)
+
+-- ============================================================
+--  KAMPANYA KUPONLARI
+--  discount_codes iki tür kod barındırır (kind ayrımı):
+--   · 'single'   → cart-reminder'ın ürettiği tek kullanımlık SEPET-… kodları
+--                  (atomik claim: used_at, yukarıdaki desen aynen geçerli)
+--   · 'campaign' → admin panelden yönetilen çok kullanımlı kodlar (YAZ20 gibi);
+--                  claim ATOMİK RPC ile yapılır (FOR UPDATE + unique redemption)
+-- ============================================================
+
+alter table discount_codes
+  add column if not exists kind          text    not null default 'single'
+    check (kind in ('single','campaign')),
+  add column if not exists min_subtotal  integer not null default 0 check (min_subtotal >= 0),
+  add column if not exists max_uses      integer check (max_uses > 0),  -- null = sınırsız
+  add column if not exists used_count    integer not null default 0,
+  add column if not exists free_shipping boolean not null default false,
+  add column if not exists active        boolean not null default true,
+  add column if not exists note          text;
+
+-- Kampanyada süresiz kod olabilir; percent 0 = yalnız kargo bedava kuponu.
+alter table discount_codes alter column expires_at drop not null;
+alter table discount_codes drop constraint if exists discount_codes_percent_check;
+alter table discount_codes add constraint discount_codes_percent_check
+  check (percent between 0 and 90);
+
+-- Kampanya kupon kullanımları: e-posta başına TEK kullanım (unique).
+create table if not exists coupon_redemptions (
+  id         uuid primary key default gen_random_uuid(),
+  coupon_id  uuid not null references discount_codes(id) on delete cascade,
+  email      text not null,                                -- lower()
+  order_id   uuid references orders(id) on delete set null,
+  created_at timestamptz not null default now(),
+  unique (coupon_id, email)
+);
+create index if not exists idx_coupon_redemptions_order on coupon_redemptions(order_id);
+alter table coupon_redemptions enable row level security;
+
+-- Kampanya kuponunu ATOMİK claim et. FOR UPDATE satır kilidi: sayaç artışı ve
+-- unique redemption insert aynı işlemde → yarış koşulu yok.
+create or replace function public.claim_campaign_coupon(
+  p_code text, p_email text, p_subtotal integer
+) returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  c   public.discount_codes%rowtype;
+  v_rid uuid;
+begin
+  select * into c from public.discount_codes
+    where code = p_code and kind = 'campaign' for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'İndirim kodu geçersiz.');
+  end if;
+  if not c.active then
+    return jsonb_build_object('ok', false, 'error', 'Bu kampanya sona erdi.');
+  end if;
+  if c.expires_at is not null and c.expires_at <= now() then
+    return jsonb_build_object('ok', false, 'error', 'Bu kodun süresi doldu.');
+  end if;
+  if coalesce(p_email, '') = '' then
+    return jsonb_build_object('ok', false, 'error',
+      'Bu kuponu kullanmak için e-posta adresinizi girin.');
+  end if;
+  if p_subtotal < c.min_subtotal then
+    return jsonb_build_object('ok', false, 'error',
+      'Bu kod en az ' || c.min_subtotal || ' TL sepet tutarında geçerlidir.');
+  end if;
+  if c.max_uses is not null and c.used_count >= c.max_uses then
+    return jsonb_build_object('ok', false, 'error', 'Bu kodun kullanım limiti doldu.');
+  end if;
+  begin
+    insert into public.coupon_redemptions (coupon_id, email)
+      values (c.id, lower(p_email)) returning id into v_rid;
+  exception when unique_violation then
+    return jsonb_build_object('ok', false, 'error', 'Bu kodu daha önce kullandınız.');
+  end;
+  update public.discount_codes set used_count = used_count + 1 where id = c.id;
+  return jsonb_build_object('ok', true, 'id', c.id, 'redemption_id', v_rid,
+    'percent', c.percent, 'free_shipping', c.free_shipping);
+end;
+$$;
+
+-- Claim'i geri al (sipariş akışı başarısız) — redemption sil + sayaç düşür.
+create or replace function public.release_campaign_redemption(p_redemption_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare v_cid uuid;
+begin
+  delete from public.coupon_redemptions where id = p_redemption_id
+    returning coupon_id into v_cid;
+  if v_cid is not null then
+    update public.discount_codes
+       set used_count = greatest(0, used_count - 1) where id = v_cid;
+  end if;
+end;
+$$;
+
+-- paytr-callback için: siparişe bağlı kuponu (her iki tür) geri aç. İdempotent.
+create or replace function public.release_coupon_by_order(p_order_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  update public.discount_codes set used_at = null, order_id = null
+    where order_id = p_order_id and kind = 'single';
+  with del as (
+    delete from public.coupon_redemptions where order_id = p_order_id
+      returning coupon_id
+  )
+  update public.discount_codes d
+     set used_count = greatest(0, d.used_count - 1)
+    from del where d.id = del.coupon_id;
+end;
+$$;
+
+-- GÜVENLİK: claim/release yalnız service_role (Edge Function) çağırabilsin.
+revoke all on function public.claim_campaign_coupon(text, text, integer) from public, anon, authenticated;
+revoke all on function public.release_campaign_redemption(uuid) from public, anon, authenticated;
+revoke all on function public.release_coupon_by_order(uuid) from public, anon, authenticated;
+grant execute on function public.claim_campaign_coupon(text, text, integer) to service_role;
+grant execute on function public.release_campaign_redemption(uuid) to service_role;
+grant execute on function public.release_coupon_by_order(uuid) to service_role;
+
+-- Admin panel (admin-kuponlar.html) anon key + is_admin() ile kupon CRUD yapar;
+-- claim/release yalnız service_role RPC'leriyle çalışır.
+drop policy if exists discount_codes_admin_all on discount_codes;
+create policy discount_codes_admin_all on discount_codes
+  for all to authenticated using (is_admin()) with check (is_admin());
+drop policy if exists coupon_redemptions_admin_read on coupon_redemptions;
+create policy coupon_redemptions_admin_read on coupon_redemptions
+  for select to authenticated using (is_admin());

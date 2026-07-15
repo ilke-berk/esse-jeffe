@@ -45,6 +45,8 @@ export interface OrderEmailData {
   postal_code?: string | null;
   note?: string | null;
   subtotal: number;
+  discount?: number; // uygulanan indirim (TL, tam sayı); yoksa 0
+  discount_code?: string | null;
   shipping_fee: number;
   total: number;
   items: OrderEmailItem[];
@@ -56,10 +58,10 @@ const METHOD_LABEL: Record<string, string> = {
   card: "Kredi / Banka Kartı",
 };
 
-const tl = (n: number): string =>
+export const tl = (n: number): string =>
   new Intl.NumberFormat("tr-TR").format(Math.round(n || 0)) + " ₺";
 
-const esc = (s: unknown): string =>
+export const esc = (s: unknown): string =>
   String(s ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -91,12 +93,19 @@ function itemRows(items: OrderEmailItem[]): string {
 
 function totalsBlock(o: OrderEmailData): string {
   const shipping = o.shipping_fee > 0 ? tl(o.shipping_fee) : "Ücretsiz";
+  const discountRow = (o.discount || 0) > 0
+    ? `<tr>
+        <td style="padding:4px 0;color:#3c4a3a;">İndirim${o.discount_code ? ` (${esc(o.discount_code)})` : ""}</td>
+        <td style="padding:4px 0;text-align:right;color:#3c4a3a;">−${tl(o.discount || 0)}</td>
+      </tr>`
+    : "";
   return `
     <table role="presentation" width="100%" style="border-collapse:collapse;margin-top:8px;">
       <tr>
         <td style="padding:4px 0;color:#666;">Ara toplam</td>
         <td style="padding:4px 0;text-align:right;color:#1a1a1a;">${tl(o.subtotal)}</td>
       </tr>
+      ${discountRow}
       <tr>
         <td style="padding:4px 0;color:#666;">Kargo</td>
         <td style="padding:4px 0;text-align:right;color:#1a1a1a;">${shipping}</td>
@@ -119,7 +128,7 @@ function addressBlock(o: OrderEmailData): string {
     </div>`;
 }
 
-function shell(inner: string): string {
+export function shell(inner: string): string {
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1"></head>
     <body style="margin:0;padding:0;background:#f6f4f1;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
@@ -217,7 +226,7 @@ function businessHtml(o: OrderEmailData): string {
   `);
 }
 
-async function sendViaResend(
+export async function sendViaResend(
   apiKey: string,
   from: string,
   to: string,

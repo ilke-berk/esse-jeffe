@@ -394,6 +394,9 @@ window.EJCart = (function () {
   }
   function save(items) {
     try { localStorage.setItem(KEY, JSON.stringify(items)); } catch (e) {}
+    // Terk edilmiş sepet senkronizasyonu için sinyal (ej-supabase.js dinler;
+    // bu dosya Supabase'siz kalır — dinleyen yoksa olay boşa gider).
+    try { document.dispatchEvent(new CustomEvent('ej:cart-changed')); } catch (e) {}
     render();
   }
 

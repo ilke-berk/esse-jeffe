@@ -14,6 +14,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendOrderEmails } from "../_shared/order-email.ts";
 import { createLogger, errMsg } from "../_shared/log.ts";
+import { markCartRecovered, releaseDiscountByOrder } from "../_shared/discount.ts";
 
 async function hmacB64(message: string, key: string): Promise<string> {
   const k = await crypto.subtle.importKey(
@@ -72,7 +73,7 @@ Deno.serve(async (req) => {
   const { data: order, error } = await admin
     .from("orders")
     .select(
-      "id, order_no, payment_status, payment_method, full_name, phone, email, city, district, address, postal_code, note, subtotal, shipping_fee, total",
+      "id, order_no, user_id, payment_status, payment_method, full_name, phone, email, city, district, address, postal_code, note, subtotal, discount, discount_code, shipping_fee, total",
     )
     .eq("order_no", merchantOid)
     .maybeSingle();
@@ -100,6 +101,9 @@ Deno.serve(async (req) => {
       })
       .eq("id", order.id);
 
+    // Terk edilmiş sepet varsa "kurtarıldı" işaretle (hatırlatma gitmesin) — fail-soft.
+    await markCartRecovered(admin, { userId: order.user_id, email: order.email });
+
     // --- ödeme onaylandı → onay e-postası (fail-soft, callback'i bozmaz) ---
     const { data: its } = await admin
       .from("order_items")
@@ -117,6 +121,8 @@ Deno.serve(async (req) => {
       postal_code: order.postal_code,
       note: order.note,
       subtotal: order.subtotal,
+      discount: order.discount || 0,
+      discount_code: order.discount_code || null,
       shipping_fee: order.shipping_fee,
       total: order.total,
       items: its || [],
@@ -132,6 +138,11 @@ Deno.serve(async (req) => {
     // Yalnızca ilk geçişte (pending → failed) iade et; PayTR aynı bildirimi
     // tekrar gönderirse status artık 'failed' olur, buraya girilmez (çift iade yok).
     if (order.payment_status === "pending") {
+      // paytr-token'da claim edilen indirim kodunu da geri aç (varsa).
+      // RPC her iki kod türünü (single/campaign) tanır ve idempotenttir.
+      if (order.discount_code) {
+        await releaseDiscountByOrder(admin, order.id);
+      }
       const { data: its } = await admin
         .from("order_items")
         .select("product_id, color, size, qty")

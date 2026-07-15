@@ -171,6 +171,46 @@
         return { ok: true };
       });
     },
+    // ---- terk edilmiş sepet (cart-sync Edge Function) ----
+    // sync: sepeti sunucuya kaydet (üye JWT'si invoke ile otomatik gider;
+    // misafirde email + consent zorunlu). Fiyat alanı sunucuda paraya
+    // ASLA dönüşmez — hatırlatma/geri yükleme fiyatı DB'den okur.
+    cart: {
+      sync: function (items, email, consent) {
+        if (!client || !client.functions) return Promise.reject(new Error('Servis hazır değil'));
+        return client.functions.invoke('cart-sync', {
+          body: { action: 'sync', items: items || [], email: email || null, consent: consent === true }
+        }).then(function (r) {
+          if (r.error) return invokeErr(r.error).then(function (m) { throw new Error(m); });
+          var d = r.data || {};
+          if (d.error) throw new Error(d.error);
+          return { ok: true };
+        });
+      },
+      // maildeki ?sepet=<token> linki — sepeti güncel fiyatlarla geri getirir
+      restore: function (token) {
+        if (!client || !client.functions) return Promise.reject(new Error('Servis hazır değil'));
+        return client.functions.invoke('cart-sync', {
+          body: { action: 'restore', token: token }
+        }).then(function (r) {
+          if (r.error) return invokeErr(r.error).then(function (m) { throw new Error(m); });
+          var d = r.data || {};
+          if (d.error) throw new Error(d.error);
+          return { items: d.items || [] };
+        });
+      },
+      // indirim kodu ön kontrolü (yalnız görüntü — asıl doğrulama siparişte).
+      // subtotal min. sepet tutarı mesajı içindir; sunucuda paraya dönüşmez.
+      checkCoupon: function (code, email, subtotal) {
+        if (!client || !client.functions) return Promise.reject(new Error('Servis hazır değil'));
+        return client.functions.invoke('cart-sync', {
+          body: { action: 'coupon', code: code, email: email || null, subtotal: subtotal || 0 }
+        }).then(function (r) {
+          if (r.error) return invokeErr(r.error).then(function (m) { throw new Error(m); });
+          return r.data || { valid: false, error: 'Doğrulanamadı.' };
+        });
+      }
+    },
     // ---- üyelik / oturum ----
     auth: {
       signUp: function (name, email, password, phone) {
@@ -599,9 +639,46 @@
     if (pf && !pf.dataset.ejWired) { pf.dataset.ejWired = '1'; pf.addEventListener('submit', handleReset); initResetPage(pf); }
   }
 
+  // ---- terk edilmiş sepet senkronizasyonu ----
+  // ej.js sepeti her kaydedişte 'ej:cart-changed' olayı yayar (ej.js Supabase'siz
+  // kalır). Kimlik + pazarlama onayı (localStorage 'ej_reminder', sepet.html'deki
+  // checkbox yazar) varsa sepet debounce'la cart-sync'e gönderilir. Onay yoksa
+  // HİÇBİR sunucu çağrısı yapılmaz (KVKK). Hatalar sessizce yutulur — sepet
+  // deneyimi sync yüzünden asla bozulmaz.
+  var REMINDER_KEY = 'ej_reminder';
+  function reminderPref() {
+    try { return JSON.parse(localStorage.getItem(REMINDER_KEY) || 'null'); }
+    catch (e) { return null; }
+  }
+  var _syncTimer = null;
+  function scheduleCartSync() {
+    if (_syncTimer) clearTimeout(_syncTimer);
+    _syncTimer = setTimeout(doCartSync, 2500);
+  }
+  function doCartSync() {
+    _syncTimer = null;
+    var pref = reminderPref();
+    if (!pref || pref.consent !== true) return;      // onay yok → gönderme
+    var email = _session ? (_session.user.email || '') : String(pref.email || '');
+    if (!email) return;
+    var items = (window.EJCart && window.EJCart.load) ? window.EJCart.load() : [];
+    EJData.cart.sync(items, email, true).catch(function (e) {
+      console.warn('[EJ] sepet sync başarısız:', (e && e.message) || e);
+    });
+  }
+  function wireCartSync() {
+    if (document.body.dataset.ejCartSync) return;
+    document.body.dataset.ejCartSync = '1';
+    document.addEventListener('ej:cart-changed', scheduleCartSync);
+    // sayfa açılışında bir kez: önceki oturumda kaçan değişiklikleri yakala
+    var pref = reminderPref();
+    var items = (window.EJCart && window.EJCart.load) ? window.EJCart.load() : [];
+    if (pref && pref.consent === true && items.length) scheduleCartSync();
+  }
+
   function renderAll() {
     renderGrids(); renderMega(); renderProduct(); wireForms(); wireAuthUI(); wirePassToggles();
-    EJData.auth.session().then(applyAuthState);
+    EJData.auth.session().then(function (s) { applyAuthState(s); wireCartSync(); });
   }
 
   function init() {

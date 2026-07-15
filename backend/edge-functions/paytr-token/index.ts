@@ -23,6 +23,16 @@ import { createLogger, errMsg } from "../_shared/log.ts";
 import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
 import { canonVariant, clientIp, makeOrderNo, parseOriginList, resolveOrigin } from "../_shared/util.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import {
+  type ClaimRef,
+  claimDiscount,
+  normCode,
+  releaseDiscount,
+  setDiscountOrder,
+} from "../_shared/discount.ts";
+
+// Standart kargo ücreti (TL). Kargo bedava kuponu bunu sıfırlar.
+const SHIPPING_FEE = 0;
 
 // ok/fail yönlendirmesi için izinli origin'ler (client kontrolüne bırakılmaz)
 const ALLOWED_ORIGINS = parseOriginList(
@@ -168,10 +178,6 @@ Deno.serve(async (req) => {
       qty,
     });
   }
-  const shipping = 0;
-  const total = subtotal + shipping; // TL (tam sayı)
-  const paymentAmount = Math.round(total * 100); // PayTR: kuruş
-
   // --- stok ayır (GÜVENLİK: aşırı satışı önle) ---
   // Kart siparişinde stok, ödeme başlarken (pending) ayrılır; ödeme
   // başarısız/iptal olursa paytr-callback stoğu geri ekler. Aşağıda token
@@ -202,6 +208,32 @@ Deno.serve(async (req) => {
     );
   }
 
+  // --- indirim kodu (varsa): ATOMİK claim — create-order ile aynı desen ---
+  // Stok ayrıldıktan SONRA claim edilir; buradan sonraki her hata yolunda
+  // releaseCoupon ile geri açılır. Ödeme başarısız olursa paytr-callback
+  // kodu order_id üzerinden serbest bırakır.
+  let discount = 0;
+  let discountRef: ClaimRef | null = null;
+  let discountCode: string | null = null;
+  let freeShipping = false;
+  const couponInput = normCode(form.coupon);
+  if (couponInput) {
+    const c = await claimDiscount(admin, couponInput, email.toLowerCase(), subtotal);
+    if (!c.ok) {
+      await restoreStock();
+      log.warn("coupon_rejected", { ip });
+      return json({ error: c.error }, 400);
+    }
+    discount = c.discount;
+    discountRef = { id: c.id, kind: c.kind, redemptionId: c.redemptionId };
+    discountCode = couponInput;
+    freeShipping = c.freeShipping;
+  }
+  const releaseCoupon = () => (discountRef ? releaseDiscount(admin, discountRef) : Promise.resolve());
+  const shipping = freeShipping ? 0 : SHIPPING_FEE;
+  const total = subtotal - discount + shipping; // TL (tam sayı)
+  const paymentAmount = Math.round(total * 100); // PayTR: kuruş
+
   // --- siparişi oluştur (pending) ---
   // NOT: makeOrderNo 11 haneli üretir (EJ+YYAAGG+5) — create-order ve
   // schema.sql ile AYNI biçim. Eski yerel üreteç 12 haneliydi; bu yüzden
@@ -214,6 +246,8 @@ Deno.serve(async (req) => {
     payment_method: "card",
     payment_status: "pending",
     subtotal,
+    discount,
+    discount_code: discountCode,
     shipping_fee: shipping,
     total,
     full_name: form.full_name,
@@ -228,8 +262,10 @@ Deno.serve(async (req) => {
   if (oErr || !orderRow?.id) {
     log.error("order_insert_error", { ip, order_no: oid, detail: oErr?.message || "no_row" });
     await restoreStock();
+    await releaseCoupon();
     return json({ error: "Sipariş oluşturulamadı. Lütfen tekrar deneyin." }, 500);
   }
+  if (discountRef) await setDiscountOrder(admin, discountRef, orderRow.id);
 
   // Kalemler yazılamazsa devam ETME: müşteri kalemsiz sipariş için ödeme
   // yapardı ve başarısız ödemede paytr-callback iade edecek kalem bulamayıp
@@ -240,6 +276,7 @@ Deno.serve(async (req) => {
     log.error("order_items_insert_error", { ip, order_no: oid, detail: iErr.message });
     await admin.from("orders").delete().eq("id", orderRow.id);
     await restoreStock();
+    await releaseCoupon();
     return json({ error: "Sipariş kaydedilemedi. Lütfen tekrar deneyin." }, 500);
   }
 
@@ -292,12 +329,14 @@ Deno.serve(async (req) => {
     log.error("paytr_unreachable", { ip, order_no: oid, detail: errMsg(e) });
     await admin.from("orders").update({ payment_status: "failed" }).eq("order_no", oid);
     await restoreStock(); // ödeme başlatılamadı → stoğu geri ver
+    await releaseCoupon(); // kupon da yeniden kullanılabilir olsun
     return json({ error: "Ödeme sağlayıcısına ulaşılamadı. Lütfen tekrar deneyin." }, 502);
   }
   if (ptr?.status !== "success") {
     log.error("paytr_token_error", { ip, order_no: oid, detail: String(ptr?.reason || "bilinmiyor") });
     await admin.from("orders").update({ payment_status: "failed" }).eq("order_no", oid);
     await restoreStock(); // ödeme başlatılamadı → stoğu geri ver
+    await releaseCoupon();
     return json({ error: "Ödeme başlatılamadı. Lütfen tekrar deneyin veya farklı bir ödeme yöntemi seçin." }, 400);
   }
 

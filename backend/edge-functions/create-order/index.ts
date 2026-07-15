@@ -18,10 +18,21 @@ import { createLogger, errMsg } from "../_shared/log.ts";
 import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
 import { canonVariant, clientIp, makeOrderNo } from "../_shared/util.ts";
 import { corsHeaders } from "../_shared/cors.ts";
+import {
+  type ClaimRef,
+  claimDiscount,
+  markCartRecovered,
+  normCode,
+  releaseDiscount,
+  setDiscountOrder,
+} from "../_shared/discount.ts";
 
 // IP başına sipariş oluşturma sınırı (paytr-token ile ORTAK 'order' sayacı).
 // Dürüst müşteri için bol; bot'un sahte COD siparişi yağdırmasını keser.
 const ORDER_RATE = { table: "fn_rate_limit", kind: "order", max: 10, windowMin: 60 };
+
+// Standart kargo ücreti (TL). Kargo bedava kuponu bunu sıfırlar.
+const SHIPPING_FEE = 0;
 
 Deno.serve(async (req) => {
   const cors = corsHeaders(req.headers.get("origin"));
@@ -123,9 +134,6 @@ Deno.serve(async (req) => {
       qty,
     });
   }
-  const shipping = 0;
-  const total = subtotal + shipping; // TL (tam sayı)
-
   // --- stok ayır (GÜVENLİK: aşırı satışı önle) ---
   // Atomik RPC: tüm sepet için stoğu tek işlemde düşer; biri bile yetmezse
   // hiçbirini düşmez ve ok:false döner. Takip edilmeyen (track=false) varyantlar
@@ -157,6 +165,31 @@ Deno.serve(async (req) => {
       .then(({ error }) => { if (error) log.error("stock_restore_error", { detail: error.message }); })
       .catch((e) => log.error("stock_restore_error", { detail: errMsg(e) }));
 
+  // --- indirim kodu (varsa): ATOMİK claim — GÜVENLİK: tutar sunucuda ---
+  // Kod, stok ayrıldıktan SONRA claim edilir; buradan sonraki her hata
+  // yolunda releaseDiscount ile geri açılır (restoreStock'un kupon eşi).
+  const customerEmail = String(form.email || "").trim().toLowerCase() || null;
+  let discount = 0;
+  let discountRef: ClaimRef | null = null;
+  let discountCode: string | null = null;
+  let freeShipping = false;
+  const couponInput = normCode(form.coupon);
+  if (couponInput) {
+    const c = await claimDiscount(admin, couponInput, customerEmail, subtotal);
+    if (!c.ok) {
+      await restoreStock();
+      log.warn("coupon_rejected", { ip });
+      return json({ error: c.error }, 400);
+    }
+    discount = c.discount;
+    discountRef = { id: c.id, kind: c.kind, redemptionId: c.redemptionId };
+    discountCode = couponInput;
+    freeShipping = c.freeShipping;
+  }
+  const releaseCoupon = () => (discountRef ? releaseDiscount(admin, discountRef) : Promise.resolve());
+  const shipping = freeShipping ? 0 : SHIPPING_FEE;
+  const total = subtotal - discount + shipping; // TL (tam sayı)
+
   // --- siparişi oluştur ---
   const oid = makeOrderNo();
   const { data: orderRow, error: oErr } = await admin
@@ -168,6 +201,8 @@ Deno.serve(async (req) => {
       payment_method: method,
       payment_status: method === "cod" ? "cod" : "pending",
       subtotal,
+      discount,
+      discount_code: discountCode,
       shipping_fee: shipping,
       total,
       full_name: form.full_name,
@@ -184,6 +219,7 @@ Deno.serve(async (req) => {
   if (oErr) {
     log.error("order_insert_error", { ip, order_no: oid, detail: oErr.message });
     await restoreStock(); // sipariş açılamadı → ayrılan stoğu geri ver
+    await releaseCoupon(); // kupon da yeniden kullanılabilir olsun
     return json({ error: "Sipariş oluşturulamadı. Lütfen tekrar deneyin." }, 500);
   }
 
@@ -194,8 +230,13 @@ Deno.serve(async (req) => {
     // kalemler yazılamadıysa yarım siparişi ve ayrılan stoğu geri al
     await admin.from("orders").delete().eq("id", orderRow.id);
     await restoreStock();
+    await releaseCoupon();
     return json({ error: "Sipariş kaydedilemedi. Lütfen tekrar deneyin." }, 500);
   }
+  if (discountRef) await setDiscountOrder(admin, discountRef, orderRow.id);
+
+  // Terk edilmiş sepet varsa "kurtarıldı" işaretle (hatırlatma gitmesin) — fail-soft.
+  await markCartRecovered(admin, { userId, email: customerEmail });
 
   // başarı → hız sınırı sayacına ekle (yalnız gerçekten açılan siparişler sayılır)
   await recordRateLimit(admin, ORDER_RATE.table, ip, ORDER_RATE.kind);
@@ -213,6 +254,8 @@ Deno.serve(async (req) => {
     postal_code: form.postal_code || null,
     note: form.note || null,
     subtotal,
+    discount,
+    discount_code: discountCode,
     shipping_fee: shipping,
     total,
     items: orderItems.map((r) => ({

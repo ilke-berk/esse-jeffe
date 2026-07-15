@@ -57,6 +57,14 @@
 .ferris .mv-loading{position:absolute;inset:0;display:grid;place-items:center;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);transition:opacity .4s}
 .ferris.loaded .mv-loading{opacity:0;visibility:hidden}
 
+/* 3D'siz mod (WebGL yok / model inemedi): fotoğraflı renk seçiciye düş */
+.ferris.no3d canvas,.ferris.no3d .mv-note{display:none}
+.ferris-fallback{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.ff-dress{width:150px;height:212px;background:#f0ece8;background-size:cover;background-position:center;box-shadow:0 18px 40px -18px rgba(20,18,15,.4);transition:background .3s}
+.ff-dots{display:flex;gap:10px}
+.ff-dots button{width:32px;height:32px;border-radius:50%;border:1px solid rgba(0,0,0,.18);cursor:pointer;padding:0;transition:transform .2s,box-shadow .2s}
+.ff-dots button.sel{transform:scale(1.12);box-shadow:0 0 0 2px var(--bg),0 0 0 3px var(--ink)}
+
 .cbtn{flex-shrink:0;width:46px;height:46px;border-radius:50%;border:1px solid var(--line-strong);background:var(--bg);color:var(--ink);cursor:pointer;display:grid;place-items:center;transition:background .25s,color .25s,border-color .25s}
 .cbtn:hover{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .cbtn svg{width:18px;height:18px;stroke:currentColor;stroke-width:1.4;fill:none}
@@ -237,8 +245,8 @@
         <div class="pd-acc-body"><p>Siparişler aynı gün kargoya verilir. Türkiye genelinde 1–3 iş günü teslimat. Kargo ücretsizdir. Kapıda ödeme seçeneği mevcuttur.</p></div>
       </div>
       <div class="pd-acc-item">
-        <button class="pd-acc-btn" aria-expanded="false">İade & Değişim<svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
-        <div class="pd-acc-body"><p>Teslim tarihinden itibaren 14 gün içinde beden veya renk değişimi yapabilirsiniz. Ürün kullanılmamış ve etiketli olmalıdır.</p></div>
+        <button class="pd-acc-btn" aria-expanded="false">Değişim<svg viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg></button>
+        <div class="pd-acc-body"><p>Teslim tarihinden itibaren 14 gün içinde beden, renk veya model değişimi yapabilirsiniz. Ürün kullanılmamış ve etiketli olmalıdır.</p></div>
       </div>
     </div>
   </div>
@@ -352,13 +360,20 @@
 
 <script src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=11"></script>
+<script src="backend/ej-supabase.js?v=12"></script>
 <script type="module">
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+// three.js + model (~2.6 MB) ancak atlıkarınca görünür olunca iner; sayfa açılışını bloklamaz.
+// WebGL yoksa ya da CDN/model inemezse fotoğraflı renk seçiciye düşülür.
+const MODEL_URL = 'models/test-elbise.min.glb';   // meshopt sıkıştırmalı (kaynak: test-elbise.glb, 21 MB → 2.6 MB)
 
-function ejInitFerris(){
+function ejHasWebGL(){
+  try{
+    const cv = document.createElement('canvas');
+    return !!(window.WebGLRenderingContext && (cv.getContext('webgl2') || cv.getContext('webgl')));
+  }catch(e){ return false; }
+}
+
+async function ejInitFerris(){
   if (window.__ferrisInited) return;
   const canvas = document.getElementById('dressCanvas');
   if (!canvas) return;
@@ -389,6 +404,78 @@ function ejInitFerris(){
 
   // test modeli siyah elbise — siyah kopya orijinal dokusunu korur, onunla başla
   let cur = Math.max(0, COLORS.findIndex(c => /siyah/i.test(c.name)));
+
+  // seçili rengi başlığa, noktaya ve büyük fotoğrafa yansıt (3D'li ve 3D'siz ortak)
+  function applyColor(){
+    const col = COLORS[cur];
+    colorName.textContent = col.name;
+    if (swName) swName.textContent = col.name;
+    if (swDot)  swDot.style.background = col.hex;
+    if (col.img){
+      pgMainImg.src = col.img; pgMainImg.style.opacity = '1';
+      pgMainPh.style.opacity = '0';
+    } else {
+      pgMainImg.style.opacity = '0';
+      pgMainPh.style.background = col.hex;
+      pgMainPh.style.opacity = '1';
+    }
+  }
+
+  // ---- 3D'siz mod: kumaş kartı + renk noktaları, ok tuşları ve butonlar aynı çalışır ----
+  function initFallback(){
+    ferris.classList.add('no3d', 'loaded');
+    const box   = document.createElement('div'); box.className = 'ferris-fallback';
+    const dress = document.createElement('div'); dress.className = 'ff-dress';
+    const dots  = document.createElement('div'); dots.className = 'ff-dots';
+    const btns = COLORS.map((col, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.style.background = col.hex;
+      b.setAttribute('aria-label', col.name);
+      b.addEventListener('click', () => { cur = i; paint(); });
+      dots.appendChild(b);
+      return b;
+    });
+    function paint(){
+      const col = COLORS[cur];
+      dress.style.background = col.img
+        ? '#f0ece8 url("' + col.img + '") center/cover no-repeat'
+        : col.hex;
+      btns.forEach((b, i) => b.classList.toggle('sel', i === cur));
+      applyColor();
+    }
+    box.appendChild(dress); box.appendChild(dots);
+    ferris.appendChild(box);
+    const step = (dir) => { cur = (cur + dir + N) % N; paint(); };
+    document.getElementById('prevBtn').addEventListener('click', () => step(-1));
+    document.getElementById('nextBtn').addEventListener('click', () => step(1));
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft')  step(-1);
+      if (e.key === 'ArrowRight') step(1);
+    });
+    paint();
+  }
+
+  if (!ejHasWebGL()){ initFallback(); return; }
+
+  // three.js modülleri bu noktada iner
+  let THREE, GLTFLoader, RoomEnvironment, MeshoptDecoder;
+  try{
+    const mods = await Promise.all([
+      import('three'),
+      import('three/addons/loaders/GLTFLoader.js'),
+      import('three/addons/environments/RoomEnvironment.js'),
+      import('three/addons/libs/meshopt_decoder.module.js')
+    ]);
+    THREE = mods[0];
+    GLTFLoader      = mods[1].GLTFLoader;
+    RoomEnvironment = mods[2].RoomEnvironment;
+    MeshoptDecoder  = mods[3].MeshoptDecoder;
+  }catch(err){
+    console.error('[EJ] three.js yüklenemedi, foto moduna düşüldü:', err);
+    initFallback();
+    return;
+  }
 
   // ---- sahne ----
   const renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true });
@@ -442,7 +529,10 @@ function ejInitFerris(){
   resize();
 
   // ---- model: bir kez yükle, her renk için kopyala (geometri paylaşılır) ----
-  new GLTFLoader().load('models/test-elbise.glb', (gltf) => {
+  let dead = false;   // model inemezse render döngüsünü durdur
+  const loader = new GLTFLoader();
+  loader.setMeshoptDecoder(MeshoptDecoder);
+  loader.load(MODEL_URL, (gltf) => {
     const src = gltf.scene;
     // normalize: boy 1.1 birim, ayaklar y=0, merkezde
     let box = new THREE.Box3().setFromObject(src);
@@ -490,8 +580,9 @@ function ejInitFerris(){
   }, (ev) => {
     if (ev.total) loadingEl.textContent = '3D modeller yükleniyor… %' + Math.round(ev.loaded / ev.total * 100);
   }, (err) => {
-    console.error('[EJ] 3D model yüklenemedi:', err);
-    loadingEl.textContent = '3D model yüklenemedi';
+    console.error('[EJ] 3D model yüklenemedi, foto moduna düşüldü:', err);
+    dead = true;
+    initFallback();
   });
 
   // ---- dönüş: hedef açıya yumuşak yaklaş + boşta otomatik dön ----
@@ -500,18 +591,7 @@ function ejInitFerris(){
   let autoOn = true, dragging = false;
 
   function apply(){
-    const col = COLORS[cur];
-    colorName.textContent = col.name;
-    if (swName) swName.textContent = col.name;
-    if (swDot)  swDot.style.background = col.hex;
-    if (col.img){
-      pgMainImg.src = col.img; pgMainImg.style.opacity = '1';
-      pgMainPh.style.opacity = '0';
-    } else {
-      pgMainImg.style.opacity = '0';
-      pgMainPh.style.background = col.hex;
-      pgMainPh.style.opacity = '1';
-    }
+    applyColor();
     placePodium();   // podyum halkası seçili elbisenin altına geçer
   }
 
@@ -566,6 +646,7 @@ function ejInitFerris(){
   ferris.addEventListener('mouseleave', () => { if (!dragging) autoOn = true; });
 
   (function loop(){
+    if (dead) return;
     requestAnimationFrame(loop);
     if (autoOn && !dragging) target += 0.12;   // eski carousel'in boşta dönüş hızı
     angle += (target - angle) * 0.09;
@@ -585,14 +666,27 @@ function ejInitFerris(){
 }
 
 // Supabase varsa ürün DB'den yüklenince başlat; yoksa hemen.
-if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
-  if (window.EJ_PRODUCT) ejInitFerris();
-  else {
-    window.addEventListener('ej:product-loaded', ejInitFerris, { once:true });
-    setTimeout(ejInitFerris, 2500);   // emniyet: SDK gecikirse/yüklenmezse
+function ejStartFerris(){
+  if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
+    if (window.EJ_PRODUCT) ejInitFerris();
+    else {
+      window.addEventListener('ej:product-loaded', ejInitFerris, { once:true });
+      setTimeout(ejInitFerris, 2500);   // emniyet: SDK gecikirse/yüklenmezse
+    }
+  } else {
+    ejInitFerris();
   }
+}
+
+// three.js + modeli ancak atlıkarınca görünmeye yaklaşınca indir
+const ferrisEl = document.getElementById('ferris');
+if (ferrisEl && 'IntersectionObserver' in window){
+  const io = new IntersectionObserver((entries) => {
+    if (entries.some(e => e.isIntersecting)){ io.disconnect(); ejStartFerris(); }
+  }, { rootMargin: '400px 0px' });   // bölüme ~yarım ekran kala indirmeye başla
+  io.observe(ferrisEl);
 } else {
-  ejInitFerris();
+  ejStartFerris();
 }
 </script>
 
@@ -781,7 +875,7 @@ if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
   ejRecent();
 }
 </script>
-<script src="ej.js?v=10"></script>
-<script src="ej-chat.js?v=15"></script>
+<script src="ej.js?v=11"></script>
+<script src="ej-chat.js?v=18"></script>
 </body>
 </html>

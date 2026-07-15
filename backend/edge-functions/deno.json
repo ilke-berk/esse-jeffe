@@ -3,6 +3,6 @@
     "test": "deno test _shared/"
   },
   "fmt": {
-    "include": ["_shared/", "create-order/", "paytr-token/", "paytr-callback/", "submit-form/", "track-order/"]
+    "include": ["_shared/", "create-order/", "paytr-token/", "paytr-callback/", "submit-form/", "track-order/", "cart-sync/", "cart-reminder/"]
   }
 }

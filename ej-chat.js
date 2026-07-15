@@ -34,7 +34,7 @@
   var CHIPS = [
     { t: 'Beden', q: 'Hangi bedeni seçmeliyim?' },
     { t: 'Kargo', q: 'Kargo ne kadar sürede gelir?' },
-    { t: 'Değişim', q: 'Değişim ve iade nasıl yapılıyor?' },
+    { t: 'Değişim', q: 'Değişim nasıl yapılıyor?' },
     { t: 'Kapıda Ödeme', q: 'Kapıda ödeme var mı?' }
   ];
 
@@ -50,6 +50,9 @@
   var resumeTried = null;     // sunucudan konuşma devralma denemesi (tek seferlik promise)
   var sendQueue = [];         // canlı destekte yazılan mesajlar düşmesin diye sıra
   var userMsgCount = 0;       // temsilci bağlantısını ne zaman göstereceğimiz için
+  var introShown = false;     // "danışman katıldı" girişi bu konuşmada oynatıldı mı
+  var introJoined = false;    // giriş tamamlandı → başlık/etiket 'Esin'
+  var introTimers = [];       // bekleyen giriş zamanlayıcıları (iptal edilebilsin)
 
   // insan gibi gönderim (AI modu): kullanıcı ard arda yazarsa mesajları HEMEN
   // API'ye göndermeyip birleştir → tek Gemini çağrısı. Daha az maliyet (bot spam'i
@@ -357,6 +360,7 @@
     conv = null; save(null);
     seen = {}; lastTs = '1970-01-01'; status = 'ai'; userMsgCount = 0; pollMisses = 0;
     burst = []; burstRow = null; sendQueue = [];
+    clearIntro(); introShown = false; introJoined = false;
     if (coalesceTimer) { clearTimeout(coalesceTimer); coalesceTimer = null; }
     var rows = bodyEl.querySelectorAll('.ej-row');
     for (var i = 0; i < rows.length; i++) rows[i].parentNode.removeChild(rows[i]);
@@ -489,6 +493,43 @@
     renderBurst();
     scrollDown();
     scheduleFlush();
+    playIntro();
+  }
+
+  // Birleştirme penceresi (COALESCE_MS) boyunca müşteri boş beklemesin:
+  // ilk mesajdan kısa süre sonra "bağlanıyor…" + "danışman katıldı" sistem
+  // satırları belirir — biri sohbete girip mesajı okuyormuş hissi verir.
+  // Yalnız yeni AI konuşmasının ilk mesajında bir kez oynar; geçmişi olan
+  // (devralınan) konuşmada ve canlı destek modunda oynamaz.
+  function playIntro() {
+    if (introShown || status !== 'ai') return;
+    if (bodyEl.querySelector('.ej-row.bot')) { introShown = true; return; }
+    introShown = true;
+    introTimers.push(setTimeout(function () {
+      var stick = nearBottom();
+      addMsg('sys', 'Sizi stil danışmanımız Esin\'e bağlıyoruz…', null, null);
+      if (stick) scrollDown();
+    }, 900));
+    introTimers.push(setTimeout(function () {
+      introJoined = true;
+      var stick = nearBottom();
+      addMsg('sys', 'Esin sohbete katıldı', null, null);
+      if (status === 'ai') applyStatus('ai');   // başlık: Esin · çevrimiçi
+      if (stick) scrollDown();
+    }, 3400));
+    // "katıldı"dan hemen sonra sunucunun konuşma açılışında yarattığı karşılama
+    // mesajını erkenden çek: kısa bir "yazıyor…" ve ardından selamlama düşer.
+    // Böylece karşılama, asıl yanıtla birlikte topluca gelmez (yapay durmaz).
+    // 'start' henüz dönmediyse poll sessizce boş geçer; karşılama en geç asıl
+    // yanıtla birlikte, yine kullanıcının mesajının ALTINDA görünür.
+    introTimers.push(setTimeout(function () { if (status === 'ai') showTyping(true); }, 4000));
+    introTimers.push(setTimeout(function () {
+      poll().then(function () { if (!sending) showTyping(false); });
+    }, 5600));
+  }
+  function clearIntro() {
+    for (var i = 0; i < introTimers.length; i++) clearTimeout(introTimers[i]);
+    introTimers = [];
   }
 
   // birikmiş kullanıcı satırlarını tek 'pending' balonda göster (accumulate)
@@ -745,7 +786,7 @@
           added = true;
           if (m.created_at > lastTs) lastTs = m.created_at;
           if (m.role !== 'user') showTyping(false);
-          removePendingUser(m);
+          if (confirmPendingUser(m)) return;   // balon yerinde onaylandı; sona taşınmaz
           addMsg(roleClass(m.role), m.content, m.id, m.created_at);
         });
         if (added && stick) scrollDown();   // yalnız yeni mesaj VARSA ve alttaydıysa kaydır
@@ -755,7 +796,8 @@
 
   function applyStatus(s) {
     status = s;
-    if (s === 'ai') subEl.innerHTML = '<span class="ej-live"></span>Çevrimiçi · anında yanıt';
+    if (s !== 'ai') clearIntro();   // gerçek temsilci akışına geçildi: sahte giriş satırları basılmasın
+    if (s === 'ai') subEl.innerHTML = '<span class="ej-live"></span>' + (introJoined ? 'Esin · çevrimiçi' : 'Çevrimiçi · anında yanıt');
     else if (s === 'waiting') subEl.innerHTML = 'Temsilciye bağlanılıyor…';
     else if (s === 'live') subEl.innerHTML = '<span class="ej-live"></span>Müşteri temsilcisi · çevrimiçi';
     else if (s === 'closed') subEl.innerHTML = 'Görüşme kapandı';
@@ -770,7 +812,8 @@
 
   // bot mesajının gönderen etiketi (ai/agent ayrı isim)
   function senderName() {
-    return status === 'live' ? 'Müşteri Temsilcisi' : BRAND;
+    if (status === 'live') return 'Müşteri Temsilcisi';
+    return introJoined ? 'Esin' : BRAND;
   }
 
   // ---------- render yardımcıları ----------
@@ -803,12 +846,20 @@
     bodyEl.insertBefore(row, typingEl);
     // not: otomatik kaydırmayı çağıran karar verir (poll: yalnız alttaysa; gönderim: her zaman)
   }
-  function removePendingUser(m) {
-    if (m.role !== 'user') return;
+  // Bekleyen kullanıcı balonunu YERİNDE onayla: silip sona eklemek yerine
+  // olduğu yerde bırakır, yalnız gerçek zaman damgasını işler. Böylece
+  // sunucunun konuşma açılışında yarattığı karşılama mesajı (created_at
+  // kullanıcınınkinden eski) balonun üstüne çıkamaz — sıra yaşandığı gibi kalır.
+  function confirmPendingUser(m) {
+    if (m.role !== 'user') return false;
     var p = bodyEl.querySelector('.ej-row.user[data-pending]');
-    if (p && p.querySelector('.ej-bub') && p.querySelector('.ej-bub').textContent === m.content) {
-      p.parentNode.removeChild(p);
-    }
+    if (!p) return false;
+    var bub = p.querySelector('.ej-bub');
+    if (!bub || bub.textContent !== m.content) return false;
+    p.removeAttribute('data-pending');
+    var t = p.querySelector('.ej-time');
+    if (t) t.textContent = fmtTime(m.created_at);
+    return true;
   }
   function showTyping(on) { typingEl.classList.toggle('on', !!on); if (on) scrollDown(); }
   function scrollDown() { bodyEl.scrollTop = bodyEl.scrollHeight; }
