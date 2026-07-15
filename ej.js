@@ -710,3 +710,138 @@ window.EJCart = (function () {
            subtotal: subtotal, open: open, close: close, render: render,
            load: load, _slug: slug, _parsePrice: parsePrice };
 })();
+
+// ── Favoriler (wishlist) ─────────────────────────────────
+// localStorage tabanlı, üyelik gerektirmez. Kalpler ürün kartlarında
+// (.card-fav) ve ürün sayfasında (.pd-fav); liste favoriler.html'de.
+// Veri modeli: {slug, name, price, img} — slug tekil anahtar.
+window.EJWish = (function () {
+  var KEY = 'ej_wishlist';
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY) || '[]'); }
+    catch (e) { return []; }
+  }
+  function save(items) {
+    try { localStorage.setItem(KEY, JSON.stringify(items)); } catch (e) {}
+    try { document.dispatchEvent(new CustomEvent('ej:wishlist-changed')); } catch (e) {}
+    render();
+  }
+  function has(slug) {
+    return load().some(function (it) { return it.slug === slug; });
+  }
+  function toggle(item) {
+    if (!item || !item.slug) return false;
+    var items = load();
+    var next = items.filter(function (it) { return it.slug !== item.slug; });
+    var added = next.length === items.length;   // filtre bir şey silmediyse ekleniyor
+    if (added) next.push({ slug: item.slug, name: item.name || '',
+                           price: item.price || 0, img: item.img || '' });
+    save(next);
+    announce((item.name || 'Ürün') + (added ? ' favorilere eklendi.' : ' favorilerden çıkarıldı.'));
+    if (added) bump();
+    return added;
+  }
+  function remove(slug) {
+    save(load().filter(function (it) { return it.slug !== slug; }));
+  }
+  function count() { return load().length; }
+
+  // EJCart.announce ile aynı canlı bölgeyi (#ejLive) paylaşır
+  function announce(msg) {
+    var live = document.getElementById('ejLive');
+    if (!live) {
+      live = document.createElement('div');
+      live.id = 'ejLive';
+      live.setAttribute('role', 'status');
+      live.setAttribute('aria-live', 'polite');
+      live.style.cssText = 'position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0';
+      document.body.appendChild(live);
+    }
+    live.textContent = '';
+    setTimeout(function () { live.textContent = msg; }, 30);
+  }
+
+  function bump() {
+    document.querySelectorAll('.icon.heart').forEach(function (el) {
+      el.classList.add('ej-cart-bump');
+      setTimeout(function () { el.classList.remove('ej-cart-bump'); }, 340);
+    });
+  }
+
+  function render() {
+    var n = count();
+    document.querySelectorAll('.icon.heart .count').forEach(function (b) {
+      b.textContent = n;
+      b.style.display = n > 0 ? '' : 'none';
+    });
+    // kalp aktiflik durumu (kartlar + ürün sayfası)
+    var items = load();
+    var slugs = {};
+    items.forEach(function (it) { slugs[it.slug] = true; });
+    document.querySelectorAll('.card-fav[data-slug], .pd-fav').forEach(function (btn) {
+      var s = btn.getAttribute('data-slug') ||
+              (window.EJ_PRODUCT && window.EJ_PRODUCT.slug) || '';
+      var on = !!slugs[s];
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      btn.setAttribute('aria-label', on ? 'Favorilerden çıkar' : 'Favorilere ekle');
+    });
+  }
+
+  // tıklanan kalpten favori kalemi çıkar
+  function itemFrom(el) {
+    if (el.getAttribute('data-slug')) {
+      return {
+        slug: el.getAttribute('data-slug'),
+        name: el.getAttribute('data-name') || '',
+        price: parseInt(el.getAttribute('data-price') || '0', 10) || 0,
+        img: el.getAttribute('data-img') || ''
+      };
+    }
+    // ürün sayfası kalbi: DB ürünü varsa ondan, yoksa DOM'dan
+    var p = window.EJ_PRODUCT;
+    if (p) return { slug: p.slug, name: p.name, price: p.price || 0, img: p.image || '' };
+    var name = 'Ürün';
+    var h1 = document.querySelector('.pd-info h1');
+    if (h1) {
+      var clone = h1.cloneNode(true);
+      var em = clone.querySelector('em'); if (em) em.remove();
+      name = clone.textContent.trim();
+    }
+    var price = 0;
+    var priceEl = document.querySelector('.pd-price');
+    if (priceEl) {
+      var pc = priceEl.cloneNode(true);
+      var old = pc.querySelector('.old'); if (old) old.remove();
+      price = EJCart._parsePrice(pc.textContent);
+    }
+    var img = document.getElementById('pgMainImg');
+    return { slug: EJCart._slug(name), name: name, price: price,
+             img: (img && img.src && img.style.opacity !== '0') ? img.src : '' };
+  }
+
+  function bind() {
+    // kartlar <a> olduğundan navigasyonu engelle
+    document.addEventListener('click', function (e) {
+      var fav = e.target.closest('.card-fav, .pd-fav');
+      if (!fav) return;
+      e.preventDefault(); e.stopPropagation();
+      toggle(itemFrom(fav));
+    });
+    // DB'den yeniden basılan kartlarda aktiflik işaretini tazele
+    document.addEventListener('ej:grid-rendered', render);
+    window.addEventListener('ej:product-loaded', render);
+  }
+
+  // diğer sekmelerle senkron
+  window.addEventListener('storage', function (e) { if (e.key === KEY) render(); });
+
+  function init() { bind(); render(); }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else { init(); }
+
+  return { toggle: toggle, has: has, remove: remove, count: count,
+           load: load, render: render };
+})();

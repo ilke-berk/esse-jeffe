@@ -69,8 +69,14 @@
     if (/yeni/i.test(p.badge || '')) cats.push('yeni');
     if (p.old_price) cats.push('indirim');
     if (String(p.model_desc || '').toLocaleLowerCase('tr').indexOf('askılı') > -1) cats.push('askili');
+    // favori kalbi: kart <a> içinde buton — tıklama EJWish delegasyonunda
+    // preventDefault ile yakalanır, karta gitmez
+    var fav = '<button type="button" class="card-fav" data-slug="' + esc(p.slug) +
+      '" data-name="' + esc(p.name) + '" data-price="' + (parseInt(p.price, 10) || 0) +
+      '" data-img="' + esc(p.image || '') + '" aria-label="Favorilere ekle" aria-pressed="false">' +
+      '<svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>';
     return '<a class="card" data-cat="' + cats.join(' ') + '" href="urun.html?slug=' + encodeURIComponent(p.slug) + '">' +
-      '<div class="frame">' + tag + media + '</div>' +
+      '<div class="frame">' + tag + fav + media + '</div>' +
       '<div class="meta"><h3>' + esc(p.name) + '</h3>' +
         '<p class="model-desc">' + esc(p.model_desc || '') + '</p>' +
         '<div class="dots">' + dots + '</div>' +
