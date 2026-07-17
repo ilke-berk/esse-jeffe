@@ -9,7 +9,7 @@
 <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M5kng.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M3knj-SA.woff2">
   <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=10">
+<link rel="stylesheet" href="ej.css?v=11">
 <style>
 .checkout{display:grid;grid-template-columns:1.15fr .85fr;gap:64px;align-items:start;max-width:1180px;margin:0 auto}
 .checkout h2{font-family:var(--serif);font-weight:400;font-size:22px;margin-bottom:20px;letter-spacing:.01em}
@@ -214,9 +214,9 @@ input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
 </aside>
 
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=15"></script>
+<script src="backend/ej-supabase.js?v=16"></script>
 <script src="ej.js?v=12"></script>
-<script src="ej-chat.js?v=18"></script>
+<script src="ej-chat.js?v=19"></script>
 <script>
 (function(){
   function fmt(n){ return (n||0).toLocaleString('tr-TR') + ' TL'; }
@@ -355,6 +355,40 @@ input[aria-invalid="true"],textarea[aria-invalid="true"]{border-color:#b03030}
       if(!_mail.value && _pref.email) _mail.value = _pref.email;
     }
   }catch(e){}
+
+  // --- girişli üye: profil + varsayılan adresle formu önceden doldur ---
+  // YALNIZ boş alanlar doldurulur; kullanıcının yazdıklarının üstüne yazılmaz.
+  // EJData/SDK asenkron yüklendiği için kısa bir bekleme döngüsüyle denenir.
+  function fillIfEmpty(id, v){
+    var el = document.getElementById(id);
+    if(el && !el.value.trim() && v) el.value = v;
+  }
+  (function prefillFromProfile(){
+    var tries = 0;
+    (function wait(){
+      if(!(window.EJData && window.EJData.auth && window.EJData.client && window.EJData.client())){
+        if(++tries < 40) setTimeout(wait, 250);
+        return;
+      }
+      window.EJData.auth.session().then(function(s){
+        if(!s) return;
+        var db = window.EJData.client();
+        fillIfEmpty('mail', s.user.email || '');
+        db.from('profiles').select('full_name,phone').eq('id', s.user.id).single().then(function(r){
+          if(r.data){ fillIfEmpty('ad', r.data.full_name); fillIfEmpty('tel', r.data.phone); }
+        });
+        // varsayılan adres; yoksa en son eklenen adres
+        db.from('addresses').select('*').order('is_default',{ascending:false}).order('created_at',{ascending:false}).limit(1)
+          .then(function(r){
+            var a = (r.data||[])[0];
+            if(!a) return;
+            fillIfEmpty('ad', a.full_name); fillIfEmpty('tel', a.phone);
+            fillIfEmpty('il', a.city); fillIfEmpty('ilce', a.district);
+            fillIfEmpty('adres', a.address); fillIfEmpty('posta', a.postal_code);
+          });
+      }).catch(function(){});
+    })();
+  })();
 
   function show(which){
     elEmpty.style.display    = which==='empty'    ? '' : 'none';

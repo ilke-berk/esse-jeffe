@@ -163,6 +163,7 @@
     },
     // bülten aboneliği — submit-form Edge Function üzerinden (honeypot + IP hız sınırı).
     // RLS artık doğrudan client insert'ine izin vermez; yazma yalnız service_role ile.
+    // İlk kayıtta sunucu hoş geldin kuponu gönderir → coupon bayrağı döner.
     subscribe: function (email, hp) {
       if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
       if (!client.functions) return Promise.reject(new Error('Servis hazır değil'));
@@ -172,7 +173,39 @@
         if (r.error) return invokeErr(r.error).then(function (m) { throw new Error(m); });
         var d = r.data || {};
         if (d.error) throw new Error(d.error);
-        return { ok: true, already: !!d.already };
+        return { ok: true, already: !!d.already, coupon: !!d.coupon };
+      });
+    },
+    // fiyat alarmı — price-alert Edge Function (honeypot + IP hız sınırı).
+    // Fiyat, kayıt anındaki DB fiyatının altına inince sunucu e-posta gönderir.
+    priceAlert: function (slug, email, hp) {
+      if (!client) return Promise.reject(new Error('Supabase bağlı değil'));
+      if (!client.functions) return Promise.reject(new Error('Servis hazır değil'));
+      return client.functions.invoke('price-alert', {
+        body: { action: 'subscribe', slug: slug, email: email, hp: hp || '' }
+      }).then(function (r) {
+        if (r.error) return invokeErr(r.error).then(function (m) { throw new Error(m); });
+        var d = r.data || {};
+        if (d.error) throw new Error(d.error);
+        return { ok: true };
+      });
+    },
+    // değişim/iptal talebi — submit-form Edge Function (kind='exchange').
+    // Sipariş no + telefon İKİSİ sunucuda birlikte doğrulanır (track-order
+    // deseni); talep admin-siparisler.html'e düşer.
+    exchangeRequest: function (d) {
+      if (!client || !client.functions) return Promise.reject(new Error('Servis hazır değil'));
+      return client.functions.invoke('submit-form', {
+        body: {
+          kind: 'exchange', hp: d.hp || '',
+          order_no: d.order_no, phone: d.phone,
+          request_type: d.request_type, reason: d.reason, details: d.details || null
+        }
+      }).then(function (r) {
+        if (r.error) return invokeErr(r.error).then(function (m) { throw new Error(m); });
+        var res = r.data || {};
+        if (res.error) throw new Error(res.error);
+        return { ok: true, already: !!res.already };
       });
     },
     // iletişim mesajı — submit-form Edge Function üzerinden (honeypot + IP hız sınırı).
@@ -419,7 +452,11 @@
         if (btn) btn.disabled = true;
         EJData.subscribe(email, hp).then(function (r) {
           if (input) input.value = '';
-          newsMsg(news, r.already ? 'Zaten abonesiniz — teşekkürler.' : 'Abone olundu, teşekkürler!');
+          newsMsg(news, r.already
+            ? 'Zaten abonesiniz — teşekkürler.'
+            : (r.coupon
+              ? 'Abone olundu! Hoş geldin kuponunuz e-postanıza gönderildi 🎁'
+              : 'Abone olundu, teşekkürler!'));
         }).catch(function (err) {
           newsMsg(news, 'Bir hata oluştu, tekrar deneyin.');
           console.error('[EJ] bülten hatası', err);
@@ -498,12 +535,57 @@
     Array.prototype.forEach.call(document.querySelectorAll('.ej-admin-link'), function (el) { el.remove(); });
   }
 
+  // ---- Hesap ikonunda aktif sipariş rozeti ----
+  // Girişli kullanıcının yolda olan (pending/preparing/shipped) sipariş sayısı
+  // Hesap ikonuna kalp/çanta rozetiyle aynı desende küçük bir rozet olarak
+  // eklenir. HTML'lere dokunulmaz; rozet runtime'da inject edilir. RLS
+  // ("kendi siparişlerim") sorguyu zaten kullanıcıya süzer. 5 dk'lık
+  // sessionStorage cache'i sayfa gezintilerinde tekrar sorguyu önler.
+  var ORD_BADGE_KEY = 'ej_active_orders';
+  function setOrderBadge(n) {
+    var acc = document.querySelector('.tools .icon[aria-label="Hesap"]');
+    if (!acc) return;
+    acc.classList.add('account');
+    var b = acc.querySelector('.count');
+    if (!b) {
+      b = document.createElement('span');
+      b.className = 'count';
+      b.style.display = 'none';
+      acc.appendChild(b);
+    }
+    b.textContent = n;
+    b.style.display = n > 0 ? '' : 'none';
+    acc.title = n > 0 ? (n + ' siparişiniz yolda — durumunu Hesabım\'dan izleyin') : '';
+  }
+  function syncOrderBadge(session) {
+    if (!session) {
+      setOrderBadge(0);
+      try { sessionStorage.removeItem(ORD_BADGE_KEY); } catch (e) {}
+      return;
+    }
+    try {
+      var c = JSON.parse(sessionStorage.getItem(ORD_BADGE_KEY) || 'null');
+      if (c && c.uid === session.user.id && Date.now() - c.at < 300000) { setOrderBadge(c.n); return; }
+    } catch (e) {}
+    client.from('orders')
+      .select('id', { count: 'exact', head: true })
+      .in('status', ['pending', 'preparing', 'shipped'])
+      .then(function (r) {
+        if (r.error) return;
+        var n = r.count || 0;
+        setOrderBadge(n);
+        try { sessionStorage.setItem(ORD_BADGE_KEY, JSON.stringify({ uid: session.user.id, n: n, at: Date.now() })); } catch (e) {}
+      })
+      .catch(function () {});
+  }
+
   function applyAuthState(session) {
     _session = session;
     var inAuth = !!session;
     document.body.classList.toggle('is-auth', inAuth);
     document.body.classList.toggle('is-guest', !inAuth);
     syncAdminLink(session);
+    syncOrderBadge(session);
 
     var bagAuth = document.querySelector('.bag-auth');
     if (bagAuth) {

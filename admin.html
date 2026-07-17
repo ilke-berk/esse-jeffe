@@ -108,6 +108,7 @@
   <div class="col side" id="side">
     <div class="topbar">
       <h2>Konuşmalar</h2>
+      <span id="rateAvg" style="font-size:12px;color:#b08d57;letter-spacing:.04em"></span>
     </div>
     <div class="list" id="list"></div>
   </div>
@@ -180,19 +181,28 @@
   }
 
   function renderList() {
+    // yüklü konuşmalar üzerinden ortalama puan (★ kolonları migration'la geldi)
+    var rated = convs.filter(function (c) { return c.rating >= 1; });
+    var avgEl = document.getElementById('rateAvg');
+    if (avgEl) {
+      avgEl.textContent = rated.length
+        ? '★ ' + (rated.reduce(function (s, c) { return s + c.rating; }, 0) / rated.length).toFixed(1).replace('.', ',') + ' · ' + rated.length + ' oy'
+        : '';
+    }
     if (!convs.length) { listEl.innerHTML = '<div style="padding:24px;color:#aaa;font-size:13px">Henüz konuşma yok.</div>'; return; }
     listEl.innerHTML = convs.map(function (c) {
       var name = c.visitor_name || 'Ziyaretçi';
       var badge = statusBadge(c.status);
       var sel = current && current.id === c.id ? ' sel' : '';
       var dot = c.unread_admin ? '<span class="dot"></span>' : '';
+      var stars = c.rating ? '<span style="color:#b08d57;font-size:11px;white-space:nowrap">★ ' + c.rating + '</span>' : '';
       return '<div class="conv' + sel + '" data-id="' + c.id + '">' +
         '<div style="min-width:0">' +
           '<p class="nm">' + esc(name) + dot + '</p>' +
           '<p class="pv">' + esc(c.visitor_email || c.page || '') + '</p>' +
           '<span class="badge ' + badge.cls + '">' + badge.txt + '</span>' +
         '</div>' +
-        '<div class="rt"><span class="tm">' + tm(c.last_message_at) + '</span></div>' +
+        '<div class="rt"><span class="tm">' + tm(c.last_message_at) + '</span>' + stars + '</div>' +
       '</div>';
     }).join('');
     Array.prototype.forEach.call(listEl.querySelectorAll('.conv'), function (el) {
@@ -225,7 +235,11 @@
   function renderThread() {
     if (!current) { threadEl.innerHTML = '<div class="empty" id="emptyThread">Bir konuşma seçin.</div>'; return; }
     var name = esc(current.visitor_name || 'Ziyaretçi');
-    var meta = [current.visitor_email, current.page].filter(Boolean).map(esc).join(' · ');
+    var metaBits = [current.visitor_email, current.page].filter(Boolean).map(esc);
+    if (current.rating) {
+      metaBits.push('★ ' + current.rating + '/5' + (current.rating_comment ? ' — “' + esc(current.rating_comment) + '”' : ''));
+    }
+    var meta = metaBits.join(' · ');
     var canTake = current.status !== 'live';
     threadEl.innerHTML =
       '<div class="thead">' +

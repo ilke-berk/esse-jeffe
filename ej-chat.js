@@ -4,7 +4,7 @@
    - Editöryel marka dili: klasik beyaz zemin, ink/zeytin palet,
      Spectral serif, yumuşak köşeli balonlar. Maison Margiela tarzı
      sade düzen; Esse Jeffe kimliğiyle harmanlanmış.
-   - AI (Claude) önce yanıtlar; kullanıcı birkaç mesaj yazınca alta
+   - AI (Gemini) önce yanıtlar; kullanıcı birkaç mesaj yazınca alta
      ince "Temsilciye bağlan" bağlantısı belirir (direkt gelmez).
    - Panel açılınca yüzen ikon gizlenir; panel köşeye oturur.
    - Tabloya doğrudan erişmez; kimlik tahmin edilemez visitor_token.
@@ -57,15 +57,15 @@
   // insan gibi gönderim (AI modu): kullanıcı ard arda yazarsa mesajları HEMEN
   // API'ye göndermeyip birleştir → tek Gemini çağrısı. Daha az maliyet (bot spam'i
   // bile tek konuşmada tek çağrıya iner) + daha doğal akış. Kullanıcılar çoğu zaman
-  // tek soruyu parça parça (2-3 ayrı mesaj) yazdığı için pencereyi 10 sn tutuyoruz:
-  // her mesajdan sonra 10 sn beklenir; bu süre içinde yeni mesaj gelirse timer
-  // baştan 10 sn'ye döner (scheduleFlush timer'ı sıfırlar). Böylece kullanıcı
+  // tek soruyu parça parça (2-3 ayrı mesaj) yazdığı için pencereyi 6 sn tutuyoruz:
+  // her mesajdan sonra 6 sn beklenir; bu süre içinde yeni mesaj gelirse timer
+  // baştan 6 sn'ye döner (scheduleFlush timer'ı sıfırlar). Böylece kullanıcı
   // yazmayı bitirince tek, bütün bir cevap gelir; "yazıyor…" göstergesi de ancak
   // bekleme dolup gerçekten API'ye gidince belirir (daha insansı). NOT: gerçek
   // güvenlik sınırı sunucuda olmalı (edge function'da origin kilidi + IP/oturum
   // hız sınırı + günlük konuşma kotası); buradaki birleştirme yalnızca dürüst
   // kullanıcı için maliyet/UX iyileştirmesidir.
-  var COALESCE_MS = 10000;
+  var COALESCE_MS = 6000;
   var burst = [];             // henüz gönderilmemiş kullanıcı satırları
   var burstRow = null;        // bu satırları biriktiren tek 'pending' balon
   var coalesceTimer = null;
@@ -159,7 +159,18 @@
   '.ej-confirm .ej-cbtns{display:flex;gap:12px}' +
   '.ej-confirm button{font:inherit;font-size:11px;letter-spacing:.16em;text-transform:uppercase;cursor:pointer;padding:13px 30px;border-radius:6px;border:1px solid ' + INK + ';transition:all .2s}' +
   '.ej-confirm .ej-yes{background:' + INK + ';color:#fff}.ej-confirm .ej-yes:hover{opacity:.85}' +
+  '.ej-confirm .ej-yes:disabled{opacity:.4;cursor:default}' +
   '.ej-confirm .ej-no{background:transparent;color:var(--ink,#1b1a17)}.ej-confirm .ej-no:hover{background:rgba(0,0,0,.05)}' +
+
+  /* kapanış puanlama adımı (1-5 yıldız) */
+  '.ej-rate{display:none;flex-direction:column;align-items:center;gap:18px}' +
+  '.ej-rate.on{display:flex}' +
+  '.ej-stars{display:flex;gap:6px;justify-content:center}' +
+  '.ej-stars button{background:none;border:none;font-size:30px;line-height:1;cursor:pointer;color:#d9d5cc;transition:color .15s,transform .15s;padding:2px}' +
+  '.ej-stars button:hover{transform:scale(1.12)}' +
+  '.ej-stars button.on{color:#b08d57}' +
+  '.ej-rate textarea{width:100%;max-width:280px;box-sizing:border-box;border:1px solid var(--line-strong,#d4d4d4);border-radius:6px;padding:10px 12px;font:inherit;font-size:13px;resize:none;outline:none;background:var(--bg,#fff);color:var(--ink,#1b1a17)}' +
+  '.ej-rate textarea:focus{border-color:' + INK + '}' +
 
   /* kart ödeme katmanı (PayTR güvenli iframe paneli) */
   '.ej-pay{position:absolute;inset:0;background:var(--bg,#fff);z-index:6;display:none;flex-direction:column}' +
@@ -195,6 +206,10 @@
     'font:inherit;font-size:11px;letter-spacing:.16em;text-transform:uppercase;padding:14px;cursor:pointer;transition:opacity .2s}' +
   '.ej-ord-confirm:hover{opacity:.88}' +
   '.ej-ord-confirm:disabled{opacity:.5;cursor:default}' +
+  '.ej-ord-cancel{display:block;width:100%;border:none;border-top:1px solid var(--line,#e8e8e8);background:var(--bg,#fff);color:var(--soft,#56534c);' +
+    'font:inherit;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;padding:11px;cursor:pointer;transition:background .2s,color .2s}' +
+  '.ej-ord-cancel:hover{color:var(--ink,#1b1a17);background:rgba(0,0,0,.04)}' +
+  '.ej-ord-cancel:disabled{opacity:.4;cursor:default}' +
 
   '@media (max-width:480px){#ejChatPanel{right:8px;left:8px;bottom:8px;width:auto;height:calc(100vh - 16px);max-height:none}}';
 
@@ -244,10 +259,23 @@
     '</div>' +
     // onay & ödeme katmanları: panelin doğrudan çocuğu (kayan body değil) → her zaman tüm paneli kaplar
     '<div class="ej-confirm" id="ejChatConfirm">' +
-      '<p>Görüşmeyi sonlandırmak istediğinize emin misiniz?</p>' +
-      '<div class="ej-cbtns">' +
-        '<button class="ej-yes" id="ejChatEndYes">Evet</button>' +
-        '<button class="ej-no" id="ejChatEndNo">Hayır</button>' +
+      '<div class="ej-endstep" id="ejChatEndStep" style="display:flex;flex-direction:column;align-items:center;gap:22px">' +
+        '<p>Görüşmeyi sonlandırmak istediğinize emin misiniz?</p>' +
+        '<div class="ej-cbtns">' +
+          '<button class="ej-yes" id="ejChatEndYes">Evet</button>' +
+          '<button class="ej-no" id="ejChatEndNo">Hayır</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="ej-rate" id="ejChatRate">' +
+        '<p>Görüşmeden memnun kaldınız mı?</p>' +
+        '<div class="ej-stars" id="ejChatStars" role="radiogroup" aria-label="Puan">' +
+          [1,2,3,4,5].map(function (i) { return '<button type="button" data-v="' + i + '" aria-label="' + i + ' yıldız">★</button>'; }).join('') +
+        '</div>' +
+        '<textarea id="ejChatRateNote" rows="2" maxlength="500" placeholder="Eklemek istedikleriniz (opsiyonel)"></textarea>' +
+        '<div class="ej-cbtns">' +
+          '<button class="ej-yes" id="ejChatRateSend" disabled>Gönder</button>' +
+          '<button class="ej-no" id="ejChatRateSkip">Atla</button>' +
+        '</div>' +
       '</div>' +
     '</div>' +
     '<div class="ej-pay" id="ejChatPay">' +
@@ -278,8 +306,45 @@
   btn.addEventListener('click', openPanel);
   document.getElementById('ejChatMin').addEventListener('click', closePanel);     // küçült: konuşmayı saklar
   document.getElementById('ejChatX').addEventListener('click', askEnd);           // kapat: sonlandırma onayı
-  document.getElementById('ejChatEndYes').addEventListener('click', endChat);
+  // "Evet" → mesaj yazılmış bir konuşmaysa önce 1-5 yıldız puanlama adımı;
+  // hiç yazılmamışsa (veya konuşma yoksa) doğrudan kapat.
+  document.getElementById('ejChatEndYes').addEventListener('click', function () {
+    if (conv && userMsgCount > 0) showRateStep();
+    else endChat();
+  });
   document.getElementById('ejChatEndNo').addEventListener('click', function () { confirmEl.classList.remove('on'); });
+  var rateVal = 0;
+  var starsEl = document.getElementById('ejChatStars');
+  function showRateStep() {
+    rateVal = 0;
+    starsEl.querySelectorAll('button').forEach(function (b) { b.classList.remove('on'); });
+    document.getElementById('ejChatRateNote').value = '';
+    document.getElementById('ejChatRateSend').disabled = true;
+    document.getElementById('ejChatEndStep').style.display = 'none';
+    document.getElementById('ejChatRate').classList.add('on');
+  }
+  function hideRateStep() {
+    document.getElementById('ejChatRate').classList.remove('on');
+    document.getElementById('ejChatEndStep').style.display = 'flex';
+  }
+  starsEl.addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-v]');
+    if (!b) return;
+    rateVal = parseInt(b.dataset.v, 10);
+    starsEl.querySelectorAll('button').forEach(function (x) {
+      x.classList.toggle('on', parseInt(x.dataset.v, 10) <= rateVal);
+    });
+    document.getElementById('ejChatRateSend').disabled = false;
+  });
+  document.getElementById('ejChatRateSend').addEventListener('click', function () {
+    var note = document.getElementById('ejChatRateNote').value.trim();
+    if (conv && rateVal) {
+      // fail-soft: puan gitmese de görüşme kapanır
+      api('rate', { conversation_id: conv.id, visitor_token: conv.token, rating: rateVal, comment: note }).catch(function () {});
+    }
+    hideRateStep(); endChat();
+  });
+  document.getElementById('ejChatRateSkip').addEventListener('click', function () { hideRateStep(); endChat(); });
   document.getElementById('ejChatPayBack').addEventListener('click', closeCardPayment);
   sendBtn.addEventListener('click', doSend);
   chipsEl.addEventListener('click', function (e) {
@@ -349,7 +414,7 @@
     btn.style.display = '';               // ikon geri gelir
     stopPolling();
   }
-  function askEnd() { confirmEl.classList.add('on'); }
+  function askEnd() { hideRateStep(); confirmEl.classList.add('on'); }
   function endChat() {
     // sunucuda kapat (closed → resume ile geri gelmez) + yerelde sıfırla
     closeCardPayment();
@@ -695,23 +760,78 @@
           (f.full_name ? '<div class="ej-ord-line">' + ICON_USER + '<span>' + esc(f.full_name) + '</span></div>' : '') +
           (f.phone ? '<div class="ej-ord-line">' + ICON_PHONE + '<span>' + esc(f.phone) + '</span></div>' : '') +
           (addrTxt ? '<div class="ej-ord-line">' + ICON_PIN + '<span>' + addrTxt + '</span></div>' : '') +
+          (order.geo && order.geo.display
+            ? '<div class="ej-ord-line" style="opacity:.7"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span>Adres teyidi: ' + esc(order.geo.display) + '</span></div>'
+            : '') +
         '</div>' +
         '<div class="ej-ord-foot">' +
           '<span class="ej-ord-pay">' + payTxt + '</span>' +
           '<span class="ej-ord-total">Toplam<b>' + money(order.total) + '</b></span>' +
         '</div>' +
         '<button type="button" class="ej-ord-confirm">Siparişi Onayla</button>' +
+        '<button type="button" class="ej-ord-cancel">Vazgeç</button>' +
       '</div>';
 
     bodyEl.insertBefore(row, typingEl);
     var cbtn = row.querySelector('.ej-ord-confirm');
+    var xbtn = row.querySelector('.ej-ord-cancel');
     cbtn.addEventListener('click', function () {
       if (cbtn.disabled) return;
-      cbtn.disabled = true;
+      cbtn.disabled = true; xbtn.disabled = true;
       cbtn.textContent = 'Onaylandı';
-      sendText('Siparişi onaylıyorum.');
+      confirmOrder(function () {
+        // başarısız oldu: butonları geri aç (ikinci deneme fallback yoluna düşebilir)
+        cbtn.disabled = false; xbtn.disabled = false;
+        cbtn.textContent = 'Siparişi Onayla';
+      });
+    });
+    xbtn.addEventListener('click', function () {
+      if (xbtn.disabled) return;
+      cbtn.disabled = true; xbtn.disabled = true;
+      cancelOrder();
     });
     scrollDown();
+  }
+
+  // Onay butonu: onayı serbest metin olarak Gemini'ye yorumlatmak yerine
+  // DETERMİNİSTİK sunucu aksiyonu. Sunucu, show_order_summary sırasında
+  // sakladığı bekleyen siparişi (pending_order) doğrudan işler: kapıda ödemede
+  // sipariş anında oluşur, kartta PayTR ekranı açılır. Gemini devrede olmadığı
+  // için "Bunu tam anlayamadım" onayı asla düşüremez. Bekleyen özet yoksa
+  // (bayatladı / eski sohbet) eski serbest-metin yolu fallback olarak çalışır.
+  function confirmOrder(onFail) {
+    if (!conv) return;
+    // kullanıcı özetten sonra yazmaya devam ettiyse sunucudaki özet zaten
+    // geçersiz; onayı normal mesaj olarak gönder (Gemini yeniden özetler)
+    if (burst.length || sending) { sendText('Siparişi onaylıyorum.'); return; }
+    showTyping(true);
+    api('confirm_order', { conversation_id: conv.id, visitor_token: conv.token }, 45000)
+      .then(function (res) {
+        showTyping(false);
+        if (res && res.error === 'no_pending') { sendText('Siparişi onaylıyorum.'); return; }
+        if (res && res.error) {
+          if (onFail) onFail();
+          // sunucu açıklayıcı ai mesajını konuşmaya yazdı; poll ile çek
+          return poll().then(function () {
+            if (res.message) { addMsg('sys', res.message, null, null); scrollDown(); }
+          });
+        }
+        return poll().then(function () { handleOrder(res && res.order); });
+      })
+      .catch(function () {
+        showTyping(false);
+        if (onFail) onFail();
+        addMsg('sys', 'Onay iletilemedi, lütfen tekrar deneyin.', null, null);
+        scrollDown();
+      });
+  }
+
+  // "Vazgeç": bekleyen özeti sunucuda temizler; sohbet doğal biçimde devam eder
+  function cancelOrder() {
+    if (!conv) return;
+    api('cancel_order', { conversation_id: conv.id, visitor_token: conv.token })
+      .then(function () { return poll(); })
+      .catch(function () {});
   }
 
   // girişliyse kullanıcı JWT'si (sipariş hesaba bağlansın), değilse anon key

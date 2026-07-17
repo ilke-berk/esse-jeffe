@@ -15,6 +15,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendOrderEmails } from "../_shared/order-email.ts";
 import { createLogger, errMsg } from "../_shared/log.ts";
 import { markCartRecovered, releaseDiscountByOrder } from "../_shared/discount.ts";
+import { accrueLoyalty } from "../_shared/loyalty.ts";
 
 async function hmacB64(message: string, key: string): Promise<string> {
   const k = await crypto.subtle.importKey(
@@ -103,6 +104,11 @@ Deno.serve(async (req) => {
 
     // Terk edilmiş sepet varsa "kurtarıldı" işaretle (hatırlatma gitmesin) — fail-soft.
     await markCartRecovered(admin, { userId: order.user_id, email: order.email });
+
+    // Sadakat birikimi (+%5 kupon) — fail-soft, OK yanıtını asla engellemez.
+    // İdempotency: yukarıdaki payment_status==='paid' erken dönüşü + RPC'nin
+    // orders.loyalty_accrued_at damgası (PayTR bildirimi tekrarlarsa ikisi de tutar).
+    await accrueLoyalty(admin, order.id, log);
 
     // --- ödeme onaylandı → onay e-postası (fail-soft, callback'i bozmaz) ---
     const { data: its } = await admin

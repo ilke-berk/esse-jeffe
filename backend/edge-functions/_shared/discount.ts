@@ -30,13 +30,20 @@ export interface DbClient {
 // okunabilir, elle yazılabilir kod.
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
-/** "SEPET-XXXXXX" biçiminde rastgele indirim kodu üret. */
-export function makeDiscountCode(rand: () => number = Math.random): string {
+/**
+ * "SEPET-XXXXXX" biçiminde rastgele indirim kodu üret.
+ * prefix ile başka aile üretilebilir (ör. "HOSGELDIN-" — bülten hoş geldin
+ * kuponu). Hepsi kind='single' claim desenini paylaşır.
+ */
+export function makeDiscountCode(
+  rand: () => number = Math.random,
+  prefix = "SEPET-",
+): string {
   let s = "";
   for (let i = 0; i < 6; i++) {
     s += CODE_ALPHABET[Math.floor(rand() * CODE_ALPHABET.length)];
   }
-  return "SEPET-" + s;
+  return prefix + s;
 }
 
 /** Kod girdisini normalize et: boşlukları at, büyük harfe çevir. */
@@ -55,11 +62,28 @@ export type ClaimResult =
   | { ok: false; error: string };
 
 /**
+ * İndirim tutarı: floor(subtotal * percent / 100), asla subtotal'ı aşmaz,
+ * maxDiscount (TL tavanı) verilmişse onu da aşmaz. maxDiscount 0/null/
+ * undefined = tavansız (eski davranış). Sadakat kuponlarında yüksek yüzdeyi
+ * TL bazında sınırlamak için kullanılır.
+ */
+export function computeDiscount(
+  subtotal: number,
+  percent: number,
+  maxDiscount?: number | null,
+): number {
+  let d = Math.floor((subtotal * percent) / 100);
+  const cap = Number(maxDiscount) || 0;
+  if (cap > 0) d = Math.min(d, cap);
+  return Math.max(0, Math.min(subtotal, d));
+}
+
+/**
  * Kodu ATOMİK olarak claim et ve indirim tutarını hesapla.
  * single   → mevcut used_at deseni; e-posta bağlıysa yalnız o e-posta kullanır.
  * campaign → claim_campaign_coupon RPC'si (aktiflik/süre/min sepet/limit/
  *            e-posta-başına-tek kuralları DB işleminde denetlenir).
- * discount = floor(subtotal * percent / 100); toplamı asla eksiye düşürmez.
+ * discount = computeDiscount (yüzde + varsa max_discount TL tavanı).
  */
 export async function claimDiscount(
   admin: DbClient,
@@ -91,7 +115,7 @@ export async function claimDiscount(
     }
     if (!data.ok) return { ok: false, error: String(data.error || "İndirim kodu geçersiz.") };
     const percent = Number(data.percent) || 0;
-    const discount = Math.max(0, Math.min(subtotal, Math.floor((subtotal * percent) / 100)));
+    const discount = computeDiscount(subtotal, percent, data.max_discount);
     return {
       ok: true,
       id: String(data.id),
@@ -112,7 +136,7 @@ export async function claimDiscount(
     .eq("active", true)
     .is("used_at", null)
     .gt("expires_at", new Date().toISOString())
-    .select("id, percent, email")
+    .select("id, percent, email, max_discount")
     .maybeSingle();
   if (error) return { ok: false, error: "İndirim kodu doğrulanamadı. Lütfen tekrar deneyin." };
   if (!data) return { ok: false, error: "İndirim kodu geçersiz, kullanılmış veya süresi dolmuş." };
@@ -127,7 +151,7 @@ export async function claimDiscount(
   }
 
   const percent = Number(data.percent) || 0;
-  const discount = Math.max(0, Math.min(subtotal, Math.floor((subtotal * percent) / 100)));
+  const discount = computeDiscount(subtotal, percent, data.max_discount);
   return { ok: true, ...ref, percent, discount, freeShipping: false };
 }
 

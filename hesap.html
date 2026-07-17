@@ -9,7 +9,7 @@
 <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M5kng.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M3knj-SA.woff2">
   <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=10">
+<link rel="stylesheet" href="ej.css?v=11">
 </head>
 <body>
 <a class="skip-link" href="#main">İçeriğe atla</a>
@@ -59,6 +59,35 @@
 
     <h2>Siparişlerim</h2>
     <div id="acctOrders"><p class="acct-empty">Siparişler yükleniyor…</p></div>
+
+    <h2>Profil Bilgilerim</h2>
+    <form id="profForm" class="ej-form" novalidate style="max-width:560px">
+      <div class="field"><label for="profName">Ad Soyad</label><input id="profName" type="text" autocomplete="name"></div>
+      <div class="field"><label for="profPhone">Telefon</label><input id="profPhone" type="tel" autocomplete="tel" placeholder="05__ ___ __ __"></div>
+      <button class="btn btn-solid" type="submit" style="justify-self:start;padding:12px 26px;font-size:12px">Kaydet</button>
+      <p id="profMsg" role="status" aria-live="polite" style="display:none;font-size:13px"></p>
+    </form>
+
+    <h2>Adreslerim</h2>
+    <p style="font-size:13px;color:var(--soft);margin:-8px 0 16px">Kayıtlı adresleriniz ödeme sayfasında ve sohbetten siparişte otomatik önerilir.</p>
+    <div id="addrList"></div>
+    <button class="btn" id="addrNewBtn" type="button" style="padding:10px 20px;font-size:12px">+ Yeni Adres</button>
+    <form id="addrForm" class="ej-form" novalidate style="display:none;max-width:560px;margin-top:16px;border:1px solid var(--line);padding:18px 18px 22px">
+      <input type="hidden" id="adrId">
+      <div class="field"><label for="adrTitle">Başlık</label><input id="adrTitle" type="text" placeholder="Ev / İş"></div>
+      <div class="field"><label for="adrName">Ad Soyad</label><input id="adrName" type="text" autocomplete="name" required></div>
+      <div class="field"><label for="adrPhone">Telefon</label><input id="adrPhone" type="tel" autocomplete="tel" required></div>
+      <div class="field"><label for="adrCity">İl</label><input id="adrCity" type="text" required></div>
+      <div class="field"><label for="adrDistrict">İlçe</label><input id="adrDistrict" type="text" required></div>
+      <div class="field"><label for="adrAddress">Açık Adres</label><textarea id="adrAddress" rows="3" required></textarea></div>
+      <div class="field"><label for="adrPostal">Posta Kodu (opsiyonel)</label><input id="adrPostal" type="text" inputmode="numeric"></div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer"><input type="checkbox" id="adrDefault"> Varsayılan adresim olsun</label>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-solid" type="submit" style="padding:12px 26px;font-size:12px">Kaydet</button>
+        <button class="btn" type="button" id="addrCancel" style="padding:12px 26px;font-size:12px">Vazgeç</button>
+      </div>
+      <p id="addrMsg" role="alert" aria-live="polite" style="display:none;font-size:13px"></p>
+    </form>
   </div>
 </section>
 
@@ -99,9 +128,9 @@
 </aside>
 
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=15"></script>
+<script src="backend/ej-supabase.js?v=16"></script>
 <script src="ej.js?v=12"></script>
-<script src="ej-chat.js?v=18"></script>
+<script src="ej-chat.js?v=19"></script>
 <script>
 (function(){
   var STATUS = { pending:'Hazırlanıyor', preparing:'Hazırlanıyor', shipped:'Kargoda', delivered:'Teslim edildi', cancelled:'İptal edildi' };
@@ -114,6 +143,27 @@
     var n=0, t=setInterval(function(){ if((window.ejSupabase && window.EJData) || n++>120){ clearInterval(t); cb(); } }, 50);
   }
 
+  // Görsel durum çizelgesi: Alındı → Hazırlanıyor → Kargoda → Teslim
+  // (siparis-takip.html'deki timeline deseninin kompakt kopyası; CSS ej.css'te).
+  var STEPS = [
+    { k:'pending',   t:'Alındı' },
+    { k:'preparing', t:'Hazırlanıyor' },
+    { k:'shipped',   t:'Kargoda' },
+    { k:'delivered', t:'Teslim' }
+  ];
+  function timelineHTML(status){
+    if(status === 'cancelled'){
+      return '<div class="oc-cancel">Bu sipariş iptal edildi. Sorularınız için <a href="iletisim.html" style="text-decoration:underline;color:inherit">bize ulaşın</a>.</div>';
+    }
+    var idx = -1;
+    STEPS.forEach(function(s,i){ if(s.k === status) idx = i; });
+    if(idx < 0) return '';
+    return '<ul class="oc-timeline">' + STEPS.map(function(s,i){
+      var cls = i < idx ? 'done' : (i === idx ? 'done now' : '');
+      return '<li' + (cls ? ' class="'+cls+'"' : '') + '>' + s.t + '</li>';
+    }).join('') + '</ul>';
+  }
+
   function renderOrders(list){
     var wrap = document.getElementById('acctOrders');
     if(!list || !list.length){ wrap.innerHTML = '<p class="acct-empty">Henüz siparişiniz yok. <a href="koleksiyon.html" style="text-decoration:underline">Koleksiyona göz atın.</a></p>'; return; }
@@ -122,12 +172,153 @@
         var d=[]; if(it.color) d.push(esc(it.color)); if(it.size) d.push(esc(it.size));
         return '<div class="oc-line"><span>'+esc(it.product_name)+(d.length?' ('+d.join(', ')+')':'')+' × '+it.qty+'</span><span>'+fmt((it.unit_price||0)*(it.qty||0))+'</span></div>';
       }).join('');
+      var cargo = '';
+      if(o.carrier || o.tracking_no){
+        cargo = '<div class="oc-line"><span>Kargo'+(o.carrier?' ('+esc(o.carrier)+')':'')+'</span><span>'+
+          (o.tracking_no?'Takip No: '+esc(o.tracking_no):'—')+'</span></div>';
+      }
       return '<div class="order-card">'+
         '<div class="oc-top"><span class="oc-no">'+esc(o.order_no)+' <span class="oc-date">· '+dt(o.created_at)+'</span></span>'+
-        '<span class="oc-status">'+(STATUS[o.status]||esc(o.status))+'</span></div>'+
-        items+
+        '<span class="oc-status" data-st="'+esc(o.status)+'">'+(STATUS[o.status]||esc(o.status))+'</span></div>'+
+        timelineHTML(o.status)+
+        items+ cargo +
         '<div class="oc-total"><span>Toplam</span><span>'+fmt(o.total)+'</span></div></div>';
     }).join('');
+  }
+
+  function msg(id, text, isErr){
+    var el = document.getElementById(id);
+    if(!el) return;
+    el.textContent = text; el.style.display = 'block';
+    el.style.color = isErr ? '#b03030' : 'var(--zeytin,#5d6347)';
+  }
+  function val(id){ var el=document.getElementById(id); return el?el.value.trim():''; }
+
+  // ---- Profil Bilgilerim: profiles.full_name/phone + auth metadata senkronu ----
+  // (profiles self-update RLS + kolon grant'i yalnız full_name/phone'a izinli.)
+  function initProfile(u){
+    var db = window.EJData.client();
+    db.from('profiles').select('full_name,phone').eq('id', u.id).single().then(function(r){
+      if(r.data){
+        document.getElementById('profName').value = r.data.full_name || (u.user_metadata&&u.user_metadata.full_name) || '';
+        document.getElementById('profPhone').value = r.data.phone || (u.user_metadata&&u.user_metadata.phone) || '';
+      }
+    });
+    document.getElementById('profForm').addEventListener('submit', function(e){
+      e.preventDefault();
+      var name = val('profName'), phone = val('profPhone');
+      if(!name) return msg('profMsg','Ad soyad boş olamaz.',true);
+      if(phone && phone.replace(/\D/g,'').length < 10) return msg('profMsg','Telefon numarası eksik görünüyor.',true);
+      db.from('profiles').update({ full_name:name, phone:phone||null }).eq('id', u.id).then(function(r){
+        if(r.error) return msg('profMsg','Kaydedilemedi, lütfen tekrar deneyin.',true);
+        // başlıktaki selamlama + sonraki oturumlar için metadata'yı da eşitle
+        window.ejSupabase.auth.updateUser({ data:{ full_name:name, phone:phone||null } }).catch(function(){});
+        document.getElementById('acctName').textContent = 'Merhaba, ' + name;
+        msg('profMsg','Profil bilgileriniz kaydedildi.');
+      });
+    });
+  }
+
+  // ---- Adreslerim: addresses tablosu CRUD (RLS "kendi adreslerim") ----
+  function initAddresses(u){
+    var db = window.EJData.client();
+    var listEl = document.getElementById('addrList');
+    var formEl = document.getElementById('addrForm');
+
+    function loadList(){
+      db.from('addresses').select('*').order('is_default',{ascending:false}).order('created_at',{ascending:false})
+        .then(function(r){
+          var rows = r.data || [];
+          if(r.error){ listEl.innerHTML = '<p class="acct-empty" style="text-align:left;padding:10px 0">Adresler yüklenemedi.</p>'; return; }
+          if(!rows.length){ listEl.innerHTML = '<p class="acct-empty" style="text-align:left;padding:10px 0">Kayıtlı adresiniz yok.</p>'; return; }
+          listEl.innerHTML = rows.map(function(a){
+            return '<div class="order-card" data-id="'+esc(a.id)+'" style="display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap">'+
+              '<div style="font-size:13px;line-height:1.75">'+
+                '<b>'+esc(a.title||'Adres')+'</b> '+(a.is_default?'<span class="oc-status" data-st="delivered" style="margin-left:6px">Varsayılan</span>':'')+'<br>'+
+                esc(a.full_name)+' · '+esc(a.phone)+'<br>'+
+                esc(a.address)+'<br>'+esc(a.district)+' / '+esc(a.city)+(a.postal_code?' '+esc(a.postal_code):'')+
+              '</div>'+
+              '<div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">'+
+                (a.is_default?'':'<button type="button" class="acct-logout" data-act="default" style="padding:8px 13px;font-size:9.5px">Varsayılan Yap</button>')+
+                '<button type="button" class="acct-logout" data-act="edit" style="padding:8px 13px;font-size:9.5px">Düzenle</button>'+
+                '<button type="button" class="acct-logout" data-act="del" style="padding:8px 13px;font-size:9.5px;color:#9a3b3b;border-color:#e8c9c9">Sil</button>'+
+              '</div></div>';
+          }).join('');
+          listEl._rows = rows;
+        });
+    }
+
+    function openForm(a){
+      document.getElementById('adrId').value = a ? a.id : '';
+      document.getElementById('adrTitle').value = a ? (a.title||'') : '';
+      document.getElementById('adrName').value = a ? a.full_name : (val('profName') || '');
+      document.getElementById('adrPhone').value = a ? a.phone : (val('profPhone') || '');
+      document.getElementById('adrCity').value = a ? a.city : '';
+      document.getElementById('adrDistrict').value = a ? a.district : '';
+      document.getElementById('adrAddress').value = a ? a.address : '';
+      document.getElementById('adrPostal').value = a ? (a.postal_code||'') : '';
+      document.getElementById('adrDefault').checked = a ? !!a.is_default : !(listEl._rows||[]).length;
+      document.getElementById('addrMsg').style.display = 'none';
+      formEl.style.display = '';
+      formEl.scrollIntoView({behavior:'smooth', block:'center'});
+    }
+
+    listEl.addEventListener('click', function(e){
+      var btn = e.target.closest('button[data-act]');
+      if(!btn) return;
+      var card = btn.closest('[data-id]');
+      var row = (listEl._rows||[]).filter(function(x){ return x.id === card.dataset.id; })[0];
+      if(!row) return;
+      if(btn.dataset.act === 'edit'){ openForm(row); return; }
+      if(btn.dataset.act === 'del'){
+        if(!confirm('Bu adres silinsin mi?')) return;
+        db.from('addresses').delete().eq('id', row.id).then(loadList);
+        return;
+      }
+      if(btn.dataset.act === 'default'){
+        // unique partial index yarışını önlemek için önce hepsini kaldır, sonra hedefi işaretle
+        db.from('addresses').update({is_default:false}).eq('user_id', u.id).eq('is_default', true).then(function(){
+          db.from('addresses').update({is_default:true}).eq('id', row.id).then(loadList);
+        });
+      }
+    });
+
+    document.getElementById('addrNewBtn').addEventListener('click', function(){ openForm(null); });
+    document.getElementById('addrCancel').addEventListener('click', function(){ formEl.style.display = 'none'; });
+
+    formEl.addEventListener('submit', function(e){
+      e.preventDefault();
+      var rec = {
+        user_id: u.id,
+        title: val('adrTitle') || null,
+        full_name: val('adrName'),
+        phone: val('adrPhone'),
+        city: val('adrCity'),
+        district: val('adrDistrict'),
+        address: val('adrAddress'),
+        postal_code: val('adrPostal') || null,
+        is_default: document.getElementById('adrDefault').checked
+      };
+      if(!rec.full_name || !rec.phone || !rec.city || !rec.district || !rec.address){
+        return msg('addrMsg','Lütfen zorunlu alanları doldurun.',true);
+      }
+      if(rec.phone.replace(/\D/g,'').length < 10) return msg('addrMsg','Telefon numarası eksik görünüyor.',true);
+      var id = val('adrId');
+      var pre = rec.is_default
+        ? db.from('addresses').update({is_default:false}).eq('user_id', u.id).eq('is_default', true)
+        : Promise.resolve({});
+      Promise.resolve(pre).then(function(){
+        return id
+          ? db.from('addresses').update(rec).eq('id', id)
+          : db.from('addresses').insert(rec);
+      }).then(function(r){
+        if(r && r.error){ console.error(r.error); return msg('addrMsg','Adres kaydedilemedi, lütfen tekrar deneyin.',true); }
+        formEl.style.display = 'none';
+        loadList();
+      });
+    });
+
+    loadList();
   }
 
   whenReady(function(){
@@ -144,9 +335,11 @@
       // admin ise yönetim panel linklerini göster
       window.EJData.client().from('profiles').select('is_admin').eq('id', u.id).single()
         .then(function(r){ if(r.data && r.data.is_admin){ document.getElementById('acctAdmin').style.display='flex'; } });
+      initProfile(u);
+      initAddresses(u);
       window.EJData.client()
         .from('orders')
-        .select('order_no,status,total,created_at,order_items(product_name,color,size,qty,unit_price)')
+        .select('order_no,status,total,created_at,carrier,tracking_no,order_items(product_name,color,size,qty,unit_price)')
         .order('created_at',{ascending:false})
         .then(function(res){
           if(res.error){ document.getElementById('acctOrders').innerHTML='<p class="acct-empty">Siparişler yüklenemedi.</p>'; console.error(res.error); return; }

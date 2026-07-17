@@ -9,7 +9,7 @@
 <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M5kng.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M3knj-SA.woff2">
   <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=10">
+<link rel="stylesheet" href="ej.css?v=11">
 </head>
 <body>
 <a class="skip-link" href="#main">İçeriğe atla</a>
@@ -39,7 +39,31 @@
   <div class="phead-in">
     <p class="crumb"><a href="index.html">Ana Sayfa</a> · Değişim & İptal Politikası</p>
     <h1>Değişim & İptal <em>Politikası</em></h1>
-    <p>Değişim ve sipariş iptal koşullarınız. Mevzuata uygun, açık ve adil.</p>
+    <p>Değişim ve sipariş iptal koşullarınız. Mevzuata uygun, açık ve adil. Talebinizi <a href="#talep" style="text-decoration:underline">aşağıdaki formdan</a> saniyeler içinde iletebilirsiniz.</p>
+  </div>
+</section>
+
+<!-- Self-servis değişim / iptal talebi (denetim: EKLENTILER.md) -->
+<section class="sec wrap" id="talep">
+  <div style="max-width:560px;margin:0 auto">
+    <h2 style="font-size:clamp(20px,2.4vw,26px);margin:0 0 10px">Değişim / İptal Talebi Oluştur</h2>
+    <p style="font-size:14px;color:var(--muted);margin:0 0 24px;line-height:1.7">Sipariş numaranız ve siparişte kullandığınız telefon numarasıyla talebinizi iletin; ekibimiz en geç 1 iş günü içinde dönüş yapar. Dilerseniz <a href="https://api.whatsapp.com/send?phone=%2B908502551237" style="text-decoration:underline">WhatsApp</a> hattımızı da kullanabilirsiniz.</p>
+    <form class="ej-form" id="exchForm" novalidate>
+      <div style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true">
+        <input type="text" name="website" tabindex="-1" autocomplete="off">
+      </div>
+      <div class="field"><label for="exNo">Sipariş No</label><input id="exNo" type="text" placeholder="örn. EJ2607011234" autocomplete="off" required></div>
+      <div class="field"><label for="exTel">Telefon</label><input id="exTel" type="tel" placeholder="0 5__ ___ __ __" autocomplete="tel" required></div>
+      <div class="field"><label for="exType">Talep Türü</label>
+        <select id="exType">
+          <option value="exchange">Değişim (beden / renk / model)</option>
+          <option value="cancel">Sipariş iptali (kargoya verilmediyse)</option>
+        </select></div>
+      <div class="field"><label for="exReason">Neden</label><select id="exReason"></select></div>
+      <div class="field"><label for="exDetails">Açıklama <span style="opacity:.6">(istediğiniz beden/renk, varsa ek not)</span></label><textarea id="exDetails" rows="4" maxlength="2000"></textarea></div>
+      <button class="btn btn-solid" type="submit" style="justify-self:start">Talebi Gönder</button>
+      <p id="exMsg" role="alert" aria-live="polite" style="display:none;font-size:13px;letter-spacing:.04em"></p>
+    </form>
   </div>
 </section>
 
@@ -116,7 +140,60 @@
   </div>
 </aside>
 <script src="backend/supabase-config.js"></script>
+<script src="backend/ej-supabase.js?v=16"></script>
 <script src="ej.js?v=12"></script>
-<script src="ej-chat.js?v=18"></script>
+<script src="ej-chat.js?v=19"></script>
+<script>
+(function(){
+  // Talep türüne göre neden listesi (submit-form EXCH_REASONS whitelist'iyle uyumlu)
+  var REASONS = {
+    exchange: [['beden','Beden değişimi'],['renk','Renk değişimi'],['model','Model değişimi'],['kusurlu','Kusurlu/hasarlı ürün'],['diger','Diğer']],
+    cancel:   [['vazgectim','Vazgeçtim'],['diger','Diğer']]
+  };
+  var form = document.getElementById('exchForm');
+  if(!form) return;
+  var typeEl = document.getElementById('exType');
+  var reasonEl = document.getElementById('exReason');
+  var msgEl = document.getElementById('exMsg');
+
+  function fillReasons(){
+    var list = REASONS[typeEl.value] || REASONS.exchange;
+    reasonEl.innerHTML = list.map(function(r){ return '<option value="'+r[0]+'">'+r[1]+'</option>'; }).join('');
+  }
+  typeEl.addEventListener('change', fillReasons);
+  fillReasons();
+
+  function show(m, ok){
+    msgEl.textContent = m; msgEl.style.display = 'block';
+    msgEl.style.color = ok ? 'var(--zeytin, #5d6347)' : '#b03030';
+  }
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    msgEl.style.display = 'none';
+    var no = document.getElementById('exNo').value.trim();
+    var tel = document.getElementById('exTel').value.trim();
+    if(!no){ show('Lütfen sipariş numaranızı girin.'); return; }
+    if(tel.replace(/\D+/g,'').length < 10){ show('Lütfen geçerli bir telefon numarası girin.'); return; }
+    if(!window.EJData || !window.EJData.exchangeRequest){ show('Bağlantı kurulamadı, lütfen sayfayı yenileyip tekrar deneyin.'); return; }
+    var hpEl = form.querySelector('input[name="website"]');
+    var btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true; var bt = btn.textContent; btn.textContent = 'Gönderiliyor...';
+    window.EJData.exchangeRequest({
+      order_no: no, phone: tel,
+      request_type: typeEl.value, reason: reasonEl.value,
+      details: document.getElementById('exDetails').value.trim(),
+      hp: hpEl ? hpEl.value : ''
+    }).then(function(r){
+      if(r.already){ show('Bu sipariş için açık bir talebiniz zaten var — en kısa sürede dönüş yapacağız.', true); }
+      else { form.reset(); fillReasons(); show('Talebiniz alındı ✓ En geç 1 iş günü içinde size dönüş yapacağız.', true); }
+    }).catch(function(ex){
+      show((ex && ex.message) || 'Talep gönderilemedi. Bilgileri kontrol edip tekrar deneyin.');
+    }).then(function(){
+      btn.disabled = false; btn.textContent = bt;
+    });
+  });
+})();
+</script>
 </body>
 </html>

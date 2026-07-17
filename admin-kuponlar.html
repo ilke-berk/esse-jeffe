@@ -142,8 +142,8 @@
 
   <!-- Otomatik sepet kodları -->
   <section class="sec">
-    <div class="sec-head"><h2>Sepet Kodları (otomatik)</h2></div>
-    <p class="muted">Terk edilmiş sepet hatırlatma e-postalarıyla otomatik üretilen tek kullanımlık kodlar (son 200). Kullanılmamış bir kodu iptal edebilirsin.</p>
+    <div class="sec-head"><h2>Otomatik Kodlar (SEPET / HOSGELDIN / SADAKAT)</h2></div>
+    <p class="muted">Sistemin otomatik ürettiği tek kullanımlık kodlar (son 200): sepet hatırlatma (SEPET-), bülten hoş geldin (HOSGELDIN-) ve sadakat programı (SADAKAT-). Kullanılmamış bir kodu iptal edebilirsin. Ödemesi alınmış bir sipariş iptal edilirse kazandırdığı SADAKAT kodunu buradan iptal et (birikim otomatik geri alınmaz).</p>
     <div class="tblwrap">
       <table class="tbl">
         <thead><tr><th>Kod</th><th>E-posta</th><th>İndirim</th><th>Bitiş</th><th>Durum</th><th></th></tr></thead>
@@ -306,7 +306,8 @@
     var msg = el('edMsg'); msg.style.color = '#b03030'; msg.textContent = '';
     var code = val('cCode').toUpperCase();
     if (!/^[A-Z0-9-]{3,24}$/.test(code)){ msg.textContent = 'Kod 3-24 karakter olmalı (A-Z, 0-9, tire).'; return; }
-    if (/^SEPET-/.test(code)){ msg.textContent = '"SEPET-" öneki otomatik kodlara ayrılmıştır.'; return; }
+    var reserved = code.match(/^(SEPET|HOSGELDIN|SADAKAT)-/);
+    if (reserved){ msg.textContent = '"' + reserved[1] + '-" öneki otomatik kodlara ayrılmıştır.'; return; }
     var percent = Math.max(0, Math.min(90, parseInt(val('cPercent'), 10) || 0));
     var freeShip = el('cFreeShip').checked;
     if (percent === 0 && !freeShip){ msg.textContent = 'İndirim %0 ise "Kargo bedava" işaretli olmalı (kupon bir şey sağlamalı).'; return; }

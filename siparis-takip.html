@@ -9,7 +9,22 @@
 <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M5kng.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M3knj-SA.woff2">
   <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=10">
+<link rel="stylesheet" href="ej.css?v=11">
+<style>
+/* Sipariş durumu zaman çizelgesi (yalnız bu sayfa) */
+.trk-timeline{display:flex;margin:26px 0 10px;padding:0;list-style:none}
+.trk-timeline li{flex:1;position:relative;text-align:center;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#9a978d);padding-top:26px}
+.trk-timeline li::before{content:"";position:absolute;top:7px;left:50%;transform:translateX(-50%);width:15px;height:15px;border-radius:50%;background:#e6e2da;border:2px solid #e6e2da;box-sizing:border-box;z-index:1}
+.trk-timeline li::after{content:"";position:absolute;top:13px;left:-50%;width:100%;height:2px;background:#e6e2da}
+.trk-timeline li:first-child::after{display:none}
+.trk-timeline li.done{color:var(--ink,#2a2a26)}
+.trk-timeline li.done::before{background:var(--zeytin,#5d6347);border-color:var(--zeytin,#5d6347)}
+.trk-timeline li.done::after{background:var(--zeytin,#5d6347)}
+.trk-timeline li.now{font-weight:600}
+.trk-timeline li.now::before{background:#fff;border-color:var(--zeytin,#5d6347)}
+.trk-cancel{margin:22px 0 6px;padding:12px 16px;border:1px solid #e8c9c9;background:#faf1f1;color:#9a3b3b;font-size:13px;letter-spacing:.04em}
+@media(max-width:480px){.trk-timeline li{font-size:9.5px;letter-spacing:.04em}}
+</style>
 </head>
 <body>
 <a class="skip-link" href="#main">İçeriğe atla</a>
@@ -91,9 +106,9 @@
 </aside>
 
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=15"></script>
+<script src="backend/ej-supabase.js?v=16"></script>
 <script src="ej.js?v=12"></script>
-<script src="ej-chat.js?v=18"></script>
+<script src="ej-chat.js?v=19"></script>
 <script>
 (function(){
   var STATUS = { pending:'Alındı — hazırlanıyor', preparing:'Hazırlanıyor', shipped:'Kargoda', delivered:'Teslim edildi', cancelled:'İptal edildi' };
@@ -106,6 +121,27 @@
   function whenReady(cb){
     if(window.EJData) return cb();
     var n=0, t=setInterval(function(){ if(window.EJData || n++>120){ clearInterval(t); cb(); } }, 50);
+  }
+
+  // Görsel zaman çizelgesi: Alındı → Hazırlanıyor → Kargoda → Teslim.
+  // İptalde çizelge yerine açıklayıcı bir uyarı kutusu gösterilir.
+  var STEPS = [
+    { k:'pending',   t:'Alındı' },
+    { k:'preparing', t:'Hazırlanıyor' },
+    { k:'shipped',   t:'Kargoda' },
+    { k:'delivered', t:'Teslim' }
+  ];
+  function timelineHTML(status){
+    if(status === 'cancelled'){
+      return '<div class="trk-cancel">Bu sipariş iptal edildi. Tahsil edilmiş bir ödeme varsa en geç 14 gün içinde iade edilir. Sorularınız için <a href="iletisim.html" style="text-decoration:underline;color:inherit">bize ulaşın</a>.</div>';
+    }
+    var idx = -1;
+    STEPS.forEach(function(s,i){ if(s.k === status) idx = i; });
+    if(idx < 0) return '';
+    return '<ul class="trk-timeline">' + STEPS.map(function(s,i){
+      var cls = i < idx ? 'done' : (i === idx ? 'done now' : '');
+      return '<li' + (cls ? ' class="'+cls+'"' : '') + '>' + s.t + '</li>';
+    }).join('') + '</ul>';
   }
 
   function renderOrder(o){
@@ -122,7 +158,8 @@
     }
     wrap.innerHTML = '<div class="order-card">'+
       '<div class="oc-top"><span class="oc-no">'+esc(o.order_no)+' <span class="oc-date">· '+dt(o.created_at)+'</span></span>'+
-      '<span class="oc-status">'+(STATUS[o.status]||esc(o.status))+'</span></div>'+
+      '<span class="oc-status" data-st="'+esc(o.status)+'">'+(STATUS[o.status]||esc(o.status))+'</span></div>'+
+      timelineHTML(o.status)+
       '<div class="oc-line" style="opacity:.75"><span>'+payLine+'</span><span>'+esc(o.district||'')+(o.district&&o.city?' / ':'')+esc(o.city||'')+'</span></div>'+
       items+ cargo +
       '<div class="oc-total"><span>Toplam</span><span>'+fmt(o.total)+'</span></div></div>'+

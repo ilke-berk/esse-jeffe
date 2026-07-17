@@ -89,6 +89,11 @@ create table if not exists addresses (
   created_at  timestamptz not null default now()
 );
 create index if not exists idx_addresses_user on addresses(user_id);
+-- Varsayılan teslimat adresi (2026-07-17): hesap.html adres defteri +
+-- sepet.html autofill + chat kayıtlı bilgi teyidi kullanır.
+alter table addresses add column if not exists is_default boolean not null default false;
+-- kullanıcı başına en fazla BİR varsayılan adres
+create unique index if not exists addresses_default_uidx on addresses(user_id) where is_default;
 
 -- ============================================================
 --  SİPARİŞLER
@@ -124,6 +129,16 @@ alter table orders add column if not exists paid_at     timestamptz;
 alter table orders add column if not exists payment_ref text;
 alter table orders add column if not exists carrier     text;
 alter table orders add column if not exists tracking_no text;
+-- Durum CHECK kısıtları (2026-07-17): toplu güncelleme (admin-bulk) öncesi
+-- sunucu tarafı emniyet — bugüne dek yalnız UI doğruluyordu.
+alter table orders drop constraint if exists orders_status_chk;
+alter table orders add constraint orders_status_chk
+  check (status in ('pending','preparing','shipped','delivered','cancelled')) not valid;
+alter table orders validate constraint orders_status_chk;
+alter table orders drop constraint if exists orders_payment_status_chk;
+alter table orders add constraint orders_payment_status_chk
+  check (payment_status in ('pending','paid','failed','cod')) not valid;
+alter table orders validate constraint orders_payment_status_chk;
 
 create table if not exists order_items (
   id           uuid primary key default uuid_generate_v4(),
@@ -270,6 +285,17 @@ create table if not exists chat_conversations (
   created_at      timestamptz not null default now()
 );
 alter table chat_conversations add column if not exists summary text;
+-- Deterministik sipariş onayı (2026-07-17): show_order_summary çağrısında ham
+-- tool girdisi buraya yazılır; widget'ın "Siparişi Onayla" butonu Gemini'ye
+-- uğramadan confirm_order aksiyonuyla bu kaydı işler. Her serbest kullanıcı
+-- mesajı ve onay/vazgeçme kaydı temizler; 30 dk sonra bayat sayılır (TTL EF'te).
+alter table chat_conversations add column if not exists pending_order    jsonb;
+alter table chat_conversations add column if not exists pending_order_at timestamptz;
+-- Konuşma puanlama (2026-07-17): widget kapanışta 1-5 yıldız sorar
+-- (chat EF 'rate' aksiyonu yazar); admin.html listeler + ortalama gösterir.
+alter table chat_conversations add column if not exists rating smallint check (rating between 1 and 5);
+alter table chat_conversations add column if not exists rating_comment text;
+alter table chat_conversations add column if not exists rated_at timestamptz;
 create index if not exists chat_conversations_updated_idx on chat_conversations(last_message_at desc);
 -- resume: girişli kullanıcının son konuşmasını hızlı bulmak için
 create index if not exists chat_conversations_user_idx on chat_conversations(user_id, last_message_at desc) where user_id is not null;
@@ -734,7 +760,8 @@ begin
   end;
   update public.discount_codes set used_count = used_count + 1 where id = c.id;
   return jsonb_build_object('ok', true, 'id', c.id, 'redemption_id', v_rid,
-    'percent', c.percent, 'free_shipping', c.free_shipping);
+    'percent', c.percent, 'free_shipping', c.free_shipping,
+    'max_discount', c.max_discount);
 end;
 $$;
 
@@ -792,3 +819,295 @@ create policy discount_codes_admin_all on discount_codes
 drop policy if exists coupon_redemptions_admin_read on coupon_redemptions;
 create policy coupon_redemptions_admin_read on coupon_redemptions
   for select to authenticated using (is_admin());
+
+-- ============================================================
+--  FİYAT ALARMI ("fiyat düşünce haber ver")
+--  Akış: urun.html'deki form → price-alert EF (subscribe) → bu tablo;
+--  pg_cron (saatlik) → price-alert EF (x-cron-secret) → güncel fiyat
+--  price_at_signup'ın ALTINA inen kayıtlara Resend ile bildirim.
+--  Bildirim TEK seferliktir (notified_at atomik claim edilir); müşteri
+--  yeniden kaydolursa satır güncel fiyatla sıfırlanır (upsert).
+--  Client erişimi YOK (RLS açık, politika yok) → yalnız price-alert EF.
+--  Rate limit: fn_rate_limit tablosuna yeni kind ('price_alert').
+-- ============================================================
+create table if not exists price_alerts (
+  id              uuid primary key default gen_random_uuid(),
+  product_id      uuid not null references products(id) on delete cascade,
+  email           text not null,                 -- lower()
+  price_at_signup integer not null,              -- kayıt anındaki fiyat (TL)
+  unsub_token     uuid unique not null default gen_random_uuid(), -- maildeki çıkış linki
+  notified_at     timestamptz,                   -- bildirim gönderildi
+  notified_price  integer,                       -- bildirilen düşük fiyat
+  created_at      timestamptz not null default now(),
+  unique (product_id, email)                     -- ürün+e-posta başına tek alarm
+);
+create index if not exists idx_pa_due on price_alerts(created_at) where notified_at is null;
+alter table price_alerts enable row level security;
+-- politika YOK → yalnız service_role erişir (abandoned_carts deseniyle aynı).
+
+-- ============================================================
+--  HOŞ GELDİN KUPONU (bülten kaydı → tek kullanımlık indirim kodu)
+--  submit-form EF, İLK bülten kaydında discount_codes'a kind='single',
+--  e-postaya bağlı bir HOSGELDIN-… kodu yazar ve Resend ile gönderir.
+--  Aşağıdaki kolonlar hangi aboneye kupon gittiğini izler (tekrar
+--  kayıt denemesi 23505 ile zaten reddedilir → ikinci kupon çıkmaz).
+-- ============================================================
+alter table newsletter_subscribers
+  add column if not exists welcome_code_id uuid references discount_codes(id) on delete set null,
+  add column if not exists welcome_sent_at timestamptz;
+
+-- ============================================================
+--  SİPARİŞ DURUM E-POSTASI + DEĞİŞİM/İPTAL TALEPLERİ
+--  · orders.last_status_emailed: order-status-email EF'nin çift gönderim
+--    koruması — en son hangi durum için müşteri e-postası çıktı (atomik claim).
+--  · exchange_requests: degisim-iptal.html self-servis formu. Yazma yalnız
+--    submit-form EF (service_role; sipariş no + telefon İKİSİ doğrulanır,
+--    track-order deseni). Okuma/güncelleme yalnız admin (admin-siparisler).
+--    PII minimizasyonu: ad/telefon/e-posta tutulmaz — sipariş kaydında zaten var.
+-- ============================================================
+alter table orders add column if not exists last_status_emailed text;
+
+create table if not exists exchange_requests (
+  id           uuid primary key default gen_random_uuid(),
+  order_id     uuid references orders(id) on delete set null,
+  order_no     text not null,
+  request_type text not null check (request_type in ('exchange','cancel')),
+  reason       text not null,            -- 'beden'|'renk'|'model'|'kusurlu'|'vazgectim'|'diger'
+  details      text,                     -- istenen beden/renk, serbest açıklama (ops.)
+  status       text not null default 'new' check (status in ('new','in_progress','closed')),
+  created_at   timestamptz not null default now()
+);
+create index if not exists idx_exch_order on exchange_requests(order_id);
+create index if not exists idx_exch_status_time on exchange_requests(status, created_at desc);
+alter table exchange_requests enable row level security;
+
+-- insert politikası YOK → yazma yalnız service_role (submit-form EF).
+drop policy if exists exchange_requests_admin_read on exchange_requests;
+create policy exchange_requests_admin_read on exchange_requests
+  for select to authenticated using (is_admin());
+drop policy if exists exchange_requests_admin_update on exchange_requests;
+create policy exchange_requests_admin_update on exchange_requests
+  for update to authenticated using (is_admin()) with check (is_admin());
+
+-- ============================================================
+--  SADAKAT PROGRAMI (birikimli indirim kuponu)
+--  Ödemesi alınan her sipariş +%5 kazandırır (kart → paytr-callback,
+--  COD/havale → admin 'ödendi' → loyalty-accrue EF). Kullanılmadıkça
+--  birikir (üst limit %50 + TL tavanı), kupon kullanılınca ya da süresi
+--  dolunca merdiven 5'ten başlar.
+--
+--  Tasarım:
+--   · Kod = discount_codes kind='single', e-postaya bağlı SADAKAT-…
+--     (HOSGELDIN deseni). Claim/release mevcut yollardan aynen çalışır.
+--   · loyalty_status = e-posta başına ledger; ama TAZELİK her zaman kod
+--     satırından türetilir (active/used_at/expires_at) → kullanım ve süre
+--     dolumu sıfırlaması LAZY: claim'e hook yok, cron yok. Sonraki
+--     birikimde kod taze değilse yüzde 5'ten başlar.
+--   · İdempotency: orders.loyalty_accrued_at (sipariş başına TEK birikim).
+--   · Süistimal önlemleri: birikim yalnız payment_status='paid'
+--     siparişte (sahte COD kasması imkânsız), min. sepet tutarı altı
+--     kazandırmaz (ucuz-ürün taktiği), indirim tutarı max_discount TL
+--     tavanını aşamaz, kod yalnız sahibinin e-postasına gönderilir.
+--   · Ödenmiş sipariş iptalinde otomatik geri alma YOK — admin,
+--     admin-kuponlar.html'den SADAKAT kodunu iptal eder.
+-- ============================================================
+
+-- TL üst limiti: indirim tutarı bu tutarı aşamaz (null = limitsiz).
+-- Kampanya kodları da kullanabilsin diye discount_codes'a genel kolon.
+alter table discount_codes add column if not exists max_discount integer
+  check (max_discount is null or max_discount > 0);
+
+-- Sipariş başına TEK birikim damgası (idempotency).
+alter table orders add column if not exists loyalty_accrued_at timestamptz;
+
+-- E-posta başına sadakat durumu. percent/orders_count yalnız loyalty_accrue
+-- içinde okunur-yazılır; satır aynı zamanda eşzamanlı birikimler için
+-- FOR UPDATE kilit noktasıdır.
+create table if not exists loyalty_status (
+  email           text primary key,              -- lower()
+  orders_count    integer not null default 0,
+  percent         integer not null default 0 check (percent between 0 and 90),
+  current_code_id uuid references discount_codes(id) on delete set null,
+  last_accrued_at timestamptz,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+alter table loyalty_status enable row level security;
+-- politika YOK → yalnız service_role erişir (price_alerts deseniyle aynı).
+
+-- Birikimi ATOMİK işle: sipariş kilitle → damga → ledger kilitle → mevcut
+-- kodun tazeliğine göre yüzdeyi artır ya da 5'ten başlat → eski taze kodu
+-- kapat → yeni kodu üret. Tamamı tek transaction; kod üretimi RPC içinde
+-- (EF'de üretilseydi unique çakışması damgayla yarışırdı).
+create or replace function public.loyalty_accrue(
+  p_order_id     uuid,
+  p_step         integer,   -- adım (%5)
+  p_max_percent  integer,   -- yüzde üst limiti (%50)
+  p_min_subtotal integer,   -- birikim için min. sepet (TL)
+  p_max_discount integer,   -- yeni koda yazılan TL tavanı (0 = limitsiz)
+  p_valid_days   integer    -- kod geçerliliği (gün)
+) returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  o         record;
+  ls        record;
+  cur       public.discount_codes%rowtype;
+  v_email   text;
+  v_fresh   boolean := false;
+  v_percent integer;
+  v_count   integer;
+  v_code    text;
+  v_code_id uuid;
+  v_expires timestamptz;
+  alphabet  constant text := 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; -- 0/O,1/I/L yok
+  suffix    text;
+begin
+  select id, email, subtotal, payment_status, status, loyalty_accrued_at
+    into o from public.orders where id = p_order_id for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'reason', 'not-found');
+  end if;
+  v_email := lower(trim(coalesce(o.email, '')));
+  if v_email = '' then
+    return jsonb_build_object('ok', false, 'reason', 'no-email');
+  end if;
+  if o.payment_status <> 'paid' then
+    return jsonb_build_object('ok', false, 'reason', 'not-paid');
+  end if;
+  if o.status = 'cancelled' then
+    return jsonb_build_object('ok', false, 'reason', 'cancelled');
+  end if;
+  -- below-min damga BASMAZ: tutar sınırı sonradan düşürülürse tekrar denenebilir.
+  if coalesce(o.subtotal, 0) < p_min_subtotal then
+    return jsonb_build_object('ok', false, 'reason', 'below-min');
+  end if;
+  if o.loyalty_accrued_at is not null then
+    return jsonb_build_object('ok', false, 'reason', 'already-accrued');
+  end if;
+  update public.orders set loyalty_accrued_at = now() where id = p_order_id;
+
+  insert into public.loyalty_status (email) values (v_email)
+    on conflict (email) do nothing;
+  select * into ls from public.loyalty_status where email = v_email for update;
+
+  -- Tazelik kod satırından türetilir; FOR UPDATE eşzamanlı checkout
+  -- claim'iyle serileşir (claim'in update'i bu commit'i bekler).
+  if ls.current_code_id is not null then
+    select * into cur from public.discount_codes
+      where id = ls.current_code_id for update;
+    if found and cur.active and cur.used_at is null
+       and cur.expires_at is not null and cur.expires_at > now() then
+      v_fresh := true;
+    end if;
+  end if;
+
+  if v_fresh then
+    v_percent := least(ls.percent + p_step, least(p_max_percent, 90));
+    v_count   := ls.orders_count + 1;
+    -- Eski taze kod supersede edilir; kullanılmış kodlara dokunulmaz
+    -- (iptal sonrası release_coupon_by_order onları geri açabilmeli).
+    update public.discount_codes set active = false where id = cur.id;
+  else
+    v_percent := least(p_step, least(p_max_percent, 90));
+    v_count   := 1;
+  end if;
+
+  v_expires := now() + make_interval(days => greatest(p_valid_days, 1));
+  for i in 1..5 loop
+    suffix := '';
+    for j in 1..6 loop
+      suffix := suffix || substr(alphabet, 1 + floor(random() * 31)::int, 1);
+    end loop;
+    begin
+      insert into public.discount_codes
+          (code, percent, email, expires_at, kind, max_discount, note)
+        values ('SADAKAT-' || suffix, v_percent, v_email, v_expires,
+                'single', nullif(p_max_discount, 0), 'sadakat')
+        returning id, code into v_code_id, v_code;
+      exit;
+    exception when unique_violation then
+      if i = 5 then
+        -- raise → tüm transaction geri alınır (damga dahil), çağıran tekrar deneyebilir.
+        raise exception 'sadakat kodu üretilemedi (çakışma)';
+      end if;
+    end;
+  end loop;
+
+  update public.loyalty_status
+     set orders_count = v_count, percent = v_percent,
+         current_code_id = v_code_id, last_accrued_at = now(), updated_at = now()
+   where email = v_email;
+
+  return jsonb_build_object('ok', true, 'code', v_code, 'percent', v_percent,
+    'orders_count', v_count, 'email', v_email, 'expires_at', v_expires,
+    'max_discount', nullif(p_max_discount, 0));
+end;
+$$;
+
+-- GÜVENLİK: birikim yalnız service_role (Edge Function) çağırabilsin.
+revoke all on function public.loyalty_accrue(uuid, integer, integer, integer, integer, integer) from public, anon, authenticated;
+grant execute on function public.loyalty_accrue(uuid, integer, integer, integer, integer, integer) to service_role;
+
+-- ============================================================
+--  COD RİSK KONTROLÜ (kapıda ödeme iptal geçmişi skorlama)
+--  · create-order EF, COD siparişlerde codrisk_signals RPC'sinden ham
+--    sinyalleri alır, skoru _shared/cod-risk.ts'te hesaplar ve sonucu
+--    orders.risk_* kolonlarına snapshot olarak yazar (fail-soft: RPC
+--    hata verirse sipariş engellenmez, kolonlar null kalır).
+--  · risk_hold=true → admin onayı beklenir (status DEĞİŞMEZ, müşteri
+--    hiçbir şey görmez; track-order/hesap explicit kolon seçiyor).
+--    Admin, mevcut orders_admin_update politikasıyla hold'u kaldırır.
+--  · Ayrılabilirlik: tüm risk nesneleri codrisk_ önekli; RPC yalnız
+--    HAM SİNYAL döner, politika (ağırlık/eşik) edge tarafında —
+--    ileride bağımsız servise taşınabilsin diye.
+--  · Not: üyeler kendi risk_* kolonlarını RLS select ile okuyabilir
+--    (kendi verisi, kabul edilebilir); column-level revoke admin'in
+--    select *'ını kırardı.
+-- ============================================================
+
+-- Normalize: yalnız rakam, son 10 hane (_shared/util.ts normPhone ile birebir sözleşme)
+create or replace function public.codrisk_norm_phone(p text)
+returns text language sql immutable set search_path = ''
+as $$ select right(regexp_replace(coalesce(p, ''), '\D', '', 'g'), 10) $$;
+
+create index if not exists idx_codrisk_orders_phone
+  on orders (public.codrisk_norm_phone(phone), created_at desc);
+
+alter table orders add column if not exists risk_score   integer;
+alter table orders add column if not exists risk_level   text;      -- low | medium | high
+alter table orders add column if not exists risk_reasons jsonb;     -- [{code,count,window_days?}]
+alter table orders add column if not exists risk_hold    boolean not null default false;
+
+-- Ham sinyaller: pencere içinde aynı telefonla iptal / teslim / açık COD sayısı.
+-- Sipariş insert'ten ÖNCE çağrılır → self-exclusion gerekmez.
+create or replace function public.codrisk_signals(p_phone text, p_window_days int default 180)
+returns jsonb
+language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_norm  text := public.codrisk_norm_phone(p_phone);
+  v_since timestamptz := now() - make_interval(days => greatest(1, p_window_days));
+  v_cancelled int; v_delivered int; v_open_cod int;
+begin
+  if length(v_norm) < 7 then
+    return jsonb_build_object('ok', false, 'reason', 'phone_too_short');
+  end if;
+  select count(*) filter (where status = 'cancelled'),
+         count(*) filter (where status = 'delivered'),
+         count(*) filter (where status in ('pending','preparing') and payment_method = 'cod')
+    into v_cancelled, v_delivered, v_open_cod
+    from public.orders
+   where public.codrisk_norm_phone(phone) = v_norm
+     and created_at >= v_since;
+  return jsonb_build_object('ok', true, 'window_days', greatest(1, p_window_days),
+    'cancelled_count', v_cancelled, 'delivered_count', v_delivered,
+    'open_cod_count', v_open_cod);
+end;
+$$;
+
+-- GÜVENLİK: sinyalleri yalnız service_role (Edge Function) sorgulayabilsin.
+revoke all on function public.codrisk_signals(text, int) from public, anon, authenticated;
+grant execute on function public.codrisk_signals(text, int) to service_role;

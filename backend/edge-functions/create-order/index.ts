@@ -16,6 +16,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendOrderEmails } from "../_shared/order-email.ts";
 import { createLogger, errMsg } from "../_shared/log.ts";
 import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
+import { assessCodRisk, CODRISK_HOLD_MIN } from "../_shared/cod-risk.ts";
 import { canonVariant, clientIp, makeOrderNo } from "../_shared/util.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import {
@@ -190,6 +191,16 @@ Deno.serve(async (req) => {
   const shipping = freeShipping ? 0 : SHIPPING_FEE;
   const total = subtotal - discount + shipping; // TL (tam sayı)
 
+  // --- COD risk skorlama (fail-soft: hata siparişi ASLA engellemez) ---
+  // CODRISK_HOLD=0 secret'ı bekletmeyi kapatır (skor yine yazılır).
+  let risk: Awaited<ReturnType<typeof assessCodRisk>> = null;
+  if (method === "cod") {
+    risk = await assessCodRisk(admin, { phone: form.phone });
+    if (!risk) log.warn("codrisk_unavailable", { ip });
+  }
+  const holdEnabled = Deno.env.get("CODRISK_HOLD") !== "0";
+  const riskHold = holdEnabled && !!risk && risk.score >= CODRISK_HOLD_MIN;
+
   // --- siparişi oluştur ---
   const oid = makeOrderNo();
   const { data: orderRow, error: oErr } = await admin
@@ -213,6 +224,10 @@ Deno.serve(async (req) => {
       address: form.address,
       postal_code: form.postal_code || null,
       note: form.note || null,
+      risk_score: risk?.score ?? null,
+      risk_level: risk?.level ?? null,
+      risk_reasons: risk?.reasons ?? null,
+      risk_hold: riskHold,
     })
     .select("id")
     .single();
@@ -268,6 +283,14 @@ Deno.serve(async (req) => {
     })),
   }, log).catch((e) => log.error("mail_error", { order_no: oid, detail: errMsg(e) }));
 
-  log.info("order_created", { ip, order_no: oid, method, total, item_count: orderItems.length });
+  log.info("order_created", {
+    ip,
+    order_no: oid,
+    method,
+    total,
+    item_count: orderItems.length,
+    risk_level: risk?.level ?? null,
+    risk_hold: riskHold,
+  });
   return json({ order_no: oid, total });
 });

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   claimDiscount,
+  computeDiscount,
   makeDiscountCode,
   normCode,
   releaseDiscount,
@@ -72,12 +73,52 @@ test("makeDiscountCode: enjekte edilen rand ile deterministik", () => {
   assert.equal(makeDiscountCode(() => 0), "SEPET-AAAAAA");
 });
 
+test("makeDiscountCode: özel önek (hoş geldin kuponu ailesi)", () => {
+  assert.equal(makeDiscountCode(() => 0, "HOSGELDIN-"), "HOSGELDIN-AAAAAA");
+  for (let i = 0; i < 20; i++) {
+    assert.match(
+      makeDiscountCode(Math.random, "HOSGELDIN-"),
+      /^HOSGELDIN-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/,
+    );
+  }
+});
+
 test("normCode: boşlukları atar, büyük harfe çevirir", () => {
   assert.equal(normCode("  sepet-ab 12cd "), "SEPET-AB12CD");
   assert.equal(normCode(null), "");
 });
 
+// ---------- computeDiscount (TL tavanı) ----------
+
+test("computeDiscount: tavansız = floor(subtotal*percent/100), subtotal'ı aşmaz", () => {
+  assert.equal(computeDiscount(1699, 10), 169);
+  assert.equal(computeDiscount(1699, 10, null), 169);
+  assert.equal(computeDiscount(1699, 10, 0), 169); // 0 = limitsiz
+  assert.equal(computeDiscount(1, 90), 0); // floor(0.9)
+  assert.equal(computeDiscount(100, 200, null), 100); // asla subtotal üstü değil
+});
+
+test("computeDiscount: max_discount TL tavanı ham indirimi keser", () => {
+  assert.equal(computeDiscount(10000, 50, 1500), 1500); // 5000 → tavan 1500
+  assert.equal(computeDiscount(2000, 50, 1500), 1000); // ham 1000 < tavan → ham
+  assert.equal(computeDiscount(500, 50, 1500), 250);
+});
+
+test("computeDiscount: negatif/bozuk girdide 0'ın altına inmez", () => {
+  assert.equal(computeDiscount(1000, 0), 0);
+  assert.equal(computeDiscount(0, 50, 1500), 0);
+  assert.equal(computeDiscount(1000, -10), 0);
+});
+
 // ---------- tek kullanımlık (single) yol ----------
+
+test("claimDiscount(single): max_discount'lı kod (SADAKAT) → indirim tavanla sınırlı", async () => {
+  const admin = fakeAdmin({ id: "d1", percent: 50, email: null, max_discount: 1500 });
+  const r = await claimDiscount(admin, "SADAKAT-ABCDEF", "x@y.com", 10000);
+  assert.equal(r.ok, true);
+  assert.equal(r.percent, 50);
+  assert.equal(r.discount, 1500); // 5000 değil
+});
 
 test("claimDiscount(single): geçerli kod → discount = floor(subtotal*percent/100)", async () => {
   const admin = fakeAdmin({ id: "d1", percent: 10, email: null });
@@ -170,6 +211,19 @@ test("claimDiscount(campaign): RPC ok:false → hata mesajı aynen geçer", asyn
   const r = await claimDiscount(admin, "YAZ20", "a@b.com", 5000);
   assert.equal(r.ok, false);
   assert.equal(r.error, "Bu kodun kullanım limiti doldu.");
+});
+
+test("claimDiscount(campaign): RPC max_discount dönerse indirim tavanla sınırlı", async () => {
+  const admin = fakeAdmin(null, {
+    kindRow: { kind: "campaign" },
+    rpcResult: {
+      data: { ok: true, id: "c1", redemption_id: "r1", percent: 20, free_shipping: false, max_discount: 500 },
+      error: null,
+    },
+  });
+  const r = await claimDiscount(admin, "YAZ20", "a@b.com", 5000);
+  assert.equal(r.ok, true);
+  assert.equal(r.discount, 500); // floor(1000) → tavan 500
 });
 
 test("claimDiscount(campaign): %0 + kargo bedava → discount 0, freeShipping true", async () => {

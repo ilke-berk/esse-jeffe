@@ -9,7 +9,7 @@
 <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M5kng.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M3knj-SA.woff2">
   <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=10">
+<link rel="stylesheet" href="ej.css?v=11">
 <script type="importmap">
 {"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
 </script>
@@ -76,6 +76,19 @@
 .pd-meta{list-style:none;display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}
 .pd-meta li{font-size:12px;letter-spacing:.04em;color:var(--soft);display:flex;align-items:center;gap:8px}
 .pd-meta li::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--ink)}
+
+/* fiyat alarmı — canlı katalog ürünü yüklenince görünür (ej:product-loaded) */
+.pd-palert{margin-top:14px;display:none}
+.pd-palert.on{display:block}
+.pd-palert-toggle{background:none;border:none;cursor:pointer;font-size:12px;letter-spacing:.08em;color:var(--muted);text-decoration:underline;text-underline-offset:3px;padding:0;display:inline-flex;align-items:center;gap:6px;font-family:inherit}
+.pd-palert-toggle:hover{color:var(--ink)}
+.pd-palert-toggle svg{width:14px;height:14px;stroke:currentColor;stroke-width:1.5;fill:none}
+.pd-palert form{display:none;margin-top:10px;gap:8px;max-width:420px}
+.pd-palert.open form{display:flex}
+.pd-palert input[type="email"]{flex:1;min-width:0;padding:12px 14px;border:1px solid var(--line-strong);background:var(--bg);font-size:13px;color:var(--ink)}
+.pd-palert button[type="submit"]{padding:12px 20px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);font-size:11px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;white-space:nowrap}
+.pd-palert button[type="submit"]:disabled{opacity:.55;cursor:default}
+.pd-palert .pa-msg{margin-top:8px;font-size:12px;letter-spacing:.03em;display:none}
 
 @media(max-width:900px){
   .pd{grid-template-columns:1fr;gap:0;padding:0}
@@ -235,6 +248,22 @@
       <a class="btn" href="iletisim.html">WhatsApp'tan Sor</a>
     </div>
 
+    <!-- fiyat alarmı: e-posta bırak → fiyat düşünce price-alert EF haber verir -->
+    <div class="pd-palert" id="paBox">
+      <button type="button" class="pd-palert-toggle" id="paToggle" aria-expanded="false" aria-controls="paForm">
+        <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        Fiyatı düşünce haber ver
+      </button>
+      <form id="paForm" novalidate>
+        <input type="email" id="paEmail" placeholder="E-posta adresiniz" aria-label="E-posta" autocomplete="email">
+        <div aria-hidden="true" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden">
+          <label>Web sitesi<input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+        </div>
+        <button type="submit">Haber Ver</button>
+      </form>
+      <p class="pa-msg" id="paMsg" role="status" aria-live="polite"></p>
+    </div>
+
     <ul class="pd-meta">
       <li>Ücretsiz & aynı gün kargo</li>
       <li>Kapıda ödeme</li>
@@ -259,7 +288,7 @@
 
 <section class="sec-related" data-screen-label="Bunları da beğenebilirsin">
   <div class="sec-head"><span class="label">Öneriler</span><h2>Bunları da beğenebilirsin</h2></div>
-  <div class="rel-track">
+  <div class="rel-track" id="relTrack">
     <a class="card" href="koleksiyon.html"><div class="frame"><span class="tag">Yeni</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Asos</h3><p class="model-desc">Fakir Kol V Yaka Davet</p><div class="dots"><span style="background:#6e2c2c"></span><span style="background:#1b1a17"></span><span style="background:#3c4a3a"></span><span style="background:#26384a"></span></div><div class="price">1.399 TL</div></div></a>
     <a class="card" href="koleksiyon.html"><div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Efes</h3><p class="model-desc">Kruvaze Drapeli Krep Abiye</p><div class="dots"><span style="background:#b03030"></span><span style="background:#6e2c2c"></span><span style="background:#3c4a3a"></span><span style="background:#1b1a17"></span><span style="background:#26384a"></span></div><div class="price">1.499 TL</div></div></a>
     <a class="card" href="koleksiyon.html"><div class="frame"><span class="tag">İndirim</span><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>Karya</h3><p class="model-desc">V Yaka Fırfırlı Kol Abiye</p><div class="dots"><span style="background:#26384a"></span><span style="background:#b03030"></span><span style="background:#1b1a17"></span><span style="background:#6e2c2c"></span><span style="background:#3c4a3a"></span></div><div class="price"><span class="old">1.599 TL</span>1.299 TL</div></div></a>
@@ -280,6 +309,7 @@
     <button class="sg-close" id="sgClose" aria-label="Kapat"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
   </div>
   <div class="sg-body">
+    <div id="sgAsistan"></div>
     <p>Krep kumaşlarımız vücudu sarar; kendi ölçülerinizi alarak aşağıdaki tabloyla karşılaştırın. Sınırda iseniz bir büyük bedeni tercih edin.</p>
 
     <svg viewBox="0 0 240 340" width="100%" style="display:none" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -365,7 +395,7 @@
 
 <script src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
 <script src="backend/supabase-config.js"></script>
-<script src="backend/ej-supabase.js?v=15"></script>
+<script src="backend/ej-supabase.js?v=16"></script>
 <script type="module">
 // three.js + model (~2.6 MB) ancak atlıkarınca görünür olunca iner; sayfa açılışını bloklamaz.
 // WebGL yoksa ya da CDN/model inemezse fotoğraflı renk seçiciye düşülür.
@@ -875,10 +905,11 @@ function ejRecent(){
   var CUR = p ? {
       id: p.slug, name: p.name, desc: p.model_desc||'',
       price: fmtTL(p.price), oldPrice: p.old_price?fmtTL(p.old_price):'',
+      img: p.image||'',
       href: 'urun.html?slug='+encodeURIComponent(p.slug)
     } : {
       id:'pera', name:'Pera', desc:'Uzun Yırtmaçlı Krep Abiye',
-      price:'1.699 TL', oldPrice:'2.199 TL', href:'urun.html?slug=pera'
+      price:'1.699 TL', oldPrice:'2.199 TL', img:'', href:'urun.html?slug=pera'
     };
   var KEY='ej_recent',MAX=6;
   function load(){ try{ return JSON.parse(localStorage.getItem(KEY)||'[]'); }catch(e){ return []; } }
@@ -898,19 +929,96 @@ function ejRecent(){
     recent.forEach(function(p){
       var a=document.createElement('a'); a.className='card';
       a.href=(typeof p.href==='string' && p.href.indexOf('urun.html?slug=')===0) ? p.href : 'urun.html?slug='+encodeURIComponent(p.id||'');
-      a.innerHTML='<div class="frame"><div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div><div class="meta"><h3>'+esc(p.name)+'</h3><p class="model-desc">'+esc(p.desc)+'</p><div class="price">'+(p.oldPrice?'<span class="old">'+esc(p.oldPrice)+'</span>':'')+esc(p.price)+'</div></div>';
+      // görsel: yalnız https veya yerel img/ yoluna izin — localStorage'a yazılmış
+      // başka bir şema (javascript: vb.) src'ye asla girmesin
+      var media=(typeof p.img==='string' && (/^https:\/\//.test(p.img) || /^img\//.test(p.img)))
+        ? '<img src="'+esc(p.img)+'" alt="'+esc(p.name)+'" loading="lazy" decoding="async" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">'
+        : '<div class="img-ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>';
+      a.innerHTML='<div class="frame">'+media+'</div><div class="meta"><h3>'+esc(p.name)+'</h3><p class="model-desc">'+esc(p.desc)+'</p><div class="price">'+(p.oldPrice?'<span class="old">'+esc(p.oldPrice)+'</span>':'')+esc(p.price)+'</div></div>';
       track.appendChild(a);
     });
     sec.style.display='';
   }
 }
+// "Bunları da beğenebilirsin" — canlı katalogdan basit benzerlik önerisi.
+// Katalog küçük olduğundan birlikte-satın-alma (order_items) sorgusu yerine
+// puanlama yeter: aynı kategori (+2) > ortak renk (+1) > yakın fiyat (eşitlik
+// bozucu). DB yoksa ya da ürün yüklenemediyse statik kartlar yerinde kalır.
+function ejRelated(){
+  var p = window.EJ_PRODUCT, track = document.getElementById('relTrack');
+  if (!p || !track || !window.EJData) return;
+  window.EJData.products().then(function(list){
+    var curColors = {};
+    (p.colors||[]).forEach(function(c){ curColors[String(c.name||'').toLocaleLowerCase('tr')] = 1; });
+    var scored = list.filter(function(o){ return o.slug !== p.slug; }).map(function(o){
+      var s = 0;
+      if (o.category && o.category === p.category) s += 2;
+      var shared = (o.colors||[]).some(function(c){ return curColors[String(c.name||'').toLocaleLowerCase('tr')]; });
+      if (shared) s += 1;
+      return { o:o, s:s, d:Math.abs((o.price||0)-(p.price||0)) };
+    });
+    scored.sort(function(a,b){ return (b.s-a.s) || (a.d-b.d); });
+    var pick = scored.slice(0,6).map(function(x){ return x.o; });
+    if (!pick.length) return;
+    track.innerHTML = pick.map(window.EJData.cardHTML).join('');
+    // EJWish kalp aktifliklerini tazelesin
+    track.dispatchEvent(new CustomEvent('ej:grid-rendered', { bubbles:true }));
+  }).catch(function(e){ console.warn('[EJ] Öneriler yüklenemedi:', e.message||e); });
+}
 if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
-  window.addEventListener('ej:product-loaded', ejRecent, { once:true });
+  window.addEventListener('ej:product-loaded', function(){ ejRecent(); ejRelated(); }, { once:true });
 } else {
   ejRecent();
 }
+// fiyat alarmı — yalnız canlı katalog ürünü + EJData varken görünür;
+// kayıt price-alert Edge Function'a gider (honeypot + IP hız sınırı orada).
+(function(){
+  var box=document.getElementById('paBox');
+  if(!box) return;
+  function initPa(){
+    var p=window.EJ_PRODUCT;
+    if(!p || !p.slug || !window.EJData || !window.EJData.priceAlert) return;
+    box.classList.add('on');
+    var toggle=document.getElementById('paToggle'), form=document.getElementById('paForm'),
+        email=document.getElementById('paEmail'), msg=document.getElementById('paMsg');
+    toggle.addEventListener('click', function(){
+      var open=box.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', open?'true':'false');
+      if(open) email.focus();
+    });
+    function say(t,err){ msg.textContent=t; msg.style.display='block'; msg.style.color=err?'#b03030':'var(--zeytin)'; }
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var v=(email.value||'').trim();
+      if(!v || v.indexOf('@')<1){ say('Geçerli bir e-posta girin.', true); return; }
+      var hpEl=form.querySelector('input[name="website"]');
+      var btn=form.querySelector('button[type="submit"]');
+      btn.disabled=true;
+      window.EJData.priceAlert(p.slug, v, hpEl?hpEl.value:'').then(function(){
+        email.value='';
+        say('Alarm kuruldu! Bu ürünün fiyatı düşerse e-postanıza haber vereceğiz.');
+      }).catch(function(err){
+        say((err && err.message) || 'Bir hata oluştu, tekrar deneyin.', true);
+      }).then(function(){ btn.disabled=false; });
+    });
+  }
+  if (window.EJ_PRODUCT) initPa();
+  else window.addEventListener('ej:product-loaded', initPa, { once:true });
+})();
 </script>
 <script src="ej.js?v=12"></script>
-<script src="ej-chat.js?v=18"></script>
+<script src="ej-chat.js?v=19"></script>
+<script src="ej-beden.js?v=1"></script>
+<script>
+// beden asistanı → çekmecede; öneriden "Bu Bedeni Seç" gerçek bedeni işaretler
+EJBeden.mount(document.getElementById('sgAsistan'), {
+  highlight: '.sg-table',
+  onPick: function(size){
+    ejSelectSize(size);
+    var c = document.getElementById('sgClose');
+    if(c) c.click();
+  }
+});
+</script>
 </body>
 </html>

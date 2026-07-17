@@ -97,6 +97,21 @@
   .bar .msg{font-size:13px}
   .busy{opacity:.55;pointer-events:none}
   .muted{color:#9a978d;font-size:12px}
+  /* toplu güncelleme modalı */
+  .bmodal{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:flex-start;justify-content:center;z-index:20;padding:30px 16px;overflow-y:auto}
+  .bmodal.on{display:flex}
+  .bmodal .bx{background:#fff;border-radius:14px;max-width:880px;width:100%;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.2)}
+  .bx h2{margin:0 0 4px;font-size:16px}
+  .bx .tabs{display:flex;gap:6px;margin:14px 0;align-items:center}
+  .bx .tabs button.tab{font:inherit;font-size:13px;padding:7px 14px;border:1px solid var(--line);border-radius:20px;background:#fff;cursor:pointer;color:#6a6a62}
+  .bx .tabs button.tab.on{background:var(--zeytin);color:#fff;border-color:var(--zeytin)}
+  .bx .drop{border:2px dashed #ddd9cf;border-radius:12px;padding:26px;text-align:center;color:#8a877d;font-size:13.5px;cursor:pointer;line-height:1.6}
+  .bx .drop:hover{border-color:var(--zeytin)}
+  .bx table{width:100%;border-collapse:collapse;font-size:13px;margin-top:14px}
+  .bx th,.bx td{padding:7px 8px;border-bottom:1px solid #f0eee7;text-align:left;vertical-align:top}
+  .bx th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#9a978d}
+  .bx .k-update{color:#2f7d44}.bx .k-same{color:#8a877d}.bx .k-notfound{color:#b03030}.bx .k-invalid{color:#8a5a1f}
+  .bx .bfoot{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
   @media(max-width:820px){#app{grid-template-columns:1fr;height:auto}.side{height:auto;max-height:42vh}.cards,.grid2{grid-template-columns:1fr}}
 </style>
 </head>
@@ -139,6 +154,7 @@
       <div class="top">
         <h2>Siparişler</h2>
         <span class="cnt" id="cnt"></span>
+        <button class="rf" id="bulkBtn" title="Excel/CSV veya ekran görüntüsünden toplu kargo/durum güncelle">Toplu Güncelle</button>
         <button class="rf" id="refresh" title="Yenile">↻</button>
       </div>
       <input class="q" id="q" type="search" placeholder="Sipariş no, ad veya telefon ara…">
@@ -151,9 +167,32 @@
   </main>
 </div>
 
+<!-- toplu güncelleme modalı -->
+<div class="bmodal" id="bulkModal">
+  <div class="bx">
+    <h2>Toplu Kargo / Durum Güncelleme</h2>
+    <p class="muted" style="margin:2px 0 0">Excel/CSV dosyası ya da kargo raporu ekran görüntüsü yükleyin; satırlar önizlemede siparişlerle eşleştirilir, siz onaylamadan hiçbir şey yazılmaz.</p>
+    <div class="tabs">
+      <button type="button" class="tab on" id="tabFile">Excel / CSV</button>
+      <button type="button" class="tab" id="tabImg">Ekran Görüntüsü (OCR)</button>
+      <button type="button" class="rf" id="bulkClose" style="margin-left:auto">Kapat</button>
+    </div>
+    <div id="bulkDrop" class="drop"></div>
+    <input type="file" id="bulkFile" accept=".xlsx,.xls,.csv" style="display:none">
+    <input type="file" id="bulkImg" accept="image/png,image/jpeg,image/webp" style="display:none">
+    <div id="bulkMsg" class="muted" style="margin-top:10px"></div>
+    <div id="bulkPrev"></div>
+    <div class="bfoot" id="bulkFoot" style="display:none">
+      <button class="save" id="bulkApply">Seçilenleri Uygula</button>
+      <span class="msg" id="bulkStat"></span>
+    </div>
+  </div>
+</div>
+
 <script src="backend/supabase-config.js"></script>
 <link rel="preconnect" href="https://cdn.jsdelivr.net">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0"></script>
+<script type="module" src="admin-bulk.js"></script>
 <script>
 (function () {
   var cfg = window.EJ_CONFIG || {};
@@ -183,6 +222,7 @@
   function showApp(){ bootEl.style.display='none'; loginBox.style.display='none'; nav.style.display='flex'; app.style.display='grid'; }
 
   var orders = [];       // yüklenen siparişler (order_items dahil, sayfalı)
+  var exchByOrder = {};  // order_id → değişim/iptal talepleri (exchange_requests)
   var current = null;    // seçilen sipariş
   var filter = 'all';    // durum filtresi
   var query = '';        // arama metni
@@ -261,12 +301,30 @@
         renderList();
         if (current) renderDetail();
       });
+    loadExchangeRequests();
   }
   el('refresh').addEventListener('click', function () { loadOrders(true); });
 
+  // Değişim/iptal talepleri (degisim-iptal.html formundan düşer).
+  // Tablo küçük kalır → hepsi tek sorguda çekilip order_id'ye göre gruplanır.
+  function loadExchangeRequests() {
+    sb.from('exchange_requests').select('*')
+      .order('created_at', { ascending: false }).limit(500)
+      .then(function (r) {
+        if (r.error) { console.warn('Talepler yüklenemedi:', r.error.message); return; }
+        exchByOrder = {};
+        (r.data || []).forEach(function (x) {
+          if (!x.order_id) return;
+          (exchByOrder[x.order_id] = exchByOrder[x.order_id] || []).push(x);
+        });
+        renderList();
+        if (current) renderDetail();
+      });
+  }
+
   // ---------- filtre + arama ----------
   function renderFilters() {
-    var items = [{ k: 'all', t: 'Tümü' }].concat(STATUS);
+    var items = [{ k: 'all', t: 'Tümü' }].concat(STATUS).concat([{ k: 'risky', t: 'Riskli' }]);
     el('fbar').innerHTML = items.map(function (s) {
       return '<button data-k="' + s.k + '"' + (filter === s.k ? ' class="on"' : '') + '>' + s.t + '</button>';
     }).join('');
@@ -278,7 +336,9 @@
 
   function visibleOrders() {
     return orders.filter(function (o) {
-      if (filter !== 'all' && o.status !== filter) return false;
+      if (filter === 'risky') {
+        if (!(o.risk_hold || o.risk_level === 'high' || o.risk_level === 'medium')) return false;
+      } else if (filter !== 'all' && o.status !== filter) return false;
       if (query) {
         var hay = (o.order_no + ' ' + (o.full_name||'') + ' ' + (o.phone||'')).toLowerCase();
         if (hay.indexOf(query) === -1) return false;
@@ -301,11 +361,14 @@
     olistEl.innerHTML = list.map(function (o) {
       var sel = current && current.id === o.id ? ' sel' : '';
       var st = STATUS_T[o.status] || o.status;
+      var openReq = (exchByOrder[o.id] || []).some(function (x) { return x.status !== 'closed'; });
       return '<div class="orow' + sel + '" data-id="' + o.id + '">' +
         '<div class="oi">' +
           '<p class="on">' + esc(o.order_no) + '</p>' +
           '<p class="om">' + esc(o.full_name || '—') + ' · ' + (PAYM[o.payment_method] || o.payment_method) + '</p>' +
           '<span class="st st-' + esc(o.status) + '">' + esc(st) + '</span>' +
+          (openReq ? ' <span class="st" style="background:#f5e4d0;color:#8a5a1f">Talep var</span>' : '') +
+          riskPill(o) +
         '</div>' +
         '<div class="of">' +
           '<div class="op">' + tl(o.total) + '</div>' +
@@ -378,6 +441,7 @@
             kv('Firma', esc(o.carrier || '—')) +
             kv('Takip No', esc(o.tracking_no || '—')) +
           '</div>' +
+          riskCard(o) +
         '</div>' +
 
         '<div class="sec-t">Ürünler</div>' +
@@ -408,11 +472,114 @@
             '<button class="save" id="saveBtn">Kaydet</button>' +
             '<span class="msg" id="formMsg"></span>' +
           '</div>' +
-          '<p class="muted" style="margin:10px 0 0">Ödeme durumu "Ödendi" yapıldığında ödeme tarihi otomatik damgalanır. Sipariş oluşturma bu ekrandan yapılamaz.</p>' +
+          '<p class="muted" style="margin:10px 0 0">Ödeme durumu "Ödendi" yapıldığında ödeme tarihi otomatik damgalanır. Sipariş durumu değişince müşteriye otomatik bilgilendirme e-postası gider. Sipariş oluşturma bu ekrandan yapılamaz.</p>' +
         '</div>' +
+
+        exchSection(o) +
       '</div>';
 
     el('saveBtn').addEventListener('click', saveUpdate);
+    wireExchButtons();
+    wireRiskButton();
+  }
+
+  // ---------- kapıda ödeme risk (rozet + detay kartı) ----------
+  var RISK_LEVEL_T = { low: 'Düşük', medium: 'Orta', high: 'Yüksek' };
+
+  function riskPill(o) {
+    if (o.risk_hold) return ' <span class="st" style="background:#f3d6d6;color:#8a1f1f">Onay bekliyor</span>';
+    if (o.risk_level === 'high') return ' <span class="st" style="background:#f3d6d6;color:#8a1f1f">Riskli</span>';
+    if (o.risk_level === 'medium') return ' <span class="st" style="background:#f5e4d0;color:#8a5a1f">Dikkat</span>';
+    return '';
+  }
+
+  function riskReasonText(r) {
+    var n = r && r.count || 0;
+    if (r.code === 'cancelled_orders') return 'Son ' + Math.round((r.window_days || 180) / 30) + ' ayda ' + n + ' iptal';
+    if (r.code === 'delivered_orders') return n + ' başarılı teslimat';
+    if (r.code === 'open_cod_orders') return n + ' açık kapıda ödeme siparişi';
+    return esc(String(r.code || ''));
+  }
+
+  function riskCard(o) {
+    if (!o.risk_level) return '';
+    var reasons = Array.isArray(o.risk_reasons) ? o.risk_reasons : [];
+    var lines = reasons.map(function (r) {
+      return '<p class="muted" style="margin:4px 0 0;font-size:13px">· ' + riskReasonText(r) + '</p>';
+    }).join('');
+    return '<div class="card"><h3>Risk</h3>' +
+      kv('Seviye', riskPill(o) || '<span class="st" style="background:#e4efe4;color:#2f6b2f">Düşük</span>') +
+      kv('Skor', String(o.risk_score != null ? o.risk_score : '—')) +
+      (lines || '<p class="muted" style="margin:4px 0 0;font-size:13px">İptal geçmişi yok.</p>') +
+      (o.risk_hold
+        ? '<p class="muted" style="margin:8px 0 0;font-size:13px">Bu sipariş risk eşiğini aştı; kargoya vermeden önce müşteriyi arayıp teyit alın.</p>' +
+          '<button class="rf" id="riskRelease" style="margin-top:8px">Onayı kaldır</button>'
+        : '') +
+    '</div>';
+  }
+
+  function wireRiskButton() {
+    var b = el('riskRelease');
+    if (!b) return;
+    b.addEventListener('click', function () {
+      b.disabled = true; b.textContent = '…';
+      sb.from('orders').update({ risk_hold: false }).eq('id', current.id).then(function (r) {
+        if (r.error) { b.disabled = false; b.textContent = 'Onayı kaldır'; alert('Güncellenemedi: ' + r.error.message); return; }
+        current.risk_hold = false; // yerel kopya (orders içindeki aynı obje) → rozet anında düşer
+        renderList(); renderDetail();
+      });
+    });
+  }
+
+  // ---------- değişim / iptal talepleri (detay bölümü) ----------
+  var EXCH_TYPE   = { exchange: 'Değişim', cancel: 'İptal' };
+  var EXCH_REASON = { beden: 'Beden değişimi', renk: 'Renk değişimi', model: 'Model değişimi',
+                      kusurlu: 'Kusurlu/hasarlı ürün', vazgectim: 'Vazgeçtim', diger: 'Diğer' };
+  var EXCH_STATUS = [ ['new','Yeni'], ['in_progress','İşlemde'], ['closed','Kapatıldı'] ];
+
+  function exchSection(o) {
+    var list = exchByOrder[o.id] || [];
+    if (!list.length) return '';
+    var rows = list.map(function (x) {
+      var opts = EXCH_STATUS.map(function (s) {
+        return '<option value="' + s[0] + '"' + (x.status === s[0] ? ' selected' : '') + '>' + s[1] + '</option>';
+      }).join('');
+      return '<div style="border-top:1px solid #f0eee7;padding:12px 0 4px;margin-top:10px">' +
+        '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+          '<span class="st" style="background:#f5e4d0;color:#8a5a1f">' + (EXCH_TYPE[x.request_type] || esc(x.request_type)) + '</span>' +
+          '<b style="font-size:13.5px">' + (EXCH_REASON[x.reason] || esc(x.reason)) + '</b>' +
+          '<span class="muted">' + fmtDate(x.created_at) + '</span>' +
+          '<span style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
+            '<select data-exch="' + esc(x.id) + '" style="padding:6px 9px;border:1px solid #ddd9cf;border-radius:8px;font:inherit;font-size:13px">' + opts + '</select>' +
+            '<button class="rf" data-exch-save="' + esc(x.id) + '">Kaydet</button>' +
+          '</span>' +
+        '</div>' +
+        (x.details ? '<p style="font-size:13.5px;margin:8px 0 4px;color:#555;white-space:pre-wrap">' + esc(x.details) + '</p>' : '') +
+      '</div>';
+    }).join('');
+    return '<div class="sec-t">Değişim / İptal Talepleri</div>' +
+      '<div class="upd">' + rows +
+      '<p class="muted" style="margin:10px 0 0">Talepler degisim-iptal.html formundan düşer; müşteri sipariş no + telefon doğrulamasından geçmiştir. İptal onayı için sipariş durumunu ayrıca "İptal" yapmayı unutmayın.</p></div>';
+  }
+
+  function wireExchButtons() {
+    Array.prototype.forEach.call(mainEl.querySelectorAll('[data-exch-save]'), function (b) {
+      b.addEventListener('click', function () {
+        var id = b.dataset.exchSave;
+        var sel = mainEl.querySelector('select[data-exch="' + id + '"]');
+        if (!sel) return;
+        b.disabled = true; b.textContent = '…';
+        sb.from('exchange_requests').update({ status: sel.value }).eq('id', id).then(function (r) {
+          b.disabled = false; b.textContent = 'Kaydet';
+          if (r.error) { alert('Güncellenemedi: ' + r.error.message); return; }
+          // yerel kopyayı tazele (rozet + liste)
+          Object.keys(exchByOrder).forEach(function (k) {
+            exchByOrder[k].forEach(function (x) { if (x.id === id) x.status = sel.value; });
+          });
+          renderList();
+        });
+      });
+    });
   }
 
   function kv(k, v) { return '<div class="kv"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
@@ -420,6 +587,8 @@
   // ---------- güncelle ----------
   function saveUpdate() {
     if (!current) return;
+    var prevStatus = current.status;
+    var prevPay = current.payment_status;
     var patch = {
       status: val('uStatus'),
       payment_status: val('uPay'),
@@ -442,6 +611,42 @@
       msg('Kaydedildi ✓', true);
       renderList();
       renderDetail();
+      notifyStatusChange(r.data, prevStatus);
+      notifyLoyalty(r.data, prevPay);
+    });
+  }
+
+  // İlk kez 'ödendi' işaretlendi → sadakat birikimi (loyalty-accrue EF: +%5
+  // SADAKAT kuponu üretir ve müşteriye mailler). Kart ödemelerinde aynı iş
+  // paytr-callback'te yapılır; EF idempotenttir (already-accrued döner).
+  // Fail-soft: hata kaydı bozmaz. Ödenmiş sipariş sonradan iptal edilirse
+  // birikim otomatik geri alınmaz — kodu admin-kuponlar.html'den iptal edin.
+  function notifyLoyalty(o, prevPay) {
+    if (o.payment_status !== 'paid' || prevPay === 'paid') return;
+    sb.functions.invoke('loyalty-accrue', { body: { order_id: o.id } }).then(function (r) {
+      var d = r.data || {};
+      if (r.error || d.error) { msg('Kaydedildi ✓ · sadakat puanı işlenemedi', false, true); return; }
+      if (d.accrued) msg('Kaydedildi ✓ · sadakat kuponu gönderildi 🎁 (%' + d.percent + ')', true);
+      // atlanma nedenleri (below-min, no-email, already-accrued…) sessiz —
+      // durum e-postası mesajının üzerine yazmaya değmez.
+    });
+  }
+
+  // Durum değiştiyse müşteriye bilgilendirme e-postası (order-status-email EF).
+  // Fail-soft: e-posta hatası kaydı bozmaz; sonuç yalnız mesaj alanında görünür.
+  // Çift gönderim koruması sunucudadır (orders.last_status_emailed claim'i).
+  var NOTIFY_STATUSES = ['preparing', 'shipped', 'delivered', 'cancelled'];
+  function notifyStatusChange(o, prevStatus) {
+    if (o.status === prevStatus) return;                       // durum değişmedi
+    if (NOTIFY_STATUSES.indexOf(o.status) === -1) return;      // pending'e dönüş vb.
+    if (!o.email) { msg('Kaydedildi ✓ · e-posta yok (misafir, e-postasız sipariş)', true); return; }
+    msg('Kaydedildi ✓ · durum e-postası gönderiliyor…');
+    sb.functions.invoke('order-status-email', { body: { order_id: o.id } }).then(function (r) {
+      var d = r.data || {};
+      if (r.error || d.error) { msg('Kaydedildi ✓ · e-posta gönderilemedi', false, true); return; }
+      if (d.sent) msg('Kaydedildi ✓ · müşteriye durum e-postası gönderildi 📧', true);
+      else if (d.reason === 'already-sent') msg('Kaydedildi ✓ · bu durum için e-posta zaten gönderilmiş', true);
+      else msg('Kaydedildi ✓ · e-posta atlandı (' + (d.reason || 'bilinmiyor') + ')', true);
     });
   }
 
@@ -450,6 +655,178 @@
     m.textContent = t;
     m.style.color = err ? '#b03030' : ok ? '#2f7d44' : '#8a877d';
   }
+
+  // ---------- toplu güncelleme (Excel/CSV + ekran görüntüsü OCR) ----------
+  // Ayrıştırma/sınıflandırma saf yardımcıları admin-bulk.js'te (window.EJBulk,
+  // tests/bulk.test.mjs ile test edilir). Bu blok yalnız UI + eşleştirme +
+  // admin JWT ile yazma işini yapar; OCR görüntüsü bulk-order-ocr EF'ine gider
+  // (o da yalnız AYIKLAR, siparişe yazmaz).
+  var bulkMode = 'file';
+  var bulkPlan = [];   // önizleme: {row, order, kind, patch, apply}
+  var XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+
+  function openBulk(){
+    el('bulkModal').classList.add('on');
+    setBulkMode('file');
+    el('bulkPrev').innerHTML = ''; el('bulkMsg').textContent = '';
+    el('bulkFoot').style.display = 'none';
+  }
+  function setBulkMode(m){
+    bulkMode = m;
+    el('tabFile').classList.toggle('on', m === 'file');
+    el('tabImg').classList.toggle('on', m === 'img');
+    el('bulkDrop').innerHTML = m === 'file'
+      ? 'Dosya seçmek için tıklayın<br><span style="font-size:12px">Excel/CSV — sipariş no, kargo firması, takip no, durum kolonları (başlık satırı sezgisel eşlenir)</span>'
+      : 'Görüntü seçmek için tıklayın<br><span style="font-size:12px">Kargo raporu / fiş ekran görüntüsü (PNG/JPG, en fazla ~4 MB) — satırlar OCR ile okunur</span>';
+  }
+  el('bulkBtn').addEventListener('click', openBulk);
+  el('bulkClose').addEventListener('click', function(){ el('bulkModal').classList.remove('on'); });
+  el('tabFile').addEventListener('click', function(){ setBulkMode('file'); });
+  el('tabImg').addEventListener('click', function(){ setBulkMode('img'); });
+  el('bulkDrop').addEventListener('click', function(){ el(bulkMode === 'file' ? 'bulkFile' : 'bulkImg').click(); });
+
+  // SheetJS tembel yükleme (yalnız Excel/CSV sekmesi kullanılırsa iner)
+  function loadXLSX(){
+    return new Promise(function(res, rej){
+      if (window.XLSX) return res();
+      var s = document.createElement('script');
+      s.src = XLSX_URL; s.onload = res;
+      s.onerror = function(){ rej(new Error('SheetJS (xlsx) CDN\'den yüklenemedi')); };
+      document.head.appendChild(s);
+    });
+  }
+
+  el('bulkFile').addEventListener('change', function(){
+    var f = this.files && this.files[0]; this.value = '';
+    if (!f) return;
+    el('bulkMsg').textContent = 'Dosya okunuyor…';
+    loadXLSX().then(function(){ return f.arrayBuffer(); }).then(function(buf){
+      var wb = window.XLSX.read(buf, { type: 'array' });
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      var matrix = window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
+      return buildPlan(window.EJBulk.parseMatrix(matrix));
+    }).catch(function(e){
+      el('bulkMsg').textContent = 'Dosya okunamadı: ' + ((e && e.message) || e);
+    });
+  });
+
+  el('bulkImg').addEventListener('change', function(){
+    var f = this.files && this.files[0]; this.value = '';
+    if (!f) return;
+    el('bulkMsg').textContent = 'Görüntü OCR ile okunuyor… (birkaç saniye sürebilir)';
+    var rd = new FileReader();
+    rd.onload = function(){
+      var b64 = String(rd.result).split(',')[1] || '';
+      sb.functions.invoke('bulk-order-ocr', { body: { image_base64: b64, mime: f.type || 'image/png' } }).then(function(r){
+        var d = r.data || {};
+        if (r.error || d.error) {
+          el('bulkMsg').textContent = 'OCR başarısız: ' + (d.error || (r.error && r.error.message) || 'bilinmeyen hata');
+          return;
+        }
+        buildPlan((d.rows || []).map(window.EJBulk.cleanRow));
+      });
+    };
+    rd.readAsDataURL(f);
+  });
+
+  // satır → sipariş eşleştirme: önce yüklü liste; liste sayfalı olduğundan
+  // eksik siparişler order_no/tracking_no ile HEDEFLİ sorguyla çekilir.
+  function buildPlan(rows){
+    var dd = window.EJBulk.dedupeRows(rows);
+    rows = dd.rows;
+    if (!rows.length) {
+      el('bulkMsg').textContent = 'Kullanılabilir satır bulunamadı (her satırda sipariş no ya da takip no olmalı).';
+      el('bulkPrev').innerHTML = ''; el('bulkFoot').style.display = 'none';
+      return;
+    }
+    var byNo = {}, byTrack = {};
+    orders.forEach(function(o){ byNo[o.order_no] = o; if (o.tracking_no) byTrack[o.tracking_no] = o; });
+    var missNos = rows.filter(function(r){ return r.order_no && window.EJBulk.isValidOrderNo(r.order_no) && !byNo[r.order_no]; })
+      .map(function(r){ return r.order_no; });
+    var missTracks = rows.filter(function(r){ return !r.order_no && r.tracking_no && !byTrack[r.tracking_no]; })
+      .map(function(r){ return r.tracking_no; });
+    var q1 = missNos.length ? sb.from('orders').select('*, order_items(*)').in('order_no', missNos) : Promise.resolve({ data: [] });
+    var q2 = missTracks.length ? sb.from('orders').select('*, order_items(*)').in('tracking_no', missTracks) : Promise.resolve({ data: [] });
+    Promise.all([q1, q2]).then(function(res){
+      (res[0].data || []).concat(res[1].data || []).forEach(function(o){
+        byNo[o.order_no] = o; if (o.tracking_no) byTrack[o.tracking_no] = o;
+      });
+      bulkPlan = rows.map(function(r){
+        var o = (r.order_no && byNo[r.order_no]) || (!r.order_no && r.tracking_no && byTrack[r.tracking_no]) || null;
+        var c = window.EJBulk.classifyRow(r, o);
+        return { row: r, order: o, kind: c.kind, patch: c.patch || null, apply: c.kind === 'update' };
+      });
+      renderPlan(dd.dupCount);
+    });
+  }
+
+  var BULK_KIND_T = { update: 'Güncellenecek', same: 'Zaten aynı', notfound: 'Bulunamadı', invalid: 'Geçersiz durum' };
+  function renderPlan(dupCount){
+    var counts = { update: 0, same: 0, notfound: 0, invalid: 0 };
+    bulkPlan.forEach(function(p){ counts[p.kind]++; });
+    el('bulkMsg').innerHTML =
+      bulkPlan.length + ' satır: <b style="color:#2f7d44">' + counts.update + ' güncellenecek</b>, ' +
+      counts.same + ' zaten aynı, ' + counts.notfound + ' bulunamadı, ' + counts.invalid + ' geçersiz durum' +
+      (dupCount ? ' · <span style="color:#8a5a1f">' + dupCount + ' mükerrer satır birleştirildi</span>' : '');
+    el('bulkPrev').innerHTML =
+      '<table><thead><tr><th></th><th>Sipariş</th><th>Firma</th><th>Takip No</th><th>Durum</th><th>Sonuç</th></tr></thead><tbody>' +
+      bulkPlan.map(function(p, i){
+        var chg = p.patch ? Object.keys(p.patch).map(function(k){
+          var old = k === 'status' ? (STATUS_T[p.order[k]] || p.order[k] || '—') : (p.order[k] || '—');
+          var nw  = k === 'status' ? (STATUS_T[p.patch[k]] || p.patch[k]) : p.patch[k];
+          return esc(String(old)) + ' → <b>' + esc(String(nw)) + '</b>';
+        }).join('<br>') : '';
+        return '<tr>' +
+          '<td>' + (p.kind === 'update' ? '<input type="checkbox" data-bi="' + i + '"' + (p.apply ? ' checked' : '') + '>' : '') + '</td>' +
+          '<td>' + esc(p.row.order_no || (p.order && p.order.order_no) || '—') + '</td>' +
+          '<td>' + esc(p.row.carrier || '—') + '</td>' +
+          '<td>' + esc(p.row.tracking_no || '—') + '</td>' +
+          '<td>' + esc(p.row.status ? (STATUS_T[p.row.status] || p.row.status) : (p.row.status_raw || '—')) + '</td>' +
+          '<td class="k-' + p.kind + '">' + BULK_KIND_T[p.kind] +
+            (chg ? '<div class="muted" style="font-size:12px">' + chg + '</div>' : '') + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>';
+    el('bulkFoot').style.display = counts.update ? 'flex' : 'none';
+    el('bulkStat').textContent = '';
+    Array.prototype.forEach.call(el('bulkPrev').querySelectorAll('input[data-bi]'), function(cb){
+      cb.addEventListener('change', function(){ bulkPlan[+cb.dataset.bi].apply = cb.checked; });
+    });
+  }
+
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+  // Uygula: SIRALI update döngüsü (admin JWT + RLS orders_admin_update).
+  // Durum değişen ve e-postası olan siparişler için order-status-email tek tek
+  // çağrılır (~400 ms arayla; çift gönderim koruması sunucuda).
+  el('bulkApply').addEventListener('click', function(){
+    var todo = bulkPlan.filter(function(p){ return p.kind === 'update' && p.apply; });
+    if (!todo.length) return;
+    var btn = el('bulkApply'); btn.classList.add('busy');
+    var done = 0, fail = 0, mails = 0;
+    (async function(){
+      for (var i = 0; i < todo.length; i++) {
+        var p = todo[i];
+        el('bulkStat').textContent = 'Uygulanıyor… ' + (i + 1) + '/' + todo.length;
+        try {
+          var r = await sb.from('orders').update(p.patch).eq('id', p.order.id).select('id,order_no,status,email').single();
+          if (r.error) { fail++; continue; }
+          done++;
+          if (p.patch.status && NOTIFY_STATUSES.indexOf(p.patch.status) !== -1 && r.data.email) {
+            try {
+              var er = await sb.functions.invoke('order-status-email', { body: { order_id: p.order.id } });
+              if (er.data && er.data.sent) mails++;
+            } catch (e) { /* fail-soft */ }
+            await sleep(400);
+          }
+        } catch (e) { fail++; }
+      }
+      btn.classList.remove('busy');
+      el('bulkStat').textContent = done + ' güncellendi' +
+        (mails ? ', ' + mails + ' e-posta gönderildi' : '') +
+        (fail ? ', ' + fail + ' HATA' : '') + '.';
+      loadOrders(true);
+    })();
+  });
 })();
 </script>
 </body>
