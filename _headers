@@ -1,0 +1,25 @@
+# Esse Jeffe — cache ve güvenlik header'ları
+# Netlify ve Cloudflare Pages bu dosyayı otomatik okur.
+# JS/CSS sürümleme ?v=N ile yapıldığı için 1 saatlik cache + SWR güvenli;
+# görseller içerik değişince dosya adı da değiştiğinden 1 yıl immutable.
+
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), payment=()
+
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/img/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.js
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+
+/*.css
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+
+/backend/*.js
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400

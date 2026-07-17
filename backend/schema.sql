@@ -490,11 +490,16 @@ create policy product_images_admin_write on product_images
   for all to authenticated using (is_admin()) with check (is_admin());
 
 -- Profil: kişi kendi profilini görür/günceller
+-- PERFORMANS (2026-07-17): auth.uid() → (select auth.uid()) — initplan'da bir
+-- kez hesaplanır, satır başına yeniden çağrılmaz (Supabase lint 0003).
+-- ASCII adlı eski kopyalar da düşürülür (canlı DB'de mükerrer kalmasın).
+drop policy if exists "kendi profilini gor" on profiles;
 drop policy if exists "kendi profilini gör" on profiles;
-create policy "kendi profilini gör" on profiles for select using (auth.uid() = id);
+create policy "kendi profilini gör" on profiles for select using ((select auth.uid()) = id);
+drop policy if exists "kendi profilini guncelle" on profiles;
 drop policy if exists "kendi profilini güncelle" on profiles;
 create policy "kendi profilini güncelle" on profiles for update
-  using (auth.uid() = id) with check (auth.uid() = id);
+  using ((select auth.uid()) = id) with check ((select auth.uid()) = id);
 
 -- GÜVENLİK — yetki yükseltmeyi engelle: üye kendi is_admin bayrağını
 -- değiştiremesin. Tablo seviyesi UPDATE grant'i kolon-bazlı REVOKE'u
@@ -507,7 +512,7 @@ grant update (full_name, phone) on profiles to authenticated;
 -- Adresler: kişi yalnızca kendi adreslerini yönetir
 drop policy if exists "kendi adreslerim" on addresses;
 create policy "kendi adreslerim" on addresses for all
-  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 
 -- Siparişler: GÜVENLİK — sipariş oluşturma client'a KAPALIDIR.
 -- Sipariş yalnızca Edge Function'lar üzerinden (service_role, RLS baypas)
@@ -516,13 +521,15 @@ create policy "kendi adreslerim" on addresses for all
 -- manipülasyonu (ör. "1 TL" COD siparişi) mümkün değildir.
 -- Üye yalnızca kendi siparişlerini geri okuyabilir.
 drop policy if exists "sipariş oluştur" on orders;                 -- eski açık insert politikasını kaldır
+drop policy if exists "kendi siparislerim" on orders;
 drop policy if exists "kendi siparişlerim" on orders;
-create policy "kendi siparişlerim" on orders for select using (auth.uid() = user_id);
+create policy "kendi siparişlerim" on orders for select using ((select auth.uid()) = user_id);
 
 drop policy if exists "sipariş kalemi ekle" on order_items;        -- eski açık insert politikasını kaldır
+drop policy if exists "kendi siparis kalemlerim" on order_items;
 drop policy if exists "kendi sipariş kalemlerim" on order_items;
 create policy "kendi sipariş kalemlerim" on order_items for select
-  using (exists (select 1 from orders o where o.id = order_id and o.user_id = auth.uid()));
+  using (exists (select 1 from orders o where o.id = order_id and o.user_id = (select auth.uid())));
 
 -- Admin sipariş yönetimi (panel: admin-siparisler.html).
 -- GÜVENLİK: admin YALNIZCA okuyup GÜNCELLEYEBİLİR (durum/kargo bilgisi);
@@ -1111,3 +1118,13 @@ $$;
 -- GÜVENLİK: sinyalleri yalnız service_role (Edge Function) sorgulayabilsin.
 revoke all on function public.codrisk_signals(text, int) from public, anon, authenticated;
 grant execute on function public.codrisk_signals(text, int) to service_role;
+
+-- ============================================================
+--  PERFORMANS (2026-07-17) — indekssiz foreign key'lere covering index
+--  (Supabase lint 0001: FK join/cascade'lerinde tam tablo taramasını önler)
+-- ============================================================
+create index if not exists idx_discount_codes_abandoned_cart on discount_codes(abandoned_cart_id);
+create index if not exists idx_discount_codes_order          on discount_codes(order_id);
+create index if not exists idx_loyalty_status_current_code   on loyalty_status(current_code_id);
+create index if not exists idx_newsletter_welcome_code       on newsletter_subscribers(welcome_code_id);
+create index if not exists idx_order_items_product           on order_items(product_id);
