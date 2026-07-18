@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sayfa Bulunamadı — Esse Jeffe</title>
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32.png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/ej.css?v=11">
+<style>
+.nf{min-height:calc(100vh - 200px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:80px 24px}
+.nf .code{font-family:var(--serif);font-weight:300;font-size:clamp(80px,14vw,160px);line-height:1;color:var(--ink);letter-spacing:.02em}
+.nf h1{font-family:var(--serif);font-weight:300;font-size:clamp(22px,3vw,32px);margin:18px 0 14px}
+.nf p{color:var(--soft);font-size:15px;line-height:1.75;max-width:440px;margin-bottom:36px}
+.nf .acts{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+.nf .acts a{display:inline-block;padding:14px 30px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;border:1px solid var(--ink);transition:background .3s,color .3s}
+.nf .acts a.solid{background:var(--ink);color:#fff}
+.nf .acts a.solid:hover{background:transparent;color:var(--ink)}
+.nf .acts a.ghost:hover{background:var(--ink);color:#fff}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-in">
+    <nav class="nav">
+      <a href="/index.html">Ana Sayfa</a>
+      <a href="/koleksiyon.html">Koleksiyon</a>
+      <a href="/atolye.html">Hakkımızda</a>
+      <a href="/iletisim.html">İletişim</a>
+    </nav>
+    <a class="brand" href="/index.html">ESSE JEFFE</a>
+    <div class="tools"></div>
+  </div>
+</header>
+
+<main class="nf">
+  <div class="code">404</div>
+  <h1>Aradığınız sayfa bulunamadı</h1>
+  <p>Sayfa taşınmış ya da hiç var olmamış olabilir. Koleksiyonumuza göz atabilir veya ana sayfadan devam edebilirsiniz.</p>
+  <div class="acts">
+    <a class="solid" href="/koleksiyon.html">Koleksiyonu Keşfet</a>
+    <a class="ghost" href="/index.html">Ana Sayfa</a>
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="footer-bottom">
+    <div class="fb-in">
+      <p>© 2026 Esse Jeffe. Tüm hakları saklıdır.</p>
+    </div>
+  </div>
+</footer>
+
+<script defer src="/backend/supabase-config.js"></script>
+<script defer src="/backend/ej-supabase.js?v=16"></script>
+<script defer src="/ej.js?v=12"></script>
+</body>
+</html>

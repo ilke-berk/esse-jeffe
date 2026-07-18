@@ -414,6 +414,56 @@
           '<span class="chk"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></span></button>';
       }).join('');
     }
+
+    applyProductSeo(p);
+  }
+
+  // SEO: ürün verisiyle meta description / canonical / OG etiketlerini ve
+  // schema.org Product JSON-LD'sini güncelle (zengin sonuç + AI asistanları)
+  function applyProductSeo(p) {
+    var url = 'https://essejeffe.com/urun.html?slug=' + encodeURIComponent(p.slug);
+    var desc = (p.description || (p.name + ' — özgün tasarım abiye.'));
+    if (desc.length > 140) desc = desc.slice(0, 137).replace(/\s+\S*$/, '') + '…';
+    desc += ' Ücretsiz kargo, kapıda ödeme.';
+    var images = (p.colors || []).map(function (c) { return c.image_url; }).filter(Boolean);
+
+    function setMeta(sel, val) {
+      var el = document.querySelector(sel);
+      if (el) el.setAttribute('content', val);
+    }
+    setMeta('meta[name="description"]', desc);
+    setMeta('meta[property="og:title"]', p.name + ' — Esse Jeffe');
+    setMeta('meta[property="og:description"]', desc);
+    setMeta('meta[property="og:url"]', url);
+    if (images[0]) setMeta('meta[property="og:image"]', images[0]);
+    var canon = document.querySelector('link[rel="canonical"]');
+    if (canon) canon.setAttribute('href', url);
+
+    var ld = {
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: p.name,
+      description: p.description || desc,
+      sku: p.slug,
+      image: images.length ? images : ['https://essejeffe.com/img/og-cover.jpg'],
+      brand: { '@type': 'Brand', name: 'Esse Jeffe' },
+      offers: {
+        '@type': 'Offer',
+        url: url,
+        priceCurrency: 'TRY',
+        price: p.price,
+        itemCondition: 'https://schema.org/NewCondition',
+        availability: 'https://schema.org/InStock'
+      }
+    };
+    var tag = document.getElementById('ej-product-ld');
+    if (!tag) {
+      tag = document.createElement('script');
+      tag.type = 'application/ld+json';
+      tag.id = 'ej-product-ld';
+      document.head.appendChild(tag);
+    }
+    tag.textContent = JSON.stringify(ld);
   }
 
   function renderProduct() {

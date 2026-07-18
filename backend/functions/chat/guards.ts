@@ -55,6 +55,56 @@ export const IADE_FIX_INSTRUCTION =
   "14 gün içinde beden/renk/model DEĞİŞİMİ yapıldığını nazikçe ve resmî bir dille açıkla. " +
   "Yanıtında iade, bedel/ücret ya da ödeme geri verme TAAHHÜDÜ bildiren hiçbir ifade bulunmasın.";
 
+// ============================================================
+// KUPON VAADİ FİLTRESİ (2026-07-18): Bot YENİ kupon oluşturamaz/tanımlayamaz;
+// prompt bunu yasaklar ama iade filtresindeki ders geçerli — LLM ısrarcı
+// müşteride "size özel kupon tanımlayayım" kalıbına kayabilir. Bu filtre
+// yalnız ÜRETME/VAAT kalıplarını yakalar; sistemdeki TANIMLI kuponu söylemek
+// ("size tanımlı bir kupon var", "kuponunuz uygulandı") YAKALANMAZ.
+// ============================================================
+
+export const KUPON_RE = new RegExp(
+  [
+    // "kupon/kod oluşturdum|oluşturuyorum|oluşturacağım|oluşturabilirim|oluşturayım"
+    // (olumsuz "oluşturamıyorum/oluşturamam" eşleşmez — ekler listede yok)
+    "(?:kupon|kod)u?\\w*\\s+oluştur(?:dum|uyorum|acağım|abilir|ayım|alım|urum)",
+    "indirim\\s+kodu\\w*\\s+(?:oluştur(?:dum|uyorum|acağım|abilir|ayım|urum)|üret|hazırla)",
+    // "kupon tanımladım|tanımlarım|tanımlayacağım|tanımlayabilirim|tanımlayayım"
+    // ("tanımlı" SIFATI eşleşmez: tanımla + kişi eki zorunlu)
+    "kupon\\w*\\s+tanımla(?:dım|rım|yacağım|yabilir|yayım|yalım)",
+    "(?:hesabınıza|adınıza|sizin\\s+için)\\s+(?:bir\\s+)?(?:kupon|kod|indirim)\\w*\\s+tanımla(?:dım|rım|yacağım|yabilir|nacak|yayım)",
+    // "size özel kupon/kod/indirim ..." (üretme vaadi kalıbı)
+    "size\\s+özel\\s+(?:bir\\s+)?(?:kupon|kod|indirim)",
+    // "kupon vereyim|verebilirim|veriyorum|göndereyim|gönderebilirim"
+    "kupon\\w*\\s+(?:ver(?:eyim|ebilir|iyorum|irim)|gönder(?:eyim|ebilir|iyorum|irim))",
+    // bot pazarlığı: "indirim yapabilirim|yapayım|yaparım|uygulayabilirim|uygulayayım"
+    "indirim\\s+(?:yap(?:abilirim|ayım|arım)|uygula(?:yabilirim|yayım|rım))",
+  ].join("|"),
+  "i",
+);
+
+export function hasKuponPromise(text: string): boolean {
+  if (!text) return false;
+  // iade filtresiyle aynı Türkçe İ/I normalizasyonu (iki harita da denenir)
+  return KUPON_RE.test(text.toLocaleLowerCase("tr")) || KUPON_RE.test(text.toLowerCase());
+}
+
+export const KUPON_FIX_INSTRUCTION =
+  "SİSTEM DÜZELTMESİ (müşteriye gösterilmez, buna yanıt olarak yalnız müşteri mesajını yanıtla): " +
+  "Bir önceki taslak yanıtında kupon oluşturma/tanımlama/indirim yapma VAADİ var; böyle bir yetkin YOK. " +
+  "Aynı soruya yeniden yanıt ver: yeni kupon oluşturamayacağını/tanımlayamayacağını nazikçe söyle; " +
+  "yalnız sistemde müşteriye TANIMLI kuponlar varsa onlar kullanılabilir (get_customer_benefits sonucu " +
+  "ya da sipariş özetindeki BİLGİ satırı dışında kupon adı ANMA). İndirim pazarlığı yapma.";
+
+// İkinci deneme de kupon vaadi içerirse kullanılacak sabit güvenli yanıt.
+export function kuponSafeText(): string {
+  return (
+    "Kupon tanımlama ya da özel indirim yapma yetkim bulunmuyor. Hesabınıza tanımlı bir kupon varsa " +
+    "sipariş oluştururken size otomatik olarak öneririm; dilerseniz siteye giriş yapıp benden " +
+    "kupon ve sadakat bakiyenizi sorgulamamı isteyebilirsiniz."
+  );
+}
+
 // İkinci deneme de yasak kalıp içerirse kullanılacak sabit güvenli yanıt.
 export function iadeSafeText(whatsapp: string): string {
   return (

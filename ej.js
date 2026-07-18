@@ -413,6 +413,10 @@ window.EJCart = (function () {
     else { items.push(item); }
     save(items);
     announce((item.name || 'Ürün') + ' sepete eklendi.');
+    if (window.ejTrack) window.ejTrack('add_to_cart', {
+      currency: 'TRY', value: (item.price || 0) * item.qty,
+      items: [{ item_id: item.slug || item.id, item_name: item.name, price: item.price, quantity: item.qty }]
+    });
     open();
   }
 

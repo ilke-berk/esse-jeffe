@@ -1,0 +1,13 @@
+{
+  "name": "Esse Jeffe",
+  "short_name": "Esse Jeffe",
+  "description": "Modern kadınlar için özgün tasarım abiye ve davet elbiseleri.",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#faf9f6",
+  "theme_color": "#14120f",
+  "icons": [
+    { "src": "/img/favicon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/img/favicon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

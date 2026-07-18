@@ -1,0 +1,31 @@
+# Esse Jeffe
+
+> Esse Jeffe, Türkiye merkezli bir abiye ve davet elbisesi markasıdır. Özgün
+> tasarım abiyeler sipariş üzerine hazırlanır; tüm Türkiye'ye ücretsiz kargo,
+> kapıda ödeme (nakit/kart) ve 14 gün içinde beden/renk/model değişim hakkı
+> sunulur. Fiyat aralığı yaklaşık 1.300–1.700 TL'dir.
+
+Öne çıkanlar: ücretsiz kargo (tutar sınırı yok), kapıda ödeme, aynı gün kargo
+(hafta içi belirli saate kadar), WhatsApp üzerinden birebir beden danışmanlığı
+(0850 255 12 37), 14 gün değişim garantisi.
+
+## Sayfalar
+
+- [Koleksiyon](https://essejeffe.com/koleksiyon.html): Tüm abiye modelleri — renk ve beden seçenekleriyle
+- [Beden Rehberi](https://essejeffe.com/beden-rehberi.html): Ölçü tablosu ve doğru beden seçimi
+- [Kargo & Değişim](https://essejeffe.com/hizmetler.html): Teslimat süreleri ve değişim koşulları
+- [SSS](https://essejeffe.com/sss.html): Kargo, kapıda ödeme, beden ve değişim hakkında sık sorulan sorular
+- [Ödeme Yöntemleri](https://essejeffe.com/odeme.html): Kapıda ödeme ve kartla ödeme seçenekleri
+- [Hakkımızda](https://essejeffe.com/atolye.html): Marka ve atölye hikâyesi
+- [İletişim](https://essejeffe.com/iletisim.html): WhatsApp, e-posta ve sosyal medya kanalları
+
+## Stil Rehberleri
+
+- [Düğüne Davetli Ne Giyilir?](https://essejeffe.com/dugune-davetli-ne-giyilir.html): Renk kuralları (beyaz/siyah/kırmızı), düğün saatine göre abiye seçimi
+- [Kına Gecesinde Ne Giyilir?](https://essejeffe.com/kina-gecesi-ne-giyilir.html): Davetli için renk ve kesim önerileri; kırmızı neden geline bırakılır
+- [Mezuniyet Elbisesi Nasıl Seçilir?](https://essejeffe.com/mezuniyet-elbisesi-secimi.html): Balo/tören için boy, renk ve zamanlama rehberi
+
+## Ürünler
+
+Ürün detayları `https://essejeffe.com/urun.html?slug=<model>` adresindedir.
+Modeller: pera, asos, efes, karya, likya, side, truva, milet, lidya.

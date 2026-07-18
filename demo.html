@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="img/favicon-192.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta name="robots" content="noindex,nofollow">
 <title>Esse Jeffe — Tasarım Önizleme (demo)</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -46,7 +52,7 @@ body[data-hero="center"] .hero-center{display:flex}
 /* V3 — centered */
 .hero-center{position:relative;height:88vh;min-height:600px;align-items:center;justify-content:center;text-align:center}
 .hero-center image-slot,.hero-center .ph,.hero-center img.hbg{position:absolute;inset:0;width:100%;height:100%}
-.hero-block img.hbg{object-fit:cover;object-position:50% 18%}
+.hero-block img.hbg{object-fit:cover;object-position:50% 62%}
 .hero-center .ph{background:repeating-linear-gradient(45deg,#d8d8d8 0 14px,#e4e4e4 14px 28px)}
 .hero-center::after{content:"";position:absolute;inset:0;background:rgba(20,18,15,calc(.42*var(--ov,1)))}
 .hero-center .cc{position:relative;z-index:2;max-width:760px;padding:0 24px}
@@ -60,8 +66,8 @@ body[data-hero="center"] .hero-center{display:flex}
   .hero-split .txt{order:1;padding:60px 24px}
   .hero-split image-slot,.hero-split .ph{min-height:440px}
   .hero-full .hero-cap{left:24px;right:24px}
-  /* dar ekran: geniş çift-model foto ortadaki boşluğa kırpılmasın → sol modele odakla */
-  .hero-block img.hbg{object-position:27% 42%}
+  /* dar ekran: kırmızı elbiseli model yatayda ~%48'de → ona odakla */
+  .hero-block img.hbg{object-position:48% 50%}
 }
 
 
@@ -266,7 +272,8 @@ body.scrolled .header{background:#FFFFFF}
     </div>
     <div><h4>Koleksiyon</h4><ul><li><a href="koleksiyon.html">Tüm Abiyeler</a></li><li><a href="koleksiyon.html">Yeni Gelenler</a></li><li><a href="koleksiyon.html">Çok Satanlar</a></li><li><a href="koleksiyon.html">İndirimdekiler</a></li></ul></div>
     <div><h4>Yardım</h4><ul><li><a href="siparis-takip.html">Sipariş Takibi</a></li><li><a href="hizmetler.html">Kargo &amp; Değişim</a></li><li><a href="degisim-iptal.html">Değişim &amp; İptal</a></li><li><a href="odeme.html">Ödeme Yöntemleri</a></li><li><a href="beden-rehberi.html">Beden Rehberi</a></li><li><a href="sss.html">SSS</a></li></ul></div>
-    <div><h4>Kurumsal</h4><ul><li><a href="kvkk.html">KVKK</a></li><li><a href="gizlilik.html">Gizlilik &amp; Güvenlik</a></li><li><a href="cerez-politikasi.html">Çerez Politikası</a><span class="soon">yakında</span></li><li><a href="mesafeli-satis.html">Mesafeli Satış Sözleşmesi</a></li><li><a href="on-bilgilendirme.html">Ön Bilgilendirme Formu</a><span class="soon">yakında</span></li></ul></div>
+    <div><h4>Stil Rehberi</h4><ul><li><a href="dugune-davetli-ne-giyilir.html">Düğün Davetlisi</a></li><li><a href="kina-gecesi-ne-giyilir.html">Kına Gecesi</a></li><li><a href="mezuniyet-elbisesi-secimi.html">Mezuniyet</a></li></ul></div>
+    <div><h4>Kurumsal</h4><ul><li><a href="kvkk.html">KVKK</a></li><li><a href="gizlilik.html">Gizlilik &amp; Güvenlik</a></li><li><a href="cerez-politikasi.html">Çerez Politikası</a></li><li><a href="mesafeli-satis.html">Mesafeli Satış Sözleşmesi</a></li><li><a href="on-bilgilendirme.html">Ön Bilgilendirme Formu</a></li></ul></div>
     <div><h4>İletişim</h4><ul><li><a href="mailto:info@essejeffe.com">info@essejeffe.com</a></li><li><a href="https://api.whatsapp.com/send?phone=%2B908502551237">WhatsApp: 0850 255 12 37</a></li><li><a href="https://www.instagram.com/esse_jeffe/">Instagram @esse_jeffe</a></li></ul></div>
   </div>
   <div class="footer-bottom">
@@ -305,7 +312,7 @@ body.scrolled .header{background:#FFFFFF}
 <!-- çerez onay bandı (KVKK) -->
 <div class="cookiebar" id="cookiebar" role="dialog" aria-label="Çerez bildirimi">
   <div class="cookiebar-in">
-    <p>Size daha iyi bir alışveriş deneyimi sunmak için çerezler kullanıyoruz. Sitemizi kullanmaya devam ederek <a href="cerez-politikasi.html">Çerez Politikası</a><span class="soon">yakında</span> ve <a href="gizlilik.html">Gizlilik Politikası</a>'nı kabul etmiş olursunuz.</p>
+    <p>Size daha iyi bir alışveriş deneyimi sunmak için çerezler kullanıyoruz. Sitemizi kullanmaya devam ederek <a href="cerez-politikasi.html">Çerez Politikası</a> ve <a href="gizlilik.html">Gizlilik Politikası</a>'nı kabul etmiş olursunuz.</p>
     <div class="cb-actions">
       <button type="button" class="cb-reject" id="cbReject">Reddet</button>
       <button type="button" class="cb-accept" id="cbAccept">Kabul Et</button>
@@ -479,6 +486,6 @@ ReactDOM.createRoot(document.getElementById('tweaks-root')).render(<HeroTweaks/>
 <script src="backend/supabase-config.js"></script>
 <script src="backend/ej-supabase.js?v=16"></script>
 <script src="ej.js?v=12"></script>
-<script src="ej-chat.js?v=19"></script>
+<script src="ej-chat.js?v=20"></script>
 </body>
 </html>

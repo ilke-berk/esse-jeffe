@@ -849,6 +849,9 @@ create table if not exists price_alerts (
   unique (product_id, email)                     -- ürün+e-posta başına tek alarm
 );
 create index if not exists idx_pa_due on price_alerts(created_at) where notified_at is null;
+-- 2026-07-18 chat: sipariş özeti başına "müşteriye tanımlı açık kupon" sorgusu
+create index if not exists idx_discount_codes_email_open
+  on discount_codes(email) where kind='single' and used_at is null and active;
 alter table price_alerts enable row level security;
 -- politika YOK → yalnız service_role erişir (abandoned_carts deseniyle aynı).
 
@@ -884,6 +887,12 @@ create table if not exists exchange_requests (
   status       text not null default 'new' check (status in ('new','in_progress','closed')),
   created_at   timestamptz not null default now()
 );
+-- 2026-07-18 — sohbetten uçtan uca değişim: yapılandırılmış yeni-varyant alanları
+-- (chat EF doldurur; form kanalı details serbest metniyle devam eder, nullable).
+alter table exchange_requests add column if not exists product_name text;        -- değişecek kalemin adı (order_items'tan kopya)
+alter table exchange_requests add column if not exists new_color    text;        -- istenen YENİ renk (katalog kanonik adı)
+alter table exchange_requests add column if not exists new_size    text;         -- istenen YENİ beden
+alter table exchange_requests add column if not exists updated_at  timestamptz;  -- sohbetten son güncelleme anı
 create index if not exists idx_exch_order on exchange_requests(order_id);
 create index if not exists idx_exch_status_time on exchange_requests(status, created_at desc);
 alter table exchange_requests enable row level security;

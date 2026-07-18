@@ -47,6 +47,8 @@ export interface OrderEmailData {
   postal_code?: string | null;
   note?: string | null;
   subtotal: number;
+  discount?: number; // uygulanan indirim (TL, tam sayı); yoksa 0
+  discount_code?: string | null;
   shipping_fee: number;
   total: number;
   items: OrderEmailItem[];
@@ -93,12 +95,19 @@ function itemRows(items: OrderEmailItem[]): string {
 
 function totalsBlock(o: OrderEmailData): string {
   const shipping = o.shipping_fee > 0 ? tl(o.shipping_fee) : "Ücretsiz";
+  const discountRow = (o.discount || 0) > 0
+    ? `<tr>
+        <td style="padding:4px 0;color:#3c4a3a;">İndirim${o.discount_code ? ` (${esc(o.discount_code)})` : ""}</td>
+        <td style="padding:4px 0;text-align:right;color:#3c4a3a;">−${tl(o.discount || 0)}</td>
+      </tr>`
+    : "";
   return `
     <table role="presentation" width="100%" style="border-collapse:collapse;margin-top:8px;">
       <tr>
         <td style="padding:4px 0;color:#666;">Ara toplam</td>
         <td style="padding:4px 0;text-align:right;color:#1a1a1a;">${tl(o.subtotal)}</td>
       </tr>
+      ${discountRow}
       <tr>
         <td style="padding:4px 0;color:#666;">Kargo</td>
         <td style="padding:4px 0;text-align:right;color:#1a1a1a;">${shipping}</td>

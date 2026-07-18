@@ -709,7 +709,42 @@
     if (!order) return;
     if (order.mode === 'summary') renderOrderCard(order);   // onay öncesi görsel özet kartı
     else if (order.mode === 'card') openCardPayment(order);
+    else if (order.mode === 'product') renderProductCard(order.product); // görsel ürün kartı
     // cod: AI yanıtı sipariş numarasını ve özeti zaten içeriyor
+  }
+
+  // sohbet içinde görsel ürün kartı (show_product_card): foto + fiyat + seçenekler + link
+  function renderProductCard(p) {
+    if (!p) return;
+    welcomeEl.classList.add('hide');
+    showTyping(false);
+    var v = [];
+    if (p.color) v.push(esc(p.color));
+    else if (p.colors && p.colors.length) v.push(p.colors.map(esc).join(' · '));
+    if (p.sizes && p.sizes.length) v.push('Beden: ' + p.sizes.map(esc).join('/'));
+    var priceHTML = (p.old_price && p.old_price > p.price)
+      ? '<s style="opacity:.55;font-weight:400;margin-right:6px">' + money(p.old_price) + '</s>' + money(p.price)
+      : money(p.price);
+    var thumb = p.image ? '<img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" loading="lazy">' : '';
+    var url = 'urun.html?slug=' + encodeURIComponent(p.slug || '');
+
+    var row = document.createElement('div');
+    row.className = 'ej-row bot ej-ordrow';
+    row.innerHTML =
+      '<span class="ej-name">' + esc(senderName()) + '</span>' +
+      '<div class="ej-order">' +
+        '<div class="ej-ord-items"><div class="ej-ord-item">' +
+          '<div class="ej-ord-thumb">' + thumb + '</div>' +
+          '<div class="ej-ord-meta"><div class="ej-ord-pname">' + esc(p.name) + '</div>' +
+            (p.model_desc ? '<div class="ej-ord-pvar">' + esc(p.model_desc) + '</div>' : '') +
+            (v.length ? '<div class="ej-ord-pvar">' + v.join(' · ') + '</div>' : '') +
+          '</div>' +
+          '<div class="ej-ord-price">' + priceHTML + '</div>' +
+        '</div></div>' +
+        '<a class="ej-ord-confirm" style="display:block;text-align:center;text-decoration:none" href="' + esc(url) + '" target="_blank" rel="noopener">Ürünü İncele</a>' +
+      '</div>';
+    bodyEl.insertBefore(row, typingEl);
+    scrollDown();
   }
 
   // para biçimi: 2400 → "2.400 TL"
@@ -764,6 +799,12 @@
             ? '<div class="ej-ord-line" style="opacity:.7"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg><span>Adres teyidi: ' + esc(order.geo.display) + '</span></div>'
             : '') +
         '</div>' +
+        ((order.discount || 0) > 0
+          ? '<div class="ej-ord-foot" style="border-bottom:0;padding-bottom:0">' +
+              '<span class="ej-ord-pay">İndirim' + (order.discount_code ? ' (' + esc(order.discount_code) + ')' : '') + '</span>' +
+              '<span class="ej-ord-total" style="color:#3c6a3a">−' + money(order.discount) + '</span>' +
+            '</div>'
+          : '') +
         '<div class="ej-ord-foot">' +
           '<span class="ej-ord-pay">' + payTxt + '</span>' +
           '<span class="ej-ord-total">Toplam<b>' + money(order.total) + '</b></span>' +

@@ -554,12 +554,21 @@
             '<button class="rf" data-exch-save="' + esc(x.id) + '">Kaydet</button>' +
           '</span>' +
         '</div>' +
+        // sohbet asistanının yapılandırılmış kaydı: değişecek ürün + istenen yeni varyant
+        ((x.product_name || x.new_color || x.new_size)
+          ? '<p style="font-size:13.5px;margin:8px 0 0;color:#333">' +
+              (x.product_name ? '<b>' + esc(x.product_name) + '</b> ' : '') +
+              (x.new_color ? '<span class="st" style="background:#e2ecf5;color:#1f5a8a">Yeni renk: ' + esc(x.new_color) + '</span> ' : '') +
+              (x.new_size ? '<span class="st" style="background:#e2f5e6;color:#1f7a3a">Yeni beden: ' + esc(x.new_size) + '</span>' : '') +
+            '</p>'
+          : '') +
         (x.details ? '<p style="font-size:13.5px;margin:8px 0 4px;color:#555;white-space:pre-wrap">' + esc(x.details) + '</p>' : '') +
+        (x.updated_at ? '<p class="muted" style="margin:4px 0 4px;font-size:12.5px">Güncellendi: ' + fmtDate(x.updated_at) + '</p>' : '') +
       '</div>';
     }).join('');
     return '<div class="sec-t">Değişim / İptal Talepleri</div>' +
       '<div class="upd">' + rows +
-      '<p class="muted" style="margin:10px 0 0">Talepler degisim-iptal.html formundan düşer; müşteri sipariş no + telefon doğrulamasından geçmiştir. İptal onayı için sipariş durumunu ayrıca "İptal" yapmayı unutmayın.</p></div>';
+      '<p class="muted" style="margin:10px 0 0">Talepler degisim-iptal.html formundan veya sohbet asistanından düşer; müşteri sipariş no + telefon doğrulamasından geçmiştir. İptal onayı için sipariş durumunu ayrıca "İptal" yapmayı unutmayın.</p></div>';
   }
 
   function wireExchButtons() {

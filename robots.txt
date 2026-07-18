@@ -1,0 +1,19 @@
+# Esse Jeffe — robots.txt
+# AI asistan tarayıcıları dahil tüm botlara açık; yalnız kişisel/yönetim
+# sayfaları kapalı. (AEO: GPTBot/ClaudeBot/Google-Extended engellenmez.)
+
+User-agent: *
+Disallow: /admin.html
+Disallow: /admin-urunler.html
+Disallow: /admin-siparisler.html
+Disallow: /admin-kuponlar.html
+Disallow: /hesap.html
+Disallow: /giris.html
+Disallow: /kayit.html
+Disallow: /sifre-yenile.html
+Disallow: /sepet.html
+Disallow: /favoriler.html
+Disallow: /demo.html
+Allow: /
+
+Sitemap: https://essejeffe.com/sitemap.xml

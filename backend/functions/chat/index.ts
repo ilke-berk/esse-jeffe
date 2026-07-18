@@ -31,7 +31,19 @@
 // ============================================================
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { sendOrderEmails } from "./order-email.ts";
-import { hasIadeCommitment, IADE_FIX_INSTRUCTION, iadeSafeText } from "./guards.ts";
+import {
+  hasIadeCommitment, hasKuponPromise, IADE_FIX_INSTRUCTION, iadeSafeText,
+  KUPON_FIX_INSTRUCTION, kuponSafeText,
+} from "./guards.ts";
+import { appendDetails, pickOrderItem, stockAvailability } from "./exchange.ts";
+import {
+  formatOrderList, formatOrderStatus,
+  type OpenExchangeInfo, type OrderInfoItem, type OrderInfoRow,
+} from "./order-info.ts";
+import {
+  claimDiscount, fmtCouponOffer, listPersonalCoupons, normCode,
+  releaseDiscount, setDiscountOrder, validateCouponReadOnly, type ClaimRef,
+} from "./discount.ts";
 
 const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
 const WHATSAPP = "0850 255 12 37";
@@ -225,12 +237,43 @@ SİPARİŞ ALMA (çok önemli):
 - Müşteri vazgeçerse ya da bilgisi katalogla uyuşmuyorsa nazikçe düzelt; fonksiyonu eksik/yanlış bilgiyle çağırma.
 
 DEĞİŞİM/İPTAL TALEBİ ALMA:
-- Müşteri mevcut siparişi için değişim ya da iptal istiyorsa talebi SEN başlatabilirsin: önce sipariş numarasını (EJ ile başlar) ve siparişte kullanılan telefon numarasını iste, nedenini öğren; sonra \`create_exchange_request\` fonksiyonunu çağır.
+- Müşteri mevcut siparişi için değişim ya da iptal istiyorsa talebi SEN tamamlarsın: önce sipariş numarasını (EJ ile başlar) ve siparişte kullanılan telefon numarasını iste, nedenini öğren; sonra \`create_exchange_request\` fonksiyonunu çağır.
+- DEĞİŞİMDE, fonksiyonu çağırmadan ÖNCE müşterinin istediği YENİ rengi ve/veya bedeni MUTLAKA sor ve new_color/new_size olarak geç — sistem yeni tercihin stokta olup olmadığını kontrol eder. Fonksiyon "siparişte birden çok ürün var" derse müşteriye hangi ürünü değiştireceğini sor ve product_name olarak geç.
 - Sipariş no + telefon İKİSİ birden eşleşmezse talep açılamaz; müşteriden iki bilgiyi de kontrol etmesini iste ama HANGİSİNİN yanlış olduğunu asla söyleme.
-- Fonksiyon "zaten açık talep var" derse müşteriyi rahatlat: ekibimiz mevcut talebiyle ilgileniyor.
+- Açık talep zaten varsa fonksiyon YENİ kayıt açmaz, mevcut talebi GÜNCELLER: müşteri açık talebine ek bilgi (yeni renk/beden, not) verirse fonksiyonu bu bilgiyle TEKRAR çağır — bilgi ancak böyle kayda geçer.
+- KESİN KURAL: Fonksiyon BAŞARILI dönmeden hiçbir bilginin kaydedildiğini/iletildiğini/işlendiğini SÖYLEME. "Ekibimize ilettim, siz onlara söylersiniz" gibi cümleler YASAK — müşterinin söylediği tercih ancak fonksiyon çağrısıyla kayda geçer.
+- BAŞARILI yanıtındaki kayıtlı yeni renk/bedeni onay cümlende müşteriye tekrar et (ör. "Mavi renk tercihiniz talebinize işlendi").
 - Değişimde gidiş-geliş kargo bedelinin müşteriye ait olduğunu hatırlat.
 
+SİPARİŞ SORGULAMA (get_order_status):
+- Müşteri siparişinin durumunu/kargosunu sorarsa \`get_order_status\` fonksiyonunu ÇAĞIRARAK cevapla. Girişli müşteride sipariş no sormadan parametresiz çağırıp siparişlerini listeleyebilirsin; girişli değilse sipariş numarasını (EJ ile başlar) ve siparişte kullanılan telefonu iste.
+- Sipariş no + telefon eşleşmezse hangisinin yanlış olduğunu ASLA söyleme; ikisini de kontrol ettir.
+- Durum, kargo firması ve takip numarasını YALNIZ fonksiyon yanıtından aktar; fonksiyon yanıtında olmayan durum/takip/tarih bilgisi UYDURMA. Teslim tarihi sözü verme ("1-3 iş günü" genel bilgisi dışında).
+
+KUPON & SADAKAT (KESİN KURALLAR):
+- Müşteri kuponunu/indirimini/sadakat bakiyesini sorarsa \`get_customer_benefits\` fonksiyonunu çağır (girişli müşteride çalışır; girişli değilse fonksiyonun söylediği yönlendirmeyi yap).
+- ASLA yeni kupon oluşturma, tanımlama, üretme ve VAADİNDE bulunma: "size kupon tanımlarım", "size özel indirim yapayım" gibi cümleler YASAK. Kupon tanımlama yetkin YOK.
+- YALNIZ fonksiyonların döndürdüğü kuponları söyleyebilirsin. Birden fazla kupon varsa HEPSİNİ listele ve SEÇİMİ MÜŞTERİYE bırak; onun yerine seçim yapma.
+- İndirim pazarlığı yapma; müşteri ısrar ederse nazikçe kupon tanımlama yetkinin olmadığını söyle.
+- SİPARİŞTE KUPON: Sipariş özeti fonksiyonu "BİLGİ: tanımlı kupon(lar) var" derse müşteriye kullanmak isteyip istemediğini sor; kabul ederse \`show_order_summary\`'yi seçilen \`coupon_code\` ile YENİDEN çağır. Müşteri kendi elindeki bir kampanya kodunu söylerse de coupon_code olarak geçebilirsin. Kupon tutarını/indirimi kendin HESAPLAMA — sistem hesaplar.
+
+ADRES DEĞİŞİKLİĞİ (update_delivery_address):
+- Müşteri mevcut siparişinin teslimat adresini/telefonunu değiştirmek isterse: sipariş no (EJ ile başlar) + siparişte kayıtlı telefonu iste, yeni bilgiyi al, fonksiyonu çağır.
+- YALNIZ kargoya verilmemiş siparişte çalışır; fonksiyon reddederse müşteriyi WhatsApp ${WHATSAPP} hattına yönlendir, "değiştirdim" DEME.
+
+HAVALE/EFT BİLDİRİMİ (notify_bank_transfer):
+- Havaleyle sipariş vermiş müşteri "ödemeyi yaptım" derse bildirimini bu fonksiyonla kayda geçir (sipariş no + telefon iste).
+- KESİN KURAL: Ödeme ancak EKİP banka hesabını kontrol edince onaylanır; "ödemeniz alındı/onaylandı" ASLA deme — "bildiriminizi ilettim, ekibimiz kontrol edip onaylayacak" de.
+
+FİYAT ALARMI (set_price_alert):
+- Müşteri "fiyatı düşerse haber verin" derse bu fonksiyonla alarm kur (girişli değilse e-postasını iste). Fiyatın düşeceğine dair söz VERME.
+- "Stok gelince haber ver" özelliğin YOK; stok alarmı sözü verme.
+
+ÜRÜN GÖRSELİ (show_product_card):
+- Müşteri bir ürünü/rengini görmek isterse \`show_product_card\` ile GÖRSEL kart göster (tek seferde TEK ürün). Kartı gösterince detayları metinde tekrarlama; kısa bir cümle yeter.
+
 OPERASYONEL NOTLAR:
+- GENEL KESİN KURAL: HERHANGİ bir fonksiyon BAŞARILI dönmeden hiçbir şeyin yapıldığını/kaydedildiğini/uygulandığını/iletildiğini SÖYLEME (sipariş, değişim talebi, kupon, sorgu sonucu dâhil). Bilgi ancak fonksiyon çağrısıyla kayda geçer/okunur.
 - Sohbette KAPIDA ÖDEME ve KART ile sipariş alabilirsin. Müşteri HAVALE/EFT ile ödemek isterse siparişi sohbette tamamlama; nazikçe sepet/ödeme sayfasından devam etmesini söyle.
 - Fiyat ve toplamı ASLA uydurma; sipariş tutarını sistem (create_order) hesaplar. Katalogdaki fiyatlar dışında rakam verme.
 - İADE KONUSUNDA KESİN KURAL: Müşteriye ASLA "iade hakkınız var", "gerekçesiz cayma hakkınız var", "ücret/bedel iadesi yapılır" DEME ve bedel iadesi TAAHHÜT ETME. Genel e-ticaret bilginden değil, yalnızca yukarıdaki CAYMA HAKKI & DEĞİŞİM POLİTİKASI maddesinden konuş: ürünler sipariş üzerine müşterinin tercihlerine göre hazırlandığından cayma hakkı istisnası kapsamındadır; müşteriye nazikçe ve resmî bir dille 14 gün içinde beden/renk/model DEĞİŞİMİ yapılabildiğini açıkla. Müşteri ısrar ederse veya ayıplı/kusurlu ürün söz konusuysa tartışmaya girme, WhatsApp hattına yönlendir.
@@ -240,7 +283,7 @@ OPERASYONEL NOTLAR:
     YANLIŞ: "Ürün size ulaştıktan sonra 14 gün içinde iade edebilirsiniz." (Bu cümleyi ASLA kurma.)
 
 SINIRLARIN (yalnız bunlarda temsilciye yönlendir):
-- Müşterinin MEVCUT/GEÇMİŞ bir siparişine özel şu konular: o siparişin durumu/kargo takip kodu ve ödemesinde yaşanan arıza. Bunları sen çözemezsin (sipariş kayıtlarını okuyamazsın). NOT: Sipariş durumunu müşteri sitedeki "Sipariş Takip" sayfasından (sipariş no + telefon ile) ya da üyeyse "Hesabım" sayfasından kendisi sorgulayabilir; bunu söyle. Değişim/iptal talebini ise SEN başlatabilirsin (create_exchange_request).
+- Ödemede yaşanan arıza/çifte çekim, para iadesi süreçleri, KVKK/hesap silme talepleri ve atölye randevusu: bunları sen çözemezsin. "Stok gelince haber ver" isteği için de yeteneğin YOK — stok alarmı sözü VERME (istersen fiyat alarmını değil, WhatsApp'ı öner). NOT: Sipariş durumu/kargo takibi ve değişim/iptal talebi ARTIK SENİN işin (get_order_status / create_exchange_request); bunlar için temsilciye yönlendirme.
 - Bu durumlarda ya da müşteri bir insanla görüşmek isterse: kibarca WhatsApp ${WHATSAPP} hattını (Pazartesi–Cumartesi 08:00–19:00) ver. Sohbette "Temsilciye Bağlan" butonu YOKTUR; müşteriye buton önerme, yalnızca WhatsApp'a yönlendir.
 - Bilgi tabanında VE katalogda olmayan bir şeyi uydurma; gerçekten emin değilsen temsilciye yönlendir. Ama yukarıdaki bilgi tabanındaki her şeyi (beden, kargo, ödeme, değişim, stok mantığı) BİZZAT ve net biçimde yanıtla — bunları temsilciye atma.`;
 }
@@ -277,6 +320,12 @@ const ORDER_TOOL = {
       address: { type: "string", description: "Açık adres" },
       postal_code: { type: "string", description: "Posta kodu (opsiyonel)" },
       note: { type: "string", description: "Sipariş notu (opsiyonel)" },
+      coupon_code: {
+        type: "string",
+        description:
+          "İndirim kuponu kodu (opsiyonel). YALNIZ sistemin BİLGİ satırında listelediği tanımlı kuponlardan " +
+          "ya da müşterinin KENDİSİNİN verdiği kampanya kodundan; müşteri açıkça istemeden DOLDURMA. Kupon uydurma.",
+      },
       payment_method: { type: "string", enum: ["cod", "card"], description: "cod = kapıda ödeme, card = kredi/banka kartı" },
     },
     required: ["items", "full_name", "phone", "city", "district", "address", "payment_method"],
@@ -303,6 +352,8 @@ const EXCHANGE_TOOL = {
   description:
     "Müşterinin MEVCUT bir siparişi için değişim veya iptal talebi kaydı açar. Önce sipariş numarasını (EJ ile başlar) " +
     "ve siparişte kullanılan telefon numarasını iste — İKİSİ de sistemde eşleşmek zorundadır. Nedeni de öğren. " +
+    "Değişimde müşterinin istediği YENİ rengi/bedeni de sor ve new_color/new_size olarak geç; sistem stok kontrolü yapar. " +
+    "Aynı sipariş için zaten açık talep varsa YENİ kayıt açılmaz, mevcut talep verilen yeni renk/beden/açıklama ile GÜNCELLENİR. " +
     "Müşteri talebi açıkça istemeden çağırma.",
   parameters: {
     type: "object",
@@ -311,9 +362,112 @@ const EXCHANGE_TOOL = {
       phone: { type: "string", description: "Siparişte kullanılan telefon numarası" },
       request_type: { type: "string", enum: ["exchange", "cancel"], description: "exchange = değişim, cancel = iptal" },
       reason: { type: "string", enum: ["beden", "renk", "model", "kusurlu", "vazgectim", "diger"], description: "Talep nedeni" },
-      details: { type: "string", description: "Ek açıklama (opsiyonel; örn. istenen yeni beden/renk)" },
+      product_name: { type: "string", description: "Değişecek ürünün adı — siparişte birden çok ürün varsa ZORUNLU (müşteriye sor)" },
+      new_color: { type: "string", description: "Müşterinin istediği YENİ renk (katalogdaki renklerden; renk değişiminde zorunlu)" },
+      new_size: { type: "string", description: "Müşterinin istediği YENİ beden (beden değişiminde zorunlu)" },
+      details: { type: "string", description: "Ek açıklama (opsiyonel)" },
     },
     required: ["order_no", "phone", "request_type", "reason"],
+  },
+};
+
+// ---- get_order_status: sipariş durumu / kargo takibi sorgulama (SALT OKUMA) ----
+const ORDER_STATUS_TOOL = {
+  name: "get_order_status",
+  description:
+    "Müşterinin MEVCUT bir siparişinin durumunu, kargo takip numarasını ve varsa açık değişim/iptal talebinin durumunu döner. " +
+    "Girişli müşteride parametresiz çağrılırsa son siparişlerini listeler. Girişli değilse sipariş numarası (EJ ile başlar) " +
+    "ve siparişte kullanılan telefon İKİSİ birden gereklidir. HİÇBİR ŞEY DEĞİŞTİRMEZ, sadece bilgi verir.",
+  parameters: {
+    type: "object",
+    properties: {
+      order_no: { type: "string", description: "Sipariş numarası (EJ ile başlar). Girişli müşteride opsiyonel." },
+      phone: { type: "string", description: "Siparişte kullanılan telefon (girişli olmayan müşteride zorunlu)" },
+    },
+    required: [],
+  },
+};
+
+// ---- get_customer_benefits: sadakat bakiyesi + tanımlı kuponlar (SALT OKUMA) ----
+const BENEFITS_TOOL = {
+  name: "get_customer_benefits",
+  description:
+    "GİRİŞLİ müşterinin sadakat indirimi bakiyesini ve hesabına tanımlı kullanılabilir kuponları listeler. " +
+    "Parametre almaz; kimlik sunucuda doğrulanır. Müşteri girişli değilse fonksiyon bunu söyler. " +
+    "SADECE bu fonksiyonun döndürdüğü kuponları söyleyebilirsin; asla kupon üretme/vaat etme.",
+  parameters: { type: "object", properties: {}, required: [] },
+};
+
+// ---- update_delivery_address: kargolanmamış siparişte adres/telefon değişikliği ----
+const ADDRESS_TOOL = {
+  name: "update_delivery_address",
+  description:
+    "MEVCUT bir siparişin teslimat adresini/telefonunu değiştirir. YALNIZ henüz kargoya verilmemiş siparişte çalışır " +
+    "(sistem kontrol eder). Sipariş numarası (EJ ile başlar) ve siparişte kullanılan telefon İKİSİ birden zorunludur. " +
+    "En az bir yeni bilgi (adres, il, ilçe, telefon, posta kodu) verilmelidir. Müşteri açıkça istemeden çağırma.",
+  parameters: {
+    type: "object",
+    properties: {
+      order_no: { type: "string", description: "Sipariş numarası (EJ ile başlar)" },
+      phone: { type: "string", description: "Siparişte KAYITLI telefon (doğrulama için)" },
+      new_address: { type: "string", description: "Yeni açık adres (mahalle, sokak, kapı no)" },
+      new_city: { type: "string", description: "Yeni il" },
+      new_district: { type: "string", description: "Yeni ilçe" },
+      new_phone: { type: "string", description: "Yeni telefon numarası" },
+      new_postal_code: { type: "string", description: "Yeni posta kodu" },
+    },
+    required: ["order_no", "phone"],
+  },
+};
+
+// ---- notify_bank_transfer: müşterinin havale/EFT ödeme bildirimi ----
+const TRANSFER_TOOL = {
+  name: "notify_bank_transfer",
+  description:
+    "Havale/EFT ile verilmiş MEVCUT bir sipariş için müşterinin 'ödemeyi yaptım' bildirimini kayda geçirir ve ekibe iletir. " +
+    "ÖDEMEYİ ONAYLAMAZ — onayı ekip, banka hesabını kontrol ederek yapar. Sipariş no + telefon zorunlu.",
+  parameters: {
+    type: "object",
+    properties: {
+      order_no: { type: "string", description: "Sipariş numarası (EJ ile başlar)" },
+      phone: { type: "string", description: "Siparişte kullanılan telefon" },
+      details: { type: "string", description: "Opsiyonel: gönderen ad, banka, tutar, saat gibi detaylar" },
+    },
+    required: ["order_no", "phone"],
+  },
+};
+
+// ---- set_price_alert: fiyat düşünce e-postayla haber ver ----
+const PRICE_ALERT_TOOL = {
+  name: "set_price_alert",
+  description:
+    "Katalogdaki bir ürün için fiyat alarmı kurar: fiyat düşerse müşteriye e-posta gider. Girişli müşteride e-posta " +
+    "hesabından alınır; girişli değilse email parametresi zorunludur (müşteriden iste). " +
+    "NOT: 'stok gelince haber ver' özelliği YOKTUR; bu fonksiyon yalnız FİYAT düşüşü içindir.",
+  parameters: {
+    type: "object",
+    properties: {
+      product_name: { type: "string", description: "Katalogdaki ürün adı" },
+      email: { type: "string", description: "Bildirim e-postası (girişli olmayan müşteride zorunlu)" },
+    },
+    required: ["product_name"],
+  },
+};
+
+// ---- show_product_card: sohbette görsel ürün kartı ----
+const PRODUCT_CARD_TOOL = {
+  name: "show_product_card",
+  description:
+    "Müşteri bir ürünü görmek istediğinde sohbette GÖRSEL ürün kartı gösterir (fotoğraf + fiyat + renk/beden seçenekleri). " +
+    "Renk verilirse o renge ait görsel kullanılır. Tek seferde TEK ürün gösterebilirsin. Kartı gösterince ürün " +
+    "detaylarını metinde TEKRARLAMA; kısa bir cümle yeter.",
+  parameters: {
+    type: "object",
+    properties: {
+      product_name: { type: "string", description: "Katalogdaki ürün adı" },
+      color: { type: "string", description: "Gösterilecek renk (opsiyonel; katalogdaki renklerden)" },
+    },
+    required: ["product_name"],
   },
 };
 
@@ -336,7 +490,10 @@ const EXCH_REASON_TR: Record<string, string> = {
 // karşılığı). FAIL-SOFT: e-posta hatası talebi asla bozmaz.
 async function notifyExchangeChat(
   order: { order_no: string; full_name: string; status: string },
-  exch: { type: string; reason: string; details: string | null },
+  exch: {
+    type: string; reason: string; details: string | null;
+    product_name?: string | null; new_color?: string | null; new_size?: string | null; updated?: boolean;
+  },
 ): Promise<void> {
   const apiKey = Deno.env.get("RESEND_API_KEY");
   const from = Deno.env.get("ORDER_FROM_EMAIL");
@@ -345,9 +502,13 @@ async function notifyExchangeChat(
   const esc = (s: unknown) =>
     String(s ?? "").replace(/[&<>"']/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]!);
+  const head = exch.updated ? "Güncellenen" : "Yeni";
   const html =
-    `<p><b>Yeni ${EXCH_TYPE_TR[exch.type] || exch.type} talebi (sohbet asistanı) — ${esc(order.order_no)}</b></p>` +
+    `<p><b>${head} ${EXCH_TYPE_TR[exch.type] || exch.type} talebi (sohbet asistanı) — ${esc(order.order_no)}</b></p>` +
     `<p>Müşteri: ${esc(order.full_name)}<br>Neden: ${esc(EXCH_REASON_TR[exch.reason] || exch.reason)}<br>` +
+    (exch.product_name ? `Ürün: ${esc(exch.product_name)}<br>` : "") +
+    (exch.new_color ? `Yeni renk: ${esc(exch.new_color)}<br>` : "") +
+    (exch.new_size ? `Yeni beden: ${esc(exch.new_size)}<br>` : "") +
     `Sipariş durumu: ${esc(order.status)}</p>` +
     (exch.details ? `<p style="white-space:pre-line"><b>Açıklama:</b> ${esc(exch.details)}</p>` : "") +
     `<p style="color:#888;font-size:13px">Talebi admin panelindeki Siparişler ekranından yönetebilirsiniz.</p>`;
@@ -357,7 +518,7 @@ async function notifyExchangeChat(
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         from, to: [notify],
-        subject: `${EXCH_TYPE_TR[exch.type] || exch.type} talebi — ${order.order_no} (sohbet)`,
+        subject: `${EXCH_TYPE_TR[exch.type] || exch.type} talebi — ${order.order_no} (sohbet${exch.updated ? ", güncelleme" : ""})`,
         html,
       }),
     });
@@ -367,6 +528,31 @@ async function notifyExchangeChat(
   }
 }
 
+// İşletmeye genel bildirim e-postası (notifyExchangeChat'in genelleştirilmişi).
+// FAIL-SOFT: e-posta hatası işlemi asla bozmaz.
+async function notifyAdminChat(subject: string, html: string): Promise<void> {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  const from = Deno.env.get("ORDER_FROM_EMAIL");
+  const notify = String(Deno.env.get("ORDER_NOTIFY_EMAIL") || "").trim();
+  if (!apiKey || !from || !notify) return;
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [notify], subject, html }),
+    });
+    if (!res.ok) chatLog("warn", "admin_notify_failed", { subject, status: res.status });
+  } catch (e) {
+    chatLog("warn", "admin_notify_failed", { subject, detail: e instanceof Error ? e.message : String(e).slice(0, 200) });
+  }
+}
+
+// HTML kaçışı (notifyExchangeChat içindeki esc'nin modül düzeyi kopyası)
+function escHtml(s: unknown): string {
+  return String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]!);
+}
+
 // create_exchange_request'i çalıştır — dönen message AI'a (functionResponse) gider
 async function handleCreateExchange(input: any, ip: string): Promise<OrderResult> {
   const orderNoIn = String(input?.order_no || "").trim().toUpperCase();
@@ -374,8 +560,19 @@ async function handleCreateExchange(input: any, ip: string): Promise<OrderResult
   const type = String(input?.request_type || "").trim();
   const reason = String(input?.reason || "").trim();
   const details = String(input?.details || "").trim().slice(0, 2000) || null;
+  const newColorIn = String(input?.new_color || "").trim();
+  const newSizeIn = String(input?.new_size || "").trim();
+  const productNameIn = String(input?.product_name || "").trim();
+  // Format kontrolleri rate sayacından ÖNCE: sayaç order_no/phone enumeration
+  // savunması içindir, DB'ye dokunmayan parametre hataları kota yakmamalı.
   if (!EXCH_TYPE_TR[type]) return { message: "HATA: Talep türü belirsiz (değişim mi iptal mi?). Müşteriye sor." };
   if (!EXCH_REASON_TR[reason]) return { message: "HATA: Geçerli bir neden gerekli. Müşteriden nedeni öğren (beden/renk/model/kusurlu/vazgeçtim/diğer)." };
+  if (type === "exchange" && reason === "renk" && !newColorIn) {
+    return { message: "HATA: Renk değişimi için müşterinin istediği YENİ rengi öğren ve new_color olarak geç." };
+  }
+  if (type === "exchange" && reason === "beden" && !newSizeIn) {
+    return { message: "HATA: Beden değişimi için müşterinin istediği YENİ bedeni öğren ve new_size olarak geç." };
+  }
   if (phone.length < 10) return { message: "HATA: Telefon numarası eksik görünüyor. Müşteriden siparişte kullandığı telefonu iste." };
   if (!chatIsValidOrderNo(orderNoIn)) {
     return { message: "HATA: Sipariş no veya telefon eşleşmedi. Müşteriden iki bilgiyi de kontrol etmesini iste; hangisinin yanlış olduğunu SÖYLEME." };
@@ -409,32 +606,517 @@ async function handleCreateExchange(input: any, ip: string): Promise<OrderResult
     return { message: "HATA: Sipariş no veya telefon eşleşmedi. Müşteriden iki bilgiyi de kontrol etmesini iste; hangisinin yanlış olduğunu SÖYLEME." };
   }
 
-  // aynı türde açık talep varsa mükerrer açma
+  // ---- Değişimde hedef ürün + yeni varyant doğrulama + stok kontrolü ----
+  // Stok SADECE kontrol edilir, rezervasyon yapılmaz (ürün fiziksel geri
+  // gelmeden stok kilitlemek riskli; rezervasyonu ekip yapar).
+  const lc = (s: unknown) => String(s ?? "").replace(/\s+/g, " ").trim().toLocaleLowerCase("tr");
+  let itemName: string | null = null;
+  let newColor: string | null = null;
+  let newSize: string | null = null;
+  let stockChecked = false;
+  if (type === "exchange") {
+    const { data: items, error: itErr } = await admin.from("order_items")
+      .select("product_id, product_name, color, size").eq("order_id", order.id);
+    if (itErr) {
+      chatLog("error", "exchange_items_read_error", { detail: itErr.message });
+      return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini öner." };
+    }
+    const picked = pickOrderItem((items || []) as any, productNameIn);
+    if (picked.error === "ambiguous") {
+      return {
+        message:
+          `HATA: Bu siparişte birden çok ürün var: ${(picked.itemNames || []).join(", ")}. ` +
+          `Müşteriye hangi ürünü değiştirmek istediğini sor ve product_name olarak geç.`,
+      };
+    }
+    const item = picked.item || null; // kalem kaydı olmayan eski sipariş: doğrulamasız devam (talebi bloke etme)
+    if (item) {
+      itemName = item.product_name;
+      await loadCatalog();
+      const p = item.product_id ? (catalogRows.find((x) => x.id === item.product_id) || null) : null;
+      if (p) {
+        const c = canonChatVariant(newColorIn, p.colors);
+        if (c === null) {
+          return { message: `HATA: "${p.name}" için "${newColorIn}" diye bir renk yok. Mevcut renkler: ${p.colors.join(", ") || "(tek renk)"}. Müşteriden geçerli bir renk al.` };
+        }
+        const s = canonChatVariant(newSizeIn, p.sizes || []);
+        if (s === null) {
+          return { message: `HATA: "${p.name}" için "${newSizeIn}" bedeni yok. Mevcut bedenler: ${(p.sizes || []).join(", ") || "(standart)"}. Müşteriden geçerli bir beden al.` };
+        }
+        newColor = c || null;
+        newSize = s || null;
+        const targetColor = newColor || String(item.color || "");
+        const targetSize = newSize || String(item.size || "");
+        if ((newColor || newSize) && lc(targetColor) === lc(item.color) && lc(targetSize) === lc(item.size)) {
+          return { message: `HATA: İstenen varyant (${[targetColor, targetSize].filter(Boolean).join(" / ")}) siparişteki mevcut varyantla aynı. Müşteriden gerçekten hangi rengi/bedeni istediğini teyit et.` };
+        }
+        const { data: stockRows, error: stErr } = await admin.from("product_stock")
+          .select("color,size,stock,track").eq("product_id", item.product_id);
+        if (stErr) {
+          // fail-soft: stok okunamazsa talebi bloke etme, ekip manuel doğrular
+          chatLog("warn", "exchange_stock_read_error", { detail: stErr.message });
+        } else {
+          const avail = stockAvailability((stockRows || []) as any, targetColor, targetSize);
+          if (!avail.ok) {
+            return {
+              message:
+                `HATA: "${p.name}" ürününün ${[targetColor, targetSize].filter(Boolean).join(" / ")} varyantı şu an stokta yok; talebi bu varyantla AÇMA. ` +
+                (avail.alternatives.length
+                  ? `Stokta olan seçenekler: ${avail.alternatives.join(", ")}. Müşteriye nazikçe bu alternatifleri öner.`
+                  : `Müşteriye nazikçe başka bir ürün/varyant öner.`),
+            };
+          }
+          stockChecked = true;
+        }
+      } else {
+        // ürün katalogdan kalkmış (pasif/silinmiş): canon+stok atlanır, ham
+        // değer kaydedilir — talebi bloke etmek müşteriyi mağdur eder.
+        newColor = newColorIn || null;
+        newSize = newSizeIn || null;
+        chatLog("warn", "exchange_product_not_in_catalog", { order_no: order.order_no, product: itemName });
+      }
+    }
+  }
+  const prefTxt = [newColor ? `Renk: ${newColor}` : "", newSize ? `Beden: ${newSize}` : ""].filter(Boolean).join(", ");
+
+  // aynı türde açık talep varsa mükerrer açmak yerine GÜNCELLE (müşterinin
+  // sonradan verdiği yeni renk/beden/not kaybolmasın — 2026-07-17 vakası)
   const { data: existing, error: exErr } = await admin.from("exchange_requests")
-    .select("id").eq("order_id", order.id).eq("request_type", type)
+    .select("id, details, new_color, new_size").eq("order_id", order.id).eq("request_type", type)
     .neq("status", "closed").limit(1).maybeSingle();
   if (exErr) {
     chatLog("error", "exchange_dup_check_error", { detail: exErr.message });
     return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini öner." };
   }
   if (existing) {
-    return { message: `BİLGİ: Bu sipariş için zaten açık bir ${EXCH_TYPE_TR[type]} talebi var. Müşteriye ekibimizin mevcut talebiyle ilgilendiğini, yeni kayıt açmaya gerek olmadığını nazikçe söyle.` };
+    if (!newColor && !newSize && !details) {
+      return { message: `BİLGİ: Bu sipariş için zaten açık bir ${EXCH_TYPE_TR[type]} talebi var. Müşteriye ekibimizin mevcut talebiyle ilgilendiğini, yeni kayıt açmaya gerek olmadığını nazikçe söyle.` };
+    }
+    const note = [prefTxt ? `yeni tercih — ${prefTxt}` : "", details || ""].filter(Boolean).join("; ");
+    const mergedDetails = appendDetails(existing.details, note, new Date().toISOString().slice(0, 10));
+    const { error: upErr } = await admin.from("exchange_requests").update({
+      reason,
+      details: mergedDetails || null,
+      updated_at: new Date().toISOString(),
+      ...(itemName ? { product_name: itemName } : {}),
+      ...(newColor ? { new_color: newColor } : {}),
+      ...(newSize ? { new_size: newSize } : {}),
+    }).eq("id", existing.id);
+    if (upErr) {
+      chatLog("error", "exchange_update_error", { detail: upErr.message });
+      return { message: `HATA: Talep güncellenemedi (sistem hatası). Müşteriye "Değişim & İptal" sayfasını ya da WhatsApp ${WHATSAPP} hattını öner.` };
+    }
+    const effColor = newColor || existing.new_color || null;
+    const effSize = newSize || existing.new_size || null;
+    const effTxt = [effColor ? `Renk: ${effColor}` : "", effSize ? `Beden: ${effSize}` : ""].filter(Boolean).join(", ");
+    await notifyExchangeChat(order, { type, reason, details: mergedDetails || null, product_name: itemName, new_color: effColor, new_size: effSize, updated: true });
+    chatLog("info", "exchange_updated_chat", { order_no: order.order_no, type });
+    return {
+      message:
+        `BAŞARILI (GÜNCELLEME): ${order.order_no} için mevcut açık ${EXCH_TYPE_TR[type]} talebi güncellendi ve kayda geçti.` +
+        (effTxt ? ` Kayıtlı yeni tercih — ${effTxt}${stockChecked ? " (stok kontrol edildi: mevcut)" : ""}.` : "") +
+        ` Müşteriye bu bilgilerin talebine İŞLENDİĞİNİ net söyle; ekibimiz en kısa sürede (Pazartesi–Cumartesi 08:00–19:00) dönüş yapacak.`,
+    };
   }
 
   const { error: insErr } = await admin.from("exchange_requests").insert({
     order_id: order.id, order_no: order.order_no, request_type: type, reason, details,
+    product_name: itemName, new_color: newColor, new_size: newSize,
   });
   if (insErr) {
     chatLog("error", "exchange_insert_error", { detail: insErr.message });
     return { message: `HATA: Talep kaydedilemedi (sistem hatası). Müşteriye "Değişim & İptal" sayfasını ya da WhatsApp ${WHATSAPP} hattını öner.` };
   }
 
-  await notifyExchangeChat(order, { type, reason, details });
+  await notifyExchangeChat(order, { type, reason, details, product_name: itemName, new_color: newColor, new_size: newSize });
   chatLog("info", "exchange_saved_chat", { order_no: order.order_no, type });
   return {
     message:
-      `BAŞARILI: ${order.order_no} numaralı sipariş için ${EXCH_TYPE_TR[type]} talebi (${EXCH_REASON_TR[reason]}) kaydedildi. ` +
-      `Müşteriye talebinin alındığını, ekibimizin en kısa sürede (Pazartesi–Cumartesi 08:00–19:00) dönüş yapacağını sıcak bir dille söyle.`,
+      `BAŞARILI: ${order.order_no} numaralı sipariş için ${EXCH_TYPE_TR[type]} talebi (${EXCH_REASON_TR[reason]}) kaydedildi.` +
+      (prefTxt ? ` Kayıtlı yeni tercih — ${prefTxt}${stockChecked ? " (stok kontrol edildi: mevcut)" : ""}.` : "") +
+      ` Müşteriye talebinin ve tercihlerinin kayda geçtiğini, ekibimizin en kısa sürede (Pazartesi–Cumartesi 08:00–19:00) dönüş yapacağını sıcak bir dille söyle.`,
+  };
+}
+
+// ---- girişli kullanıcı → hesap e-postası (kupon/sadakat kimliği) ----
+// profiles'ta email KOLONU YOK; tek kaynak auth.users. Kupon e-posta bağı
+// claim'de sunucuda doğrulandığından buradaki e-posta da SUNUCU kaynaklıdır
+// (client beyanı asla kullanılmaz). 5 dk modül cache (savedCustomerCache deseni).
+const userEmailCache = new Map<string, { at: number; email: string | null }>();
+async function resolveUserEmail(userId: string): Promise<string | null> {
+  const hit = userEmailCache.get(userId);
+  if (hit && Date.now() - hit.at < 300_000) return hit.email;
+  let email: string | null = null;
+  try {
+    const { data } = await admin.auth.admin.getUserById(userId);
+    email = String(data?.user?.email || "").trim().toLowerCase() || null;
+  } catch (_e) { /* fail-soft: e-posta çözülemezse kupon/sadakat adımı atlanır */ }
+  userEmailCache.set(userId, { at: Date.now(), email });
+  return email;
+}
+
+// ---- get_order_status'u çalıştır (SALT OKUMA) ----
+// track-order EF'nin chat karşılığı: sipariş no + telefon İKİSİ eşleşmeli
+// (girişli kullanıcı KENDİ siparişinde telefonsuz sorgular), belirsiz hata
+// (enumeration savunması), rate limit track-order ile ORTAK sayaç (15/10dk).
+async function handleOrderStatus(input: any, conv: any, ip: string): Promise<OrderResult> {
+  const orderNoIn = String(input?.order_no || "").trim().toUpperCase();
+  const phone = chatNormPhone(input?.phone);
+  const uid = conv?.user_id || null;
+
+  // Girişli + sipariş no verilmemiş → kendi siparişlerini listele (rate'e takılmaz;
+  // kimlik JWT ile sunucuda doğrulanmış, enumeration söz konusu değil).
+  if (uid && !orderNoIn) {
+    const { data, error } = await admin.from("orders")
+      .select("order_no, status, payment_method, payment_status, total, carrier, tracking_no, created_at")
+      .eq("user_id", uid).order("created_at", { ascending: false }).limit(5);
+    if (error) {
+      chatLog("error", "order_status_list_error", { detail: error.message });
+      return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini öner." };
+    }
+    return { message: formatOrderList((data || []) as OrderInfoRow[]) };
+  }
+
+  if (!chatIsValidOrderNo(orderNoIn)) {
+    return {
+      message: uid
+        ? "HATA: Geçerli bir sipariş numarası gerekli (EJ ile başlar). Numara yoksa fonksiyonu parametresiz çağırıp müşterinin siparişlerini listeleyebilirsin."
+        : "HATA: Sipariş no veya telefon eşleşmedi. Müşteriden sipariş numarasını (EJ ile başlar) ve siparişte kullandığı telefonu iste; hangisinin yanlış olduğunu SÖYLEME.",
+    };
+  }
+
+  const { data: order, error: oErr } = await admin.from("orders")
+    .select("id, user_id, order_no, phone, status, payment_method, payment_status, total, carrier, tracking_no, created_at")
+    .eq("order_no", orderNoIn).maybeSingle();
+  if (oErr) {
+    chatLog("error", "order_status_read_error", { detail: oErr.message });
+    return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini öner." };
+  }
+
+  // Sahiplik: girişli kullanıcı kendi siparişini telefonsuz görür; değilse
+  // (misafir ya da başkasının siparişi) telefon + rate limit yolu zorunlu.
+  const owns = !!(uid && order && order.user_id === uid);
+  if (!owns) {
+    if (phone.length < 10) {
+      return { message: "HATA: Bu sorgu için siparişte kullanılan telefon numarası da gerekli. Müşteriden iste." };
+    }
+    // IP hız sınırı — track-order EF ile ORTAK order_track_rate_limit (15/10 dk;
+    // başarılı/başarısız her deneme sayılır → order_no/telefon tahmini yavaşlar).
+    const cutoff = new Date(Date.now() - 10 * 60000).toISOString();
+    const { count: recent, error: rlErr } = await admin.from("order_track_rate_limit")
+      .select("id", { count: "exact", head: true })
+      .eq("ip", ip).gte("created_at", cutoff);
+    if (rlErr) {
+      chatLog("error", "order_status_rate_db_error", { detail: rlErr.message });
+      return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini ya da sitedeki Sipariş Takip sayfasını öner." };
+    }
+    if ((recent ?? 0) >= 15) {
+      chatLog("warn", "order_status_rate_limited", { ip });
+      return { message: "HATA: Çok fazla sorgu yapıldı (hız sınırı). Müşteriye biraz sonra tekrar denemesini öner." };
+    }
+    await admin.from("order_track_rate_limit").insert({ ip });
+    if (!order || chatNormPhone(order.phone) !== phone) {
+      // enumeration savunması: hangisinin yanlış olduğu sızdırılmaz
+      return { message: "HATA: Sipariş no veya telefon eşleşmedi. Müşteriden iki bilgiyi de kontrol etmesini iste; hangisinin yanlış olduğunu SÖYLEME." };
+    }
+  }
+  if (!order) {
+    return { message: "HATA: Sipariş no veya telefon eşleşmedi. Müşteriden iki bilgiyi de kontrol etmesini iste; hangisinin yanlış olduğunu SÖYLEME." };
+  }
+
+  const [{ data: items }, { data: exch }] = await Promise.all([
+    admin.from("order_items").select("product_name, color, size, qty").eq("order_id", order.id),
+    admin.from("exchange_requests")
+      .select("request_type, status, new_color, new_size")
+      .eq("order_id", order.id).neq("status", "closed")
+      .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  chatLog("info", "order_status_ok", { order_no: order.order_no, owns });
+  return {
+    message: formatOrderStatus(
+      order as OrderInfoRow,
+      (items || []) as OrderInfoItem[],
+      (exch || null) as OpenExchangeInfo,
+    ),
+  };
+}
+
+// ---- get_customer_benefits'i çalıştır (SALT OKUMA, yalnız girişli) ----
+async function handleBenefits(conv: any): Promise<OrderResult> {
+  if (!conv?.user_id) {
+    return {
+      message:
+        "BİLGİ: Müşteri siteye girişli değil; sadakat/kupon bilgisi görüntülenemiyor. Müşteriye siteye giriş yaparsa " +
+        "bakiyesini görebileceğini, sipariş verirken e-postasıyla devam ederse tanımlı kuponu varsa sistemin otomatik " +
+        "önereceğini söyle. ASLA kupon vaadinde bulunma, yeni kupon üretme.",
+    };
+  }
+  const email = await resolveUserEmail(conv.user_id);
+  if (!email) {
+    return { message: "HATA: Hesap bilgisine şu an ulaşılamadı. Müşteriye biraz sonra tekrar denemesini öner." };
+  }
+  const [{ data: loyalty }, coupons] = await Promise.all([
+    admin.from("loyalty_status").select("percent, orders_count, current_code_id").eq("email", email).maybeSingle(),
+    listPersonalCoupons(admin, email),
+  ]);
+  const parts: string[] = [];
+  if (loyalty && Number(loyalty.percent) > 0) {
+    parts.push(`Sadakat programı: ${loyalty.orders_count} siparişten birikmiş %${loyalty.percent} indirim hakkı var (SADAKAT kuponu olarak tanımlıdır; kupon listesine bak).`);
+  } else {
+    parts.push("Sadakat programında henüz birikmiş indirim yok (ödemesi alınan her sipariş %5 kazandırır).");
+  }
+  parts.push(coupons.length
+    ? `Tanımlı kullanılabilir kupon(lar): ${fmtCouponOffer(coupons)}.`
+    : "Şu an hesaba tanımlı kullanılabilir kupon yok.");
+  chatLog("info", "benefits_ok", { has_coupons: coupons.length > 0 });
+  return {
+    message:
+      `BAŞARILI: ${parts.join(" ")} KURAL: Müşteriye YALNIZ bu listedekileri söyle; listede olmayan kupon/indirim SÖYLEME, ` +
+      `yeni kupon üretme/vaat etme, indirim pazarlığı yapma. Kupon yoksa nazikçe olmadığını söyle.`,
+  };
+}
+
+// ---- adres/havale tool'larının ortak sipariş doğrulaması ----
+// Sipariş no + telefon İKİSİ eşleşmeli; her deneme form_rate_limit
+// kind='order_update' sayacına yazılır (5/60dk — adres + havale ORTAK bütçe;
+// iki tool da order_no/telefon tahminine açık olduğundan toplam sınırlanır).
+async function verifyOrderForUpdate(
+  orderNoIn: string,
+  phone: string,
+  ip: string,
+  select: string,
+): Promise<{ order?: any; message?: string }> {
+  const MISMATCH = "HATA: Sipariş no veya telefon eşleşmedi. Müşteriden iki bilgiyi de kontrol etmesini iste; hangisinin yanlış olduğunu SÖYLEME.";
+  if (phone.length < 10) return { message: "HATA: Siparişte kullanılan telefon numarası gerekli. Müşteriden iste." };
+  if (!chatIsValidOrderNo(orderNoIn)) return { message: MISMATCH };
+
+  const cutoff = new Date(Date.now() - 60 * 60000).toISOString();
+  const { count: recent, error: rlErr } = await admin.from("form_rate_limit")
+    .select("id", { count: "exact", head: true })
+    .eq("ip", ip).eq("kind", "order_update").gte("created_at", cutoff);
+  if (rlErr) {
+    chatLog("error", "order_update_rate_db_error", { detail: rlErr.message });
+    return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini öner." };
+  }
+  if ((recent ?? 0) >= 5) {
+    chatLog("warn", "order_update_rate_limited", { ip });
+    return { message: `HATA: Çok fazla deneme yapıldı (hız sınırı). Müşteriye biraz sonra tekrar denemesini ya da WhatsApp ${WHATSAPP} hattını öner.` };
+  }
+  await admin.from("form_rate_limit").insert({ ip, kind: "order_update" });
+
+  const { data: order, error: oErr } = await admin.from("orders")
+    .select(select).eq("order_no", orderNoIn).maybeSingle();
+  if (oErr) {
+    chatLog("error", "order_update_read_error", { detail: oErr.message });
+    return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini öner." };
+  }
+  if (!order || chatNormPhone((order as any).phone) !== phone) return { message: MISMATCH };
+  return { order };
+}
+
+// ---- update_delivery_address'i çalıştır ----
+async function handleUpdateAddress(input: any, ip: string): Promise<OrderResult> {
+  const orderNoIn = String(input?.order_no || "").trim().toUpperCase();
+  const phone = chatNormPhone(input?.phone);
+  const newAddress = String(input?.new_address || "").trim().slice(0, 500);
+  const newCity = String(input?.new_city || "").trim().slice(0, 80);
+  const newDistrict = String(input?.new_district || "").trim().slice(0, 80);
+  const newPhoneRaw = String(input?.new_phone || "").trim();
+  const newPostal = String(input?.new_postal_code || "").trim().slice(0, 12);
+  // format kontrolleri rate sayacından ÖNCE (sayaç yalnız gerçek denemeleri saysın)
+  if (!newAddress && !newCity && !newDistrict && !newPhoneRaw && !newPostal) {
+    return { message: "HATA: Değiştirilecek en az bir bilgi gerekli (adres/il/ilçe/telefon/posta kodu). Müşteriden yeni bilgiyi al." };
+  }
+  if (newPhoneRaw && chatNormPhone(newPhoneRaw).length < 10) {
+    return { message: "HATA: Yeni telefon numarası geçersiz görünüyor. Müşteriden tam numarayı iste." };
+  }
+
+  const v = await verifyOrderForUpdate(orderNoIn, phone, ip,
+    "id, order_no, full_name, phone, status, address, city, district, postal_code, note");
+  if (!v.order) return { message: v.message! };
+  const order = v.order;
+
+  // KODDA guard: kargoya verilmiş/kapanmış siparişte adres değişmez.
+  if (order.status !== "pending" && order.status !== "preparing") {
+    return {
+      message:
+        `HATA: Bu sipariş ${order.status === "shipped" ? "kargoya verilmiş" : "tamamlanmış/iptal edilmiş"}; adres artık buradan değiştirilemez. ` +
+        `Müşteriyi WhatsApp ${WHATSAPP} hattına yönlendir (kargo firmasıyla yönlendirme gerekebilir). ADRESİ DEĞİŞTİRDİM DEME.`,
+    };
+  }
+
+  // il/ilçe değiştiyse Nominatim teyidi (fail-soft; BLOKLAMAZ)
+  let geoNote = "";
+  if (newCity || newDistrict) {
+    const geo = await geocodeDistrict(newCity || order.city, newDistrict || order.district);
+    if (geo && !geo.ok) {
+      geoNote = " ADRES UYARISI: Yeni il/ilçe haritada doğrulanamadı; müşteriden yazımı kontrol etmesini KİBARCA iste (değişiklik yine de kaydedildi).";
+    }
+  }
+
+  // audit: eski değerler siparişin notuna tarihli eklenir (admin panel notu gösterir)
+  const audit =
+    `Adres değişikliği (sohbet) — eski: ${order.address}, ${order.district}/${order.city}` +
+    `${order.postal_code ? " " + order.postal_code : ""}, tel ${order.phone}`;
+  const upd: Record<string, unknown> = {
+    note: appendDetails(order.note, audit, new Date().toISOString().slice(0, 10)) || null,
+  };
+  if (newAddress) upd.address = newAddress;
+  if (newCity) upd.city = newCity;
+  if (newDistrict) upd.district = newDistrict;
+  if (newPhoneRaw) upd.phone = newPhoneRaw;
+  if (newPostal) upd.postal_code = newPostal;
+
+  const { error: upErr } = await admin.from("orders").update(upd).eq("id", order.id);
+  if (upErr) {
+    chatLog("error", "address_update_error", { order_no: order.order_no, detail: upErr.message });
+    return { message: `HATA: Adres güncellenemedi (sistem hatası). Müşteriye WhatsApp ${WHATSAPP} hattını öner. ADRESİ DEĞİŞTİRDİM DEME.` };
+  }
+
+  const effAddress = newAddress || order.address;
+  const effCity = newCity || order.city;
+  const effDistrict = newDistrict || order.district;
+  const effPhone = newPhoneRaw || order.phone;
+  await notifyAdminChat(
+    `Adres değişikliği — ${order.order_no} (sohbet)`,
+    `<p><b>Sipariş ${escHtml(order.order_no)} için teslimat bilgisi sohbetten güncellendi</b></p>` +
+    `<p>Müşteri: ${escHtml(order.full_name)}<br>Yeni adres: ${escHtml(effAddress)}, ${escHtml(effDistrict)}/${escHtml(effCity)}` +
+    `${newPostal ? " " + escHtml(newPostal) : ""}<br>Telefon: ${escHtml(effPhone)}</p>` +
+    `<p style="white-space:pre-line;color:#888;font-size:13px">${escHtml(audit)}</p>`,
+  );
+  chatLog("info", "address_updated_chat", { order_no: order.order_no });
+  return {
+    message:
+      `BAŞARILI: ${order.order_no} siparişinin teslimat bilgisi güncellendi ve ekibe iletildi. ` +
+      `Güncel teslimat: ${effAddress}, ${effDistrict}/${effCity}, tel ${effPhone}. ` +
+      `Müşteriye değişikliğin kayda geçtiğini söyle.` + geoNote,
+  };
+}
+
+// ---- notify_bank_transfer'ı çalıştır ----
+async function handleBankTransfer(input: any, ip: string): Promise<OrderResult> {
+  const orderNoIn = String(input?.order_no || "").trim().toUpperCase();
+  const phone = chatNormPhone(input?.phone);
+  const details = String(input?.details || "").trim().slice(0, 500);
+
+  const v = await verifyOrderForUpdate(orderNoIn, phone, ip,
+    "id, order_no, full_name, phone, status, payment_method, payment_status, total, note");
+  if (!v.order) return { message: v.message! };
+  const order = v.order;
+
+  if (order.payment_method !== "transfer") {
+    return { message: `HATA: Bu sipariş havale/EFT siparişi değil (ödeme yöntemi farklı). Müşteriye bunu söyle; havale bildirimi yalnız havale siparişleri içindir.` };
+  }
+  if (order.payment_status === "paid") {
+    return { message: `BİLGİ: Bu siparişin ödemesi zaten onaylanmış görünüyor. Müşteriye ödemesinin alındığını, ek bir işlem gerekmediğini söyle.` };
+  }
+
+  const note = `Müşteri sohbetten havale/EFT ödeme bildirimi yaptı${details ? ` — ${details}` : ""}`;
+  const { error: upErr } = await admin.from("orders")
+    .update({ note: appendDetails(order.note, note, new Date().toISOString().slice(0, 10)) || null })
+    .eq("id", order.id);
+  if (upErr) {
+    chatLog("error", "transfer_note_error", { order_no: order.order_no, detail: upErr.message });
+    return { message: `HATA: Bildirim kaydedilemedi (sistem hatası). Müşteriye WhatsApp ${WHATSAPP} hattını öner. BİLDİRDİM/ONAYLANDI DEME.` };
+  }
+  await notifyAdminChat(
+    `Havale bildirimi — ${order.order_no} (sohbet)`,
+    `<p><b>${escHtml(order.order_no)} için müşteri havale/EFT ödemesi yaptığını bildirdi</b></p>` +
+    `<p>Müşteri: ${escHtml(order.full_name)}<br>Tutar: ${Number(order.total).toLocaleString("tr-TR")} TL` +
+    `${details ? `<br>Detay: ${escHtml(details)}` : ""}</p>` +
+    `<p style="color:#888;font-size:13px">Banka hesabını kontrol edip admin panelden ödemeyi onaylayın; ödeme durumu OTOMATİK DEĞİŞMEDİ.</p>`,
+  );
+  chatLog("info", "transfer_notified_chat", { order_no: order.order_no });
+  return {
+    message:
+      `BAŞARILI: Ödeme bildirimi not edildi ve ekibe iletildi. KESİN KURAL: Müşteriye ödemenin EKİP banka hesabını ` +
+      `kontrol edip DOĞRULAYINCA onaylanacağını söyle; "ödemeniz alındı/onaylandı" DEME.`,
+  };
+}
+
+// ---- set_price_alert'i çalıştır ----
+// price-alert EF handleSubscribe'ın chat karşılığı: aynı upsert, aynı
+// fn_rate_limit kind='price_alert' sayacı (5/60dk, EF ile ORTAK).
+async function handlePriceAlert(input: any, conv: any, ip: string): Promise<OrderResult> {
+  await loadCatalog();
+  const p = matchProduct(String(input?.product_name || ""));
+  if (!p) {
+    return { message: `HATA: "${String(input?.product_name || "")}" kataloğda bulunamadı. Müşteriye mevcut ürünleri öner ve doğru adı al.` };
+  }
+  // e-posta: girişlide sunucudan (parametre yok sayılır), misafirde parametre zorunlu
+  let email: string | null = null;
+  if (conv?.user_id) email = await resolveUserEmail(conv.user_id);
+  if (!email) {
+    email = String(input?.email || "").trim().toLowerCase();
+    if (!email || email.indexOf("@") < 1 || email.length > 320) {
+      return { message: "HATA: Fiyat alarmı için geçerli bir e-posta adresi gerekli. Müşteriden iste." };
+    }
+  }
+
+  const cutoff = new Date(Date.now() - 60 * 60000).toISOString();
+  const { count: recent, error: rlErr } = await admin.from("fn_rate_limit")
+    .select("id", { count: "exact", head: true })
+    .eq("ip", ip).eq("kind", "price_alert").gte("created_at", cutoff);
+  if (rlErr) {
+    chatLog("error", "price_alert_rate_db_error", { detail: rlErr.message });
+    return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini öner." };
+  }
+  if ((recent ?? 0) >= 5) {
+    chatLog("warn", "price_alert_rate_limited", { ip });
+    return { message: "HATA: Çok fazla deneme yapıldı (hız sınırı). Müşteriye biraz sonra tekrar denemesini öner." };
+  }
+
+  // upsert: yeniden kayıt → güncel fiyattan sıfırla (price-alert EF ile birebir)
+  const { error: upErr } = await admin.from("price_alerts").upsert({
+    product_id: p.id,
+    email,
+    price_at_signup: p.price,
+    notified_at: null,
+    notified_price: null,
+  }, { onConflict: "product_id,email" });
+  if (upErr) {
+    chatLog("error", "price_alert_upsert_error", { detail: upErr.message });
+    return { message: "HATA: Fiyat alarmı kaydedilemedi (sistem hatası). Müşteriye ürün sayfasındaki fiyat alarmı formunu öner." };
+  }
+  await admin.from("fn_rate_limit").insert({ ip, kind: "price_alert" });
+  chatLog("info", "price_alert_saved_chat", { slug: p.slug });
+  return {
+    message:
+      `BAŞARILI: "${p.name}" için fiyat alarmı kuruldu (${email}). Fiyat şu anki ${p.price.toLocaleString("tr-TR")} TL'nin ` +
+      `altına düşerse müşteriye e-posta gider. Müşteriye bunu söyle; fiyatın NE ZAMAN düşeceğine dair söz VERME.`,
+  };
+}
+
+// ---- show_product_card'ı çalıştır: widget'a mode:'product' kartı döner ----
+async function handleShowProduct(input: any): Promise<OrderResult> {
+  await loadCatalog();
+  const nameIn = String(input?.product_name || "");
+  const p = matchProduct(nameIn);
+  if (!p) {
+    return { message: `HATA: "${nameIn}" kataloğda bulunamadı. Müşteriye mevcut ürünleri öner ve doğru adı al.` };
+  }
+  const color = canonChatVariant(input?.color, p.colors);
+  if (color === null) {
+    return { message: `HATA: "${p.name}" için "${String(input?.color || "")}" diye bir renk yok. Mevcut renkler: ${p.colors.join(", ") || "(tek renk)"}.` };
+  }
+  // renge özel görsel varsa onu kullan (resolveOrder'daki desen)
+  let image = p.image;
+  if (color) {
+    const ci = p.colorImages.find((c) => c.name.toLowerCase() === color.toLowerCase());
+    if (ci) image = ci.url;
+  }
+  return {
+    message:
+      `BAŞARILI: "${p.name}"${color ? ` (${color})` : ""} ürün kartı müşteriye GÖRSEL olarak gösterildi ` +
+      `(fotoğraf, ${p.price.toLocaleString("tr-TR")} TL fiyat, renk/beden seçenekleri dâhil). ` +
+      `Kısa bir cümle yaz; fiyat/renk/beden listesini metinde TEKRARLAMA.`,
+    order: {
+      mode: "product",
+      product: {
+        name: p.name, model_desc: p.model_desc, price: p.price, old_price: p.old_price,
+        image, color: color || null, colors: p.colors, sizes: p.sizes || [], slug: p.slug,
+      },
+    },
   };
 }
 
@@ -548,6 +1230,12 @@ function resolveOrder(input: any): { error?: string; data?: ResolvedOrder } {
   if (pm === "card" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return { error: "HATA: Kart ödemesi için geçerli bir e-posta adresi gerekli. Müşteriden e-posta iste." };
   }
+  // Kupon e-postaya bağlı çalışır (claim'de sunucu doğrular) → kupon varsa
+  // KAPIDA ÖDEMEDE de e-posta zorunlu (create-order EF / sepet.html paritesi).
+  const coupon = normCode(input?.coupon_code) || null;
+  if (coupon && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return { error: "HATA: Kupon kullanımı için geçerli bir e-posta adresi gerekli. Müşteriden e-posta iste (kupon o e-postaya tanımlı olmalı)." };
+  }
 
   // ürünleri DB kataloğundan çöz
   let subtotal = 0;
@@ -602,20 +1290,64 @@ function resolveOrder(input: any): { error?: string; data?: ResolvedOrder } {
     address: String(input.address).trim(),
     postal_code: String(input?.postal_code || "").trim() || null,
     note: String(input?.note || "").trim() || null,
+    coupon, // paytr-token form.coupon'u okur (kart yolu); COD'de chat claim eder
   };
 
   return { data: { pm, orderItems, cartForPaytr, cardItems, summary, form, subtotal, shipping, total } };
 }
 
 // show_order_summary: onay öncesi görsel özet kartı için veri döner (sipariş OLUŞTURMAZ)
+// Kupon claim kimliği: girişli müşteride HER ZAMAN hesabın e-postası (sunucu
+// doğrulamalı — kullanıcı kuralı), misafirde sipariş formundaki e-posta.
+async function couponIdentity(conv: any, formEmail: string | null): Promise<string | null> {
+  if (conv?.user_id) {
+    const e = await resolveUserEmail(conv.user_id);
+    if (e) return e;
+  }
+  return formEmail || null;
+}
+
 async function handleSummary(input: any, conv: any): Promise<OrderResult> {
   await loadCatalog();
   const { error, data } = resolveOrder(input);
   if (error || !data) return { message: error || "HATA: Sipariş özeti hazırlanamadı." };
+
+  // ---- KUPON (özet anı: SALT-OKUMA — hiçbir kod kilitlenmez) ----
+  // Atomik claim yalnız sipariş oluşurken (COD: handleCreateOrder, kart:
+  // paytr-token). Böylece onaylanmayan/bayatlayan özet kupon kilitleyemez.
+  let discount = 0;
+  let couponNote = "";
+  const custEmail = await couponIdentity(conv, data.form.email);
+  if (data.form.coupon) {
+    const prev = await validateCouponReadOnly(admin, data.form.coupon, custEmail, data.subtotal);
+    if (!prev.ok) {
+      return {
+        message:
+          `HATA: Kupon uygulanamadı — ${prev.error} Müşteriye bunu nazikçe söyle; ` +
+          `kuponsuz devam etmek isterse show_order_summary'yi coupon_code OLMADAN yeniden çağır.`,
+      };
+    }
+    discount = prev.discount;
+    couponNote = ` KUPON: ${data.form.coupon} kuponu özete uygulandı (indirim −${discount.toLocaleString("tr-TR")} TL); kesin tutar onay anında yeniden doğrulanır.`;
+  } else if (custEmail) {
+    // Proaktif öneri (deterministik): müşteriye TANIMLI kupon varsa modele bildir.
+    try {
+      const coupons = await listPersonalCoupons(admin, custEmail);
+      if (coupons.length) {
+        couponNote =
+          ` BİLGİ: Bu müşteriye tanımlı kupon(lar) var: ${fmtCouponOffer(coupons)}. ` +
+          `Onay sorusuyla birlikte müşteriye "size tanımlı bir kupon görünüyor, kullanmak ister misiniz?" diye SOR; ` +
+          `birden fazlaysa HEPSİNİ listele ve SEÇİMİ MÜŞTERİYE bırak. Kabul ederse show_order_summary'yi seçilen ` +
+          `coupon_code ile YENİDEN çağır. Bu listede OLMAYAN kupon söyleme; yeni kupon üretme/vaat etme.`;
+      }
+    } catch (_e) { /* fail-soft: öneri çıkmazsa sipariş akışı bozulmaz */ }
+  }
+  const total = data.total - discount;
+
   // Bekleyen siparişi konuşmaya yaz: widget'taki "Siparişi Onayla" butonu
   // Gemini'ye uğramadan confirm_order aksiyonuyla bu HAM girdiyi işler
   // (deterministik onay). Ham girdi saklanır ki onay anında resolveOrder
-  // yeniden koşup fiyat/stok tazelensin.
+  // yeniden koşup fiyat/stok/kupon tazelensin (coupon_code da ham girdide).
   if (conv?.id) {
     const { error: pErr } = await admin.from("chat_conversations")
       .update({ pending_order: input, pending_order_at: new Date().toISOString() })
@@ -630,16 +1362,17 @@ async function handleSummary(input: any, conv: any): Promise<OrderResult> {
   } else if (geo && !geo.ok) {
     geoNote = " ADRES UYARISI: İl/ilçe haritada doğrulanamadı; onay sorusunda müşteriden il ve ilçe yazımını kontrol etmesini KİBARCA iste (siparişi ENGELLEME, müşteri doğrusundan eminse devam et).";
   }
-  const totalTxt = data.total.toLocaleString("tr-TR") + " TL";
+  const totalTxt = total.toLocaleString("tr-TR") + " TL";
   return {
     message:
       `BAŞARILI: Sipariş özeti müşteriye GÖRSEL bir kart olarak gösterildi (ürün görseli, teslimat bilgileri, ` +
       `ödeme yöntemi ve ${totalTxt} toplam dâhil). Şimdi SADECE kısa bir cümleyle onay iste (ör. "Aşağıda siparişinizin ` +
       `özeti var, onaylıyor musunuz?"). Ürün/adres/tutar gibi detayları metinde TEKRARLAMA. Müşteri onaylayınca create_order'ı çağır.` +
-      geoNote,
+      couponNote + geoNote,
     order: {
       mode: "summary", payment_method: data.pm, items: data.cardItems,
-      form: data.form, subtotal: data.subtotal, shipping: data.shipping, total: data.total,
+      form: data.form, subtotal: data.subtotal, shipping: data.shipping,
+      discount, discount_code: discount > 0 ? data.form.coupon : null, total,
       geo: (geo && geo.ok) ? { ok: true, display: geo.display } : null,
     },
   };
@@ -654,11 +1387,14 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
   const totalTxt = total.toLocaleString("tr-TR") + " TL";
 
   // ---- KART: siparişi burada OLUŞTURMA; widget paytr-token'ı çağırsın ----
+  // Kupon varsa claim'i de paytr-token yapar (form.coupon oradan okunur);
+  // başarısız ödemede paytr-callback kuponu geri açar (mevcut altyapı).
   if (pm === "card") {
     return {
       message:
-        `BAŞARILI (kart): Sipariş bilgileri alındı ve doğrulandı. Toplam ${totalTxt}. ` +
-        `Güvenli kart ödeme ekranı müşterinin sohbetinde ŞİMDİ açılıyor — müşteriye kart bilgilerini o ekrana girmesini, ` +
+        `BAŞARILI (kart): Sipariş bilgileri alındı ve doğrulandı. Toplam ${totalTxt}` +
+        (form.coupon ? ` (kupon ${form.coupon} ödeme adımında uygulanır, kesin tutarı güvenli ödeme ekranı gösterir)` : "") +
+        `. Güvenli kart ödeme ekranı müşterinin sohbetinde ŞİMDİ açılıyor — müşteriye kart bilgilerini o ekrana girmesini, ` +
         `ödeme tamamlanınca siparişinin onaylanacağını söyle. (Sipariş, ödeme onaylanınca kesinleşir.)`,
       order: { mode: "card", total, items: cartForPaytr, form },
     };
@@ -684,7 +1420,29 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
     return { message: `HATA: Bu müşteri kısa sürede çok fazla sipariş oluşturdu (hız sınırı). Kibarca daha sonra tekrar denemesini ya da WhatsApp ${WHATSAPP} hattından yazmasını söyle.` };
   }
 
-  // 2) stok ayır (atomik RPC; yetmezse sipariş açılmaz → aşırı satış yok)
+  // 2) KUPON claim (ATOMİK; başarısızsa henüz hiçbir şey yazılmadı).
+  //    Kimlik: girişlide hesap e-postası, misafirde form e-postası (claim
+  //    e-posta bağını sunucuda doğrular — discount.ts). Ucuz kontrol stok
+  //    rezervasyonundan ÖNCE; sonraki her başarısızlık dalı release eder.
+  let couponRef: ClaimRef | null = null;
+  let discount = 0;
+  if (form.coupon) {
+    const claimEmail = await couponIdentity(conv, form.email);
+    const cr = await claimDiscount(admin, form.coupon, claimEmail, subtotal);
+    if (!cr.ok) {
+      return {
+        message:
+          `HATA: Kupon uygulanamadı — ${cr.error} Müşteriye bunu nazikçe söyle; ` +
+          `kuponsuz devam etmek isterse show_order_summary'yi coupon_code OLMADAN yeniden çağır.`,
+      };
+    }
+    couponRef = { id: cr.id, kind: cr.kind, redemptionId: cr.redemptionId };
+    discount = cr.discount;
+  }
+  const finalTotal = subtotal - discount + shipping;
+  const releaseCoupon = async () => { if (couponRef) await releaseDiscount(admin, couponRef); };
+
+  // 3) stok ayır (atomik RPC; yetmezse sipariş açılmaz → aşırı satış yok)
   const reserveItems = orderItems.map((r) => ({
     product_id: r.product_id, color: r.color || "", size: r.size || "", qty: r.qty,
   }));
@@ -694,9 +1452,11 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
   const { data: reserve, error: rsErr } = await admin.rpc("reserve_stock_bulk", { p_items: reserveItems });
   if (rsErr) {
     chatLog("error", "cod_stock_check_error", { detail: rsErr.message });
+    await releaseCoupon();
     return { message: "HATA: Stok kontrol edilemedi (sistem hatası). Müşteriden özür dile, birazdan tekrar denemesini öner." };
   }
   if (reserve && (reserve as any).ok === false) {
+    await releaseCoupon();
     return { message: "HATA: Seçilen üründen yeterli stok kalmadı. Müşteriye durumu nazikçe açıkla; farklı beden/renk ya da benzer başka bir ürün öner." };
   }
 
@@ -704,7 +1464,8 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
   const { data: orderRow, error: oErr } = await admin.from("orders").insert({
     order_no: oid, status: "pending", user_id: conv?.user_id || null,
     payment_method: "cod", payment_status: "cod",
-    subtotal, shipping_fee: shipping, total,
+    subtotal, shipping_fee: shipping, total: finalTotal,
+    discount, discount_code: couponRef ? form.coupon : null,
     full_name: form.full_name, phone: form.phone, email: form.email,
     city: form.city, district: form.district, address: form.address,
     postal_code: form.postal_code, note: form.note,
@@ -712,17 +1473,20 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
   if (oErr || !orderRow) {
     chatLog("error", "cod_order_insert_error", { detail: oErr?.message });
     await restoreStock();
+    await releaseCoupon();
     return { message: `HATA: Sipariş kaydedilemedi (sistem hatası). Müşteriden özür dile ve birazdan tekrar denemesini ya da WhatsApp ${WHATSAPP} hattından yazmasını öner.` };
   }
   const rows = orderItems.map((r) => ({ ...r, order_id: orderRow.id }));
   const { error: iErr } = await admin.from("order_items").insert(rows);
   if (iErr) {
-    // kalemsiz sipariş bırakma: siparişi geri al + ayrılan stoğu iade et
+    // kalemsiz sipariş bırakma: siparişi geri al + ayrılan stoğu + kuponu iade et
     chatLog("error", "cod_order_items_insert_error", { order_no: oid, detail: iErr.message });
     await admin.from("orders").delete().eq("id", orderRow.id);
     await restoreStock();
+    await releaseCoupon();
     return { message: `HATA: Sipariş kaydedilemedi (sistem hatası). Müşteriden özür dile ve birazdan tekrar denemesini ya da WhatsApp ${WHATSAPP} hattından yazmasını öner.` };
   }
+  if (couponRef) await setDiscountOrder(admin, couponRef, orderRow.id);
   await admin.from("fn_rate_limit").insert({ ip, kind: "order" });
 
   // Onay e-postası (müşteri + işletme) — create-order ile aynı modülün chat
@@ -739,8 +1503,10 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
     postal_code: form.postal_code,
     note: form.note,
     subtotal,
+    discount,
+    discount_code: couponRef ? form.coupon : null,
     shipping_fee: shipping,
-    total,
+    total: finalTotal,
     items: orderItems.map((r) => ({
       product_name: r.product_name,
       model_desc: r.model_desc,
@@ -754,12 +1520,15 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
     error: (e, f) => chatLog("error", e, f),
   });
 
+  const finalTxt = finalTotal.toLocaleString("tr-TR") + " TL";
   return {
     message:
       `BAŞARILI (kapıda ödeme): Sipariş oluşturuldu. Sipariş No: ${oid}. ` +
-      `Ürünler: ${summary.join(", ")}. Toplam ${totalTxt} (kargo ücretsiz), kapıda ödenecek. ` +
+      `Ürünler: ${summary.join(", ")}. ` +
+      (discount > 0 ? `Kupon ${form.coupon} uygulandı: −${discount.toLocaleString("tr-TR")} TL indirim. ` : "") +
+      `Toplam ${finalTxt} (kargo ücretsiz), kapıda ödenecek. ` +
       `Müşteriye sipariş numarasını ve özetini söyle, teşekkür et; siparişin hazırlanıp kargoya verileceğini belirt.`,
-    order: { mode: "cod", order_no: oid, total },
+    order: { mode: "cod", order_no: oid, total: finalTotal },
   };
 }
 
@@ -829,7 +1598,16 @@ async function geminiGenerate(key: string, sys: string, contents: any[], withToo
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: sys }] },
       contents,
-      ...(withTools ? { tools: [{ functionDeclarations: [SUMMARY_TOOL, ORDER_TOOL, EXCHANGE_TOOL] }] } : {}),
+      ...(withTools
+        ? {
+          tools: [{
+            functionDeclarations: [
+              SUMMARY_TOOL, ORDER_TOOL, EXCHANGE_TOOL, ORDER_STATUS_TOOL, BENEFITS_TOOL,
+              ADDRESS_TOOL, TRANSFER_TOOL, PRICE_ALERT_TOOL, PRODUCT_CARD_TOOL,
+            ],
+          }],
+        }
+        : {}),
       generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
     }),
   });
@@ -870,11 +1648,24 @@ async function askGemini(history: any[], conv: any, ip: string): Promise<AiResul
 
     if (fcPart) {
       const fname = fcPart.functionCall.name;
+      const fargs = fcPart.functionCall.args || {};
       const result = fname === "show_order_summary"
-        ? await handleSummary(fcPart.functionCall.args || {}, conv)
+        ? await handleSummary(fargs, conv)
         : fname === "create_exchange_request"
-        ? await handleCreateExchange(fcPart.functionCall.args || {}, ip)
-        : await handleCreateOrder(fcPart.functionCall.args || {}, conv, ip);
+        ? await handleCreateExchange(fargs, ip)
+        : fname === "get_order_status"
+        ? await handleOrderStatus(fargs, conv, ip)
+        : fname === "get_customer_benefits"
+        ? await handleBenefits(conv)
+        : fname === "update_delivery_address"
+        ? await handleUpdateAddress(fargs, ip)
+        : fname === "notify_bank_transfer"
+        ? await handleBankTransfer(fargs, ip)
+        : fname === "set_price_alert"
+        ? await handlePriceAlert(fargs, conv, ip)
+        : fname === "show_product_card"
+        ? await handleShowProduct(fargs)
+        : await handleCreateOrder(fargs, conv, ip);
       if (result.order) order = result.order;
       // modelin function-call turunu + bizim function-response'umuzu geçmişe ekle, tekrar sor
       contents.push({ role: "model", parts });
@@ -904,6 +1695,21 @@ async function askGemini(history: any[], conv: any, ip: string): Promise<AiResul
         .join("\n")
         .trim();
       text = (text2 && !hasIadeCommitment(text2)) ? text2 : iadeSafeText(WHATSAPP);
+    }
+    // KUPON VAADİ KORUMASI (deterministik): bot kupon oluşturma/tanımlama
+    // yetkisi olmadığı halde vaat kalıbına kayarsa bir kez düzelttir;
+    // ikinci deneme de ihlalse sabit güvenli metinle değiştir.
+    if (text && hasKuponPromise(text)) {
+      chatLog("warn", "kupon_filter_hit", { conversation_id: conv?.id });
+      contents.push({ role: "model", parts: [{ text }] });
+      contents.push({ role: "user", parts: [{ text: KUPON_FIX_INSTRUCTION }] });
+      const parts3 = (await geminiGenerate(key, sys, contents, false)) || [];
+      const text3 = parts3
+        .filter((p: any) => typeof p.text === "string")
+        .map((p: any) => p.text)
+        .join("\n")
+        .trim();
+      text = (text3 && !hasKuponPromise(text3) && !hasIadeCommitment(text3)) ? text3 : kuponSafeText();
     }
     return { text: text || "Bunu tam anlayamadım, biraz daha açabilir misiniz?", order };
   }
@@ -1179,8 +1985,11 @@ Deno.serve(async (req) => {
       } else {
         // handleCreateOrder hatası (AI'a yönelik "HATA: ..." metni) → müşteri diline çevir
         const stock = /stok/i.test(result.message);
+        const coupon = /kupon|indirim kodu/i.test(result.message);
         aiMsg = stock
           ? "Üzgünüm, tam onay sırasında seçtiğiniz üründen yeterli stok kalmadığını gördüm. Dilerseniz farklı bir beden/renk seçelim ya da size benzer bir model önereyim."
+          : coupon
+          ? "Üzgünüm, kuponunuz onay sırasında geçerliliğini yitirmiş görünüyor (kullanılmış ya da süresi dolmuş olabilir). Dilerseniz siparişinizi kuponsuz tamamlayalım — özeti yeniden göstereyim mi?"
           : `Üzgünüm, siparişinizi şu an tamamlayamadım (geçici bir sistem sorunu olabilir). Birazdan tekrar deneyebilir ya da WhatsApp ${WHATSAPP} hattımızdan bize ulaşabilirsiniz.`;
         resp = { error: "failed" };
       }
