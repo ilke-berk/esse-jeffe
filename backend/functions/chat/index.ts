@@ -18,10 +18,16 @@
 // Deterministik onay (2026-07-17): show_order_summary çağrısında ham tool
 // girdisi chat_conversations.pending_order'a yazılır; widget'ın "Siparişi
 // Onayla" butonu Gemini'ye uğramadan confirm_order aksiyonuyla bunu işler.
+// Değişim aynası (2026-07-18): show_exchange_summary → pending_exchange;
+// "Talebi Onayla" butonu (confirm_exchange) VEYA "onaylıyorum" kısa mesajı
+// (send içi kısayol) Gemini'ye uğramadan işler. Gemini çağrılarında ayrıca
+// thinkingBudget:0 + boş-yanıt retry (boş candidate → "Bunu tam anlayamadım"
+// vakasına karşı).
 //
 // Gerekli secrets (Supabase → Edge Functions → Secrets):
 //   GEMINI_API_KEY   → Google AI Studio API anahtarınız (https://aistudio.google.com/apikey)
-//   GEMINI_MODEL     → (opsiyonel) varsayılan "gemini-2.5-flash"
+//   GEMINI_MODEL     → (opsiyonel) varsayılan "gemini-3.1-flash-lite"
+//     (2.x ailesine dönülürse THINKING_OFF otomatik thinkingBudget:0 uygular)
 //   RESEND_API_KEY / ORDER_FROM_EMAIL / ORDER_NOTIFY_EMAIL → (opsiyonel)
 //     COD sipariş onay e-postası (./order-email.ts); yoksa gönderim atlanır.
 //   (SUPABASE_URL ve SUPABASE_SERVICE_ROLE_KEY otomatik gelir)
@@ -37,7 +43,7 @@ import {
 } from "./guards.ts";
 import { appendDetails, pickOrderItem, stockAvailability } from "./exchange.ts";
 import {
-  formatOrderList, formatOrderStatus,
+  exchangeInstructions, formatOrderList, formatOrderStatus,
   type OpenExchangeInfo, type OrderInfoItem, type OrderInfoRow,
 } from "./order-info.ts";
 import {
@@ -45,8 +51,19 @@ import {
   releaseDiscount, setDiscountOrder, validateCouponReadOnly, type ClaimRef,
 } from "./discount.ts";
 
-const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-2.5-flash";
+const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-3.1-flash-lite";
+// Thinking ayarı model ailesine göre: 2.5'te thinking token'ları maxOutputTokens
+// bütçesini yiyip BOŞ candidate üretebiliyor → thinkingBudget:0 şart. 3.x'te
+// thinkingBudget yerine thinkingLevel var; 3.1-flash-lite'ın varsayılanı zaten
+// "minimal" olduğundan hiç thinkingConfig GÖNDERİLMEZ (iki parametreyi
+// karıştırmak API hatası verir).
+const THINKING_OFF = GEMINI_MODEL.startsWith("gemini-2")
+  ? { thinkingConfig: { thinkingBudget: 0 } }
+  : {};
 const WHATSAPP = "0850 255 12 37";
+// Değişim iade paketinin gönderileceği adres (opsiyonel secret). Boşsa
+// müşteriye "adres ekibimizce iletilecek" denir — bot adres UYDURMAZ.
+const EXCHANGE_RETURN_ADDRESS = String(Deno.env.get("EXCHANGE_RETURN_ADDRESS") || "").trim() || null;
 
 // ---- yapılandırılmış log: tek satır JSON ----
 // Bu fonksiyon backend/functions/ ağacında olduğundan edge-functions/_shared
@@ -111,10 +128,10 @@ function clientIp(req: Request): string {
 // ve kısa-pencereli (burst) tutuldu. Asıl "oturum başına" sınır CONV_SEND_MAX ile
 // visitor_token'a bağlıdır → NAT'tan bağımsız, masum kullanıcıyı hiç etkilemez.
 const RATE_LIMITS: Record<string, { max: number; sec: number }[]> = {
-  start: [{ max: 5, sec: 600 }, { max: 40, sec: 86400 }],    // 10 dk'da 5, günde 40 yeni konuşma
+  start: [{ max: 10, sec: 600 }, { max: 150, sec: 86400 }],  // 10 dk'da 10 (burst), günde 150 — paylaşımlı IP/CGNAT payı
   send: [{ max: 20, sec: 60 }],                              // dakikada 20 (yalnız burst guard)
   resume: [{ max: 10, sec: 60 }],                            // girişli kullanıcının konuşma devralması
-  confirm: [{ max: 10, sec: 60 }],                           // sipariş onay butonu (burst guard)
+  confirm: [{ max: 10, sec: 60 }],                           // sipariş/değişim onay butonu (burst guard)
 };
 type RateKind = keyof typeof RATE_LIMITS;
 // Tek bir konuşmada izin verilen kullanıcı mesajı (oturum sınırı; IP'den bağımsız).
@@ -122,7 +139,20 @@ type RateKind = keyof typeof RATE_LIMITS;
 const CONV_SEND_MAX = 50;
 // Bekleyen sipariş özeti (pending_order) bu süreden sonra bayatlar; onay
 // butonu eski/unutulmuş bir özeti işlemesin (fiyat/stok çok değişmiş olabilir).
+// pending_exchange (değişim özeti) de aynı süreyle bayatlar.
 const PENDING_ORDER_TTL_MS = 30 * 60000;
+
+// Kısa onay kalıbı — TAM EŞLEŞME beyaz listesi (^...$). Olumsuzlar
+// ("onaylamıyorum", "onay vermiyorum", "hayır", "evet ama ...") tam-eşleşme
+// sayesinde otomatik dışarıda kalır; olumsuzluk içerenler ayrıca reddedilir.
+// pending_exchange tazeyken eşleşirse send Gemini'ye hiç gitmez (canlı vaka:
+// "onaylıyorum" → boş candidate → "Bunu tam anlayamadım").
+function isShortConfirm(raw: string): boolean {
+  const t = String(raw || "").toLocaleLowerCase("tr").replace(/[.!?,;:\s]+/g, " ").trim();
+  if (!t || t.length > 40) return false;
+  if (/(onaylam|vazgeç|hayır|istemiyorum|iptal et)/.test(t)) return false;
+  return /^(evet )?(onaylıyorum|onaylayalım|onayla|onay veriyorum|onay|kabul ediyorum|kabul|tamamdır|tamam|olur|evet|aynen)$/.test(t);
+}
 
 async function rateLimited(ip: string, kind: RateKind): Promise<boolean> {
   for (const w of RATE_LIMITS[kind]) {
@@ -137,6 +167,33 @@ async function rateLimited(ip: string, kind: RateKind): Promise<boolean> {
 }
 async function rateHit(ip: string, kind: RateKind): Promise<void> {
   await admin.from("chat_rate_limit").insert({ ip, kind });
+}
+
+// ---- doğrulama-kapılı hız sınırı (2026-07-21) ----
+// order_no + telefon eşleşmesiyle korunan tool'larda (değişim/iptal, adres &
+// havale güncelleme, misafir sipariş sorgu) sayaç YALNIZCA başarısız (eşleşmeyen)
+// denemeleri sayar. Nedeni: bu sayaç bir ENUMERATION savunmasıdır (yanlış
+// order_no/telefon tahminlerini yavaşlatmak) — kimliğini kanıtlamış müşterinin
+// özet/rötuş çağrıları kotayı YAKMAMALI. Canlı vaka (2026-07-21): tek bir müşteri
+// değişimini netleştirirken her show_exchange_summary çağrısı sayıldığından
+// 5/60dk sınırına takılıp "sistemde yoğunluk var, talebinizi güncelleyemiyorum"
+// yanıtı aldı. Ayrıca paylaşımlı IP (mobil CGNAT, ofis/AVM WiFi — binlerce
+// kullanıcı tek IP) mağdur olmaz: yalnız hatalı tahminler birikir, meşru trafik
+// birikmez. kind === null → tek-kind tablo (order_track_rate_limit).
+async function verifyGateBlocked(
+  ip: string, table: string, kind: string | null, windowSec: number, max: number,
+): Promise<boolean> {
+  const cutoff = new Date(Date.now() - windowSec * 1000).toISOString();
+  let q = admin.from(table).select("id", { count: "exact", head: true })
+    .eq("ip", ip).gte("created_at", cutoff);
+  if (kind) q = q.eq("kind", kind);
+  const { count, error } = await q;
+  // fail-open: sayaç DB'si okunamazsa müşteriyi engelleme (geçici hata masumu vurmasın).
+  if (error) { chatLog("error", "verify_gate_db_error", { table, kind, detail: error.message }); return false; }
+  return (count ?? 0) >= max;
+}
+async function noteVerifyFailure(ip: string, table: string, kind: string | null): Promise<void> {
+  await admin.from(table).insert(kind ? { ip, kind } : { ip });
 }
 
 // ---- ürün kataloğu (cold-start cache, 10 dk) ----
@@ -217,7 +274,7 @@ MARKA BİLGİ TABANI (bunları biliyorsun, doğrudan kullan):
 
 • CAYMA HAKKI & DEĞİŞİM POLİTİKASI: Ürünler müşterinin tercihleri (model, beden, renk) doğrultusunda sipariş üzerine hazırlandığından, Mesafeli Sözleşmeler Yönetmeliği'nin 15/1-(c) maddesi uyarınca cayma hakkının istisnaları kapsamındadır; süreç değişim yoluyla yürütülür. Koşullar: ürün etiketli, kullanılmamış/yıkanmamış, leke-parfüm-makyaj bulaşmamış, orijinal ambalajıyla ve fatura/sipariş bilgisiyle. Müşteri bu konuyu sorarsa politikayı kibar ve resmî bir dille açıkla, değişim seçeneğine yönlendir; ayıplı/kusurlu ürün şikâyetlerinde yasal hakları saklıdır, WhatsApp hattına yönlendir.
 
-• SİPARİŞ İPTALİ: Henüz kargoya verilmemiş sipariş ücretsiz iptal edilir; iptal talebini bu sohbette sen açabilirsin (create_exchange_request, request_type='cancel'). Kargoya verilmişse teslim sonrası değişim koşulları uygulanır.
+• SİPARİŞ İPTALİ: Henüz kargoya verilmemiş sipariş ücretsiz iptal edilir; iptal talebini bu sohbette sen açabilirsin (önce show_exchange_summary ile özet kartı, request_type='cancel'). Kargoya verilmişse teslim sonrası değişim koşulları uygulanır.
 
 • İLETİŞİM & SAATLER: WhatsApp ${WHATSAPP} (Pazartesi–Cumartesi 08:00–19:00), e-posta info@essejeffe.com, Instagram @esse_jeffe.
 
@@ -237,13 +294,17 @@ SİPARİŞ ALMA (çok önemli):
 - Müşteri vazgeçerse ya da bilgisi katalogla uyuşmuyorsa nazikçe düzelt; fonksiyonu eksik/yanlış bilgiyle çağırma.
 
 DEĞİŞİM/İPTAL TALEBİ ALMA:
-- Müşteri mevcut siparişi için değişim ya da iptal istiyorsa talebi SEN tamamlarsın: önce sipariş numarasını (EJ ile başlar) ve siparişte kullanılan telefon numarasını iste, nedenini öğren; sonra \`create_exchange_request\` fonksiyonunu çağır.
-- DEĞİŞİMDE, fonksiyonu çağırmadan ÖNCE müşterinin istediği YENİ rengi ve/veya bedeni MUTLAKA sor ve new_color/new_size olarak geç — sistem yeni tercihin stokta olup olmadığını kontrol eder. Fonksiyon "siparişte birden çok ürün var" derse müşteriye hangi ürünü değiştireceğini sor ve product_name olarak geç.
+- Müşteri mevcut siparişi için değişim ya da iptal istiyorsa talebi SEN tamamlarsın: önce sipariş numarasını (EJ ile başlar) ve siparişte kullanılan telefon numarasını iste, nedenini öğren.
+- DEĞİŞİMDE müşterinin istediği YENİ rengi ve/veya bedeni MUTLAKA sor ve new_color/new_size olarak geç — sistem yeni tercihin stokta olup olmadığını kontrol eder. Fonksiyon "siparişte birden çok ürün var" derse müşteriye hangi ürünü değiştireceğini sor ve product_name olarak geç.
+- TÜM bilgiler tamamlanınca METİN olarak özet YAZMA ve onay sorusu sorma; bunun yerine \`show_exchange_summary\` fonksiyonunu çağır — müşteriye talebin GÖRSEL özet kartı gösterilir ve sistem doğrulama+stok kontrolünü yapar. Ardından yalnızca kısa bir cümleyle onay iste (ör. "Talebinizin özeti aşağıda, onaylıyor musunuz?"); detayları metinde TEKRARLAMA.
+- Müşteri karttaki Onayla butonunu kullanırsa talebi SİSTEM kaydeder ve sonucu sohbete yazar; senin ayrıca bir şey yapman gerekmez. Müşteri onayını METİN olarak yazarsa \`create_exchange_request\` fonksiyonunu çağır — talep ancak bu fonksiyon BAŞARILI dönünce kayda geçer.
 - Sipariş no + telefon İKİSİ birden eşleşmezse talep açılamaz; müşteriden iki bilgiyi de kontrol etmesini iste ama HANGİSİNİN yanlış olduğunu asla söyleme.
-- Açık talep zaten varsa fonksiyon YENİ kayıt açmaz, mevcut talebi GÜNCELLER: müşteri açık talebine ek bilgi (yeni renk/beden, not) verirse fonksiyonu bu bilgiyle TEKRAR çağır — bilgi ancak böyle kayda geçer.
+- Açık talep zaten varsa fonksiyonlar YENİ kayıt açmaz, mevcut talebi GÜNCELLER: müşteri açık talebine ek bilgi (yeni renk/beden, not) verirse akışı bu bilgiyle TEKRAR çalıştır (yine önce show_exchange_summary) — bilgi ancak böyle kayda geçer.
 - KESİN KURAL: Fonksiyon BAŞARILI dönmeden hiçbir bilginin kaydedildiğini/iletildiğini/işlendiğini SÖYLEME. "Ekibimize ilettim, siz onlara söylersiniz" gibi cümleler YASAK — müşterinin söylediği tercih ancak fonksiyon çağrısıyla kayda geçer.
 - BAŞARILI yanıtındaki kayıtlı yeni renk/bedeni onay cümlende müşteriye tekrar et (ör. "Mavi renk tercihiniz talebinize işlendi").
+- BAŞARILI yanıtında TALİMATLAR bloğu varsa bu adımları müşteriye NUMARALI ve EKSİKSİZ aktar (kısaltma, atlama); e-posta gönderildiği yazıyorsa bunu da söyle. TALİMATLAR dışında adres, kargo firması veya süreç bilgisi UYDURMA.
 - Değişimde gidiş-geliş kargo bedelinin müşteriye ait olduğunu hatırlat.
+- Müşteri talebini SİPARİŞLERİM/sipariş takibinden görebilir mi diye sorarsa: EVET — girişliyse "Hesabım" sayfasındaki sipariş kartında, misafirse "Sipariş Takip" sorgusunda talebin durumu görünür.
 
 SİPARİŞ SORGULAMA (get_order_status):
 - Müşteri siparişinin durumunu/kargosunu sorarsa \`get_order_status\` fonksiyonunu ÇAĞIRARAK cevapla. Girişli müşteride sipariş no sormadan parametresiz çağırıp siparişlerini listeleyebilirsin; girişli değilse sipariş numarasını (EJ ile başlar) ve siparişte kullanılan telefonu iste.
@@ -369,6 +430,20 @@ const EXCHANGE_TOOL = {
     },
     required: ["order_no", "phone", "request_type", "reason"],
   },
+};
+
+// ---- show_exchange_summary: değişim/iptal onayı öncesi görsel özet kartı ----
+// pending_order deseninin değişim aynası: ham girdi pending_exchange'e yazılır,
+// widget'ın "Talebi Onayla" butonu (veya "onaylıyorum" kısa mesajı) Gemini'ye
+// uğramadan confirm_exchange ile işler. Talep KAYDETMEZ.
+const EXCHANGE_SUMMARY_TOOL = {
+  name: "show_exchange_summary",
+  description:
+    "Değişim/iptal talebi için TÜM bilgiler (sipariş no, telefon, tür, neden; değişimde yeni renk/beden) " +
+    "toplandıktan SONRA, müşteriden onay İSTEMEDEN HEMEN ÖNCE çağır. Müşteriye talebin GÖRSEL özet kartını " +
+    "gösterir (ürün, mevcut→yeni tercih, talep türü) ve doğrulama+stok kontrolü yapar. Talebi KAYDETMEZ; " +
+    "kartı gösterince özeti metin olarak yazma, yalnızca kısa bir onay sorusu sor.",
+  parameters: EXCHANGE_TOOL.parameters,
 };
 
 // ---- get_order_status: sipariş durumu / kargo takibi sorgulama (SALT OKUMA) ----
@@ -528,6 +603,77 @@ async function notifyExchangeChat(
   }
 }
 
+// MÜŞTERİYE talep onayı + değişim süreç talimatları e-postası. FAIL-SOFT:
+// e-posta hatası talebi asla bozmaz; sipariş kaydında e-posta yoksa atlanır.
+// Dönüş: gönderim yapıldı mı (model yanıtında "e-postanıza da gönderdik"
+// cümlesi ancak true ise kurulur — yanlış vaat olmasın).
+async function notifyExchangeCustomer(
+  order: { order_no: string; full_name: string; email?: string | null },
+  exch: { type: string; product_name?: string | null; new_color?: string | null; new_size?: string | null; updated?: boolean },
+): Promise<boolean> {
+  const apiKey = Deno.env.get("RESEND_API_KEY");
+  const from = Deno.env.get("ORDER_FROM_EMAIL");
+  const to = String(order.email || "").trim();
+  if (!apiKey || !from || !to || to.indexOf("@") < 1) return false;
+  const esc = (s: unknown) =>
+    String(s ?? "").replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[c]!);
+  const isExchange = exch.type === "exchange";
+  const typeTr = EXCH_TYPE_TR[exch.type] || exch.type;
+  const pref = [
+    exch.product_name ? `Ürün: ${esc(exch.product_name)}` : "",
+    exch.new_color ? `Yeni renk: ${esc(exch.new_color)}` : "",
+    exch.new_size ? `Yeni beden: ${esc(exch.new_size)}` : "",
+  ].filter(Boolean).join("<br>");
+  const steps = isExchange
+    ? `<p><b>Değişim sürecinde izlemeniz gereken adımlar:</b></p><ol style="line-height:1.7;color:#444">` +
+      exchangeInstructions(EXCHANGE_RETURN_ADDRESS).map((s) => `<li>${esc(s)}</li>`).join("") + `</ol>`
+    : `<p style="color:#444">İptal talebiniz ekibimizce incelenecek; sipariş henüz kargoya verilmediyse ücretsiz iptal edilir ve size bilgi verilir.</p>`;
+  const html =
+    `<p>Merhaba ${esc(order.full_name)},</p>` +
+    `<p><b>${esc(order.order_no)}</b> numaralı siparişiniz için ${esc(typeTr.toLocaleLowerCase("tr"))} talebiniz ` +
+    `${exch.updated ? "güncellendi" : "alındı"} ✅</p>` +
+    (pref ? `<p style="color:#444">${pref}</p>` : "") +
+    steps +
+    `<p style="color:#888;font-size:13px">Sorularınız için WhatsApp ${WHATSAPP} (Pazartesi–Cumartesi 08:00–19:00) ya da bu e-postayı yanıtlayabilirsiniz.</p>`;
+  const body = JSON.stringify({
+    from, to: [to],
+    subject: `${typeTr} talebiniz ${exch.updated ? "güncellendi" : "alındı"} — ${order.order_no}`,
+    html,
+  });
+  const send = () =>
+    fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body,
+    });
+  try {
+    let res = await send();
+    // Resend saniyede 2 istek sınırı: hemen önce işletme bildirimi gittiğinden
+    // 429 görülebilir (canlıda görüldü, 2026-07-21) → kısa bekleyip 1 kez dene.
+    if (!res.ok && (res.status === 429 || res.status >= 500)) {
+      await new Promise((r) => setTimeout(r, 700));
+      res = await send();
+    }
+    if (!res.ok) {
+      chatLog("warn", "exchange_customer_notify_failed", { order_no: order.order_no, status: res.status });
+      return false;
+    }
+    return true;
+  } catch (e) {
+    chatLog("warn", "exchange_customer_notify_failed", { order_no: order.order_no, detail: e instanceof Error ? e.message : String(e).slice(0, 200) });
+    return false;
+  }
+}
+
+// Model yanıtına (functionResponse) eklenecek talimat bloğu — model bu
+// adımları müşteriye EKSİKSİZ aktarır (prompt kuralı).
+function instructionsForModel(emailed: boolean): string {
+  const steps = exchangeInstructions(EXCHANGE_RETURN_ADDRESS).map((s, i) => `${i + 1}) ${s}`).join(" ");
+  return ` TALİMATLAR — müşteriye şu adımları numaralı ve EKSİKSİZ ilet: ${steps}` +
+    (emailed ? " (Bu adımlar müşterinin e-posta adresine de gönderildi; bunu da söyle.)" : "");
+}
+
 // İşletmeye genel bildirim e-postası (notifyExchangeChat'in genelleştirilmişi).
 // FAIL-SOFT: e-posta hatası işlemi asla bozmaz.
 async function notifyAdminChat(subject: string, html: string): Promise<void> {
@@ -554,7 +700,11 @@ function escHtml(s: unknown): string {
 }
 
 // create_exchange_request'i çalıştır — dönen message AI'a (functionResponse) gider
-async function handleCreateExchange(input: any, ip: string): Promise<OrderResult> {
+// opts.dryRun: doğrulama+stok kontrolüne kadar gider, DB'ye YAZMAZ; widget'a
+//   değişim özet kartı payload'u döner (show_exchange_summary bunu kullanır).
+// opts.countRate:false: form_rate_limit sayacı atlanır (deterministik onay
+//   aşaması — argümanlar sunucuda saklı, enumeration riski teklif aşamasında).
+async function handleCreateExchange(input: any, ip: string, opts?: { dryRun?: boolean; countRate?: boolean }): Promise<OrderResult> {
   const orderNoIn = String(input?.order_no || "").trim().toUpperCase();
   const phone = chatNormPhone(input?.phone);
   const type = String(input?.request_type || "").trim();
@@ -578,31 +728,26 @@ async function handleCreateExchange(input: any, ip: string): Promise<OrderResult
     return { message: "HATA: Sipariş no veya telefon eşleşmedi. Müşteriden iki bilgiyi de kontrol etmesini iste; hangisinin yanlış olduğunu SÖYLEME." };
   }
 
-  // IP hız sınırı — submit-form kind='exchange' ile ORTAK sayaç (5/60 dk).
-  // Başarılı/başarısız her deneme sayılır (order_no tahminini yavaşlatır).
-  const cutoff = new Date(Date.now() - 60 * 60000).toISOString();
-  const { count: recent, error: rlErr } = await admin.from("form_rate_limit")
-    .select("id", { count: "exact", head: true })
-    .eq("ip", ip).eq("kind", "exchange").gte("created_at", cutoff);
-  if (rlErr) {
-    chatLog("error", "exchange_rate_db_error", { detail: rlErr.message });
-    return { message: `HATA: Sistem hatası, talep şu an alınamıyor. Müşteriye "Değişim & İptal" sayfasını ya da WhatsApp ${WHATSAPP} hattını öner.` };
-  }
-  if ((recent ?? 0) >= 5) {
+  // Doğrulama-kapılı hız sınırı — submit-form kind='exchange' ile ORTAK sayaç.
+  // Sayaç YALNIZ başarısız (order_no/telefon eşleşmeyen) denemeleri sayar; kimliğini
+  // kanıtlamış müşterinin özet/rötuş çağrıları kotayı yakmaz (bkz. verifyGateBlocked).
+  // countRate:false → onay aşaması (kayıt zaten doğrulanmış, tekrar saymaya gerek yok).
+  if (opts?.countRate !== false && await verifyGateBlocked(ip, "form_rate_limit", "exchange", 3600, 8)) {
     chatLog("warn", "exchange_rate_limited", { ip });
     return { message: `HATA: Çok fazla deneme yapıldı (hız sınırı). Müşteriye biraz sonra tekrar denemesini ya da WhatsApp ${WHATSAPP} hattını öner.` };
   }
-  await admin.from("form_rate_limit").insert({ ip, kind: "exchange" });
 
   const { data: order, error: oErr } = await admin.from("orders")
-    .select("id, order_no, full_name, phone, status")
+    .select("id, order_no, full_name, phone, email, status")
     .eq("order_no", orderNoIn).maybeSingle();
   if (oErr) {
     chatLog("error", "exchange_order_read_error", { detail: oErr.message });
     return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini öner." };
   }
   if (!order || chatNormPhone(order.phone) !== phone) {
-    // enumeration savunması: hangisinin yanlış olduğu sızdırılmaz
+    // enumeration savunması: hangisinin yanlış olduğu sızdırılmaz; başarısız
+    // deneme sayaca yazılır (kaba kuvvet order_no/telefon tahminini yavaşlatır).
+    if (opts?.countRate !== false) await noteVerifyFailure(ip, "form_rate_limit", "exchange");
     return { message: "HATA: Sipariş no veya telefon eşleşmedi. Müşteriden iki bilgiyi de kontrol etmesini iste; hangisinin yanlış olduğunu SÖYLEME." };
   }
 
@@ -611,6 +756,8 @@ async function handleCreateExchange(input: any, ip: string): Promise<OrderResult
   // gelmeden stok kilitlemek riskli; rezervasyonu ekip yapar).
   const lc = (s: unknown) => String(s ?? "").replace(/\s+/g, " ").trim().toLocaleLowerCase("tr");
   let itemName: string | null = null;
+  let item: { product_id: string | null; product_name: string; color: string | null; size: string | null } | null = null;
+  let itemImage: string | null = null;
   let newColor: string | null = null;
   let newSize: string | null = null;
   let stockChecked = false;
@@ -629,7 +776,7 @@ async function handleCreateExchange(input: any, ip: string): Promise<OrderResult
           `Müşteriye hangi ürünü değiştirmek istediğini sor ve product_name olarak geç.`,
       };
     }
-    const item = picked.item || null; // kalem kaydı olmayan eski sipariş: doğrulamasız devam (talebi bloke etme)
+    item = picked.item || null; // kalem kaydı olmayan eski sipariş: doğrulamasız devam (talebi bloke etme)
     if (item) {
       itemName = item.product_name;
       await loadCatalog();
@@ -645,6 +792,9 @@ async function handleCreateExchange(input: any, ip: string): Promise<OrderResult
         }
         newColor = c || null;
         newSize = s || null;
+        // özet kartı görseli: yeni renge özel görsel varsa o, yoksa ana görsel
+        const ci = newColor ? p.colorImages.find((x) => x.name.toLowerCase() === newColor!.toLowerCase()) : null;
+        itemImage = (ci && ci.url) || p.image;
         const targetColor = newColor || String(item.color || "");
         const targetSize = newSize || String(item.size || "");
         if ((newColor || newSize) && lc(targetColor) === lc(item.color) && lc(targetSize) === lc(item.size)) {
@@ -688,6 +838,33 @@ async function handleCreateExchange(input: any, ip: string): Promise<OrderResult
     chatLog("error", "exchange_dup_check_error", { detail: exErr.message });
     return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini öner." };
   }
+  // dryRun: buraya kadar format + sipariş/telefon eşleşme + ürün seçimi +
+  // varyant canon + stok kontrolü GEÇTİ → DB'ye yazmadan özet kartı payload'u
+  // dön. (Mükerrer + yeni bilgi yok durumu hariç: o dal aşağıda kartsız
+  // BİLGİ döner, zaten yazmaz.)
+  if (opts?.dryRun && !(existing && !newColor && !newSize && !details)) {
+    return {
+      message: "BAŞARILI (ÖZET): doğrulama ve stok kontrolü geçti.",
+      order: {
+        mode: "exchange_summary",
+        order_no: order.order_no,
+        request_type: type,
+        type_tr: EXCH_TYPE_TR[type],
+        reason_tr: EXCH_REASON_TR[reason],
+        product: itemName ? {
+          name: itemName,
+          image: itemImage,
+          current_color: item?.color || null,
+          current_size: item?.size || null,
+        } : null,
+        new_color: newColor,
+        new_size: newSize,
+        stock_checked: stockChecked,
+        details,
+        updating: !!existing,
+      },
+    };
+  }
   if (existing) {
     if (!newColor && !newSize && !details) {
       return { message: `BİLGİ: Bu sipariş için zaten açık bir ${EXCH_TYPE_TR[type]} talebi var. Müşteriye ekibimizin mevcut talebiyle ilgilendiğini, yeni kayıt açmaya gerek olmadığını nazikçe söyle.` };
@@ -710,12 +887,14 @@ async function handleCreateExchange(input: any, ip: string): Promise<OrderResult
     const effSize = newSize || existing.new_size || null;
     const effTxt = [effColor ? `Renk: ${effColor}` : "", effSize ? `Beden: ${effSize}` : ""].filter(Boolean).join(", ");
     await notifyExchangeChat(order, { type, reason, details: mergedDetails || null, product_name: itemName, new_color: effColor, new_size: effSize, updated: true });
+    const emailedUpd = await notifyExchangeCustomer(order, { type, product_name: itemName, new_color: effColor, new_size: effSize, updated: true });
     chatLog("info", "exchange_updated_chat", { order_no: order.order_no, type });
     return {
       message:
         `BAŞARILI (GÜNCELLEME): ${order.order_no} için mevcut açık ${EXCH_TYPE_TR[type]} talebi güncellendi ve kayda geçti.` +
         (effTxt ? ` Kayıtlı yeni tercih — ${effTxt}${stockChecked ? " (stok kontrol edildi: mevcut)" : ""}.` : "") +
-        ` Müşteriye bu bilgilerin talebine İŞLENDİĞİNİ net söyle; ekibimiz en kısa sürede (Pazartesi–Cumartesi 08:00–19:00) dönüş yapacak.`,
+        ` Müşteriye bu bilgilerin talebine İŞLENDİĞİNİ net söyle; ekibimiz en kısa sürede (Pazartesi–Cumartesi 08:00–19:00) dönüş yapacak.` +
+        (emailedUpd ? " (Güncel talep özeti ve süreç adımları müşterinin e-postasına da gönderildi; bunu söyle.)" : ""),
     };
   }
 
@@ -729,12 +908,37 @@ async function handleCreateExchange(input: any, ip: string): Promise<OrderResult
   }
 
   await notifyExchangeChat(order, { type, reason, details, product_name: itemName, new_color: newColor, new_size: newSize });
+  const emailed = await notifyExchangeCustomer(order, { type, product_name: itemName, new_color: newColor, new_size: newSize });
   chatLog("info", "exchange_saved_chat", { order_no: order.order_no, type });
   return {
     message:
       `BAŞARILI: ${order.order_no} numaralı sipariş için ${EXCH_TYPE_TR[type]} talebi (${EXCH_REASON_TR[reason]}) kaydedildi.` +
       (prefTxt ? ` Kayıtlı yeni tercih — ${prefTxt}${stockChecked ? " (stok kontrol edildi: mevcut)" : ""}.` : "") +
-      ` Müşteriye talebinin ve tercihlerinin kayda geçtiğini, ekibimizin en kısa sürede (Pazartesi–Cumartesi 08:00–19:00) dönüş yapacağını sıcak bir dille söyle.`,
+      ` Müşteriye talebinin ve tercihlerinin kayda geçtiğini, ekibimizin en kısa sürede (Pazartesi–Cumartesi 08:00–19:00) dönüş yapacağını sıcak bir dille söyle.` +
+      (type === "exchange" ? instructionsForModel(emailed) : ""),
+  };
+}
+
+// show_exchange_summary: doğrulama+stok kontrolü (dryRun) → HAM girdi
+// pending_exchange'e yazılır, widget'a özet kartı payload'u döner.
+// Talep burada KAYDEDİLMEZ; kayıt confirm_exchange (buton/kısa onay) ya da
+// modelin create_exchange_request çağrısıyla olur.
+async function handleExchangeSummary(input: any, conv: any, ip: string): Promise<OrderResult> {
+  const r = await handleCreateExchange(input, ip, { dryRun: true, countRate: true });
+  if (!r.order) return r; // HATA/BİLGİ dalları aynen modele gider (kart yok)
+  if (conv?.id) {
+    const { error: pErr } = await admin.from("chat_conversations")
+      .update({ pending_exchange: input, pending_exchange_at: new Date().toISOString() })
+      .eq("id", conv.id);
+    if (pErr) chatLog("warn", "pending_exchange_save_error", { detail: pErr.message });
+  }
+  return {
+    message:
+      "BAŞARILI: Talep özeti müşteriye GÖRSEL kart olarak gösterildi (doğrulama ve stok kontrolü geçti). " +
+      'Şimdi SADECE kısa bir cümleyle onay iste (ör. "Talebinizin özeti aşağıda, onaylıyor musunuz?"). ' +
+      "Detayları metinde TEKRARLAMA. Müşteri karttaki butona basarsa talebi SİSTEM kaydeder; " +
+      "müşteri onayını METİN olarak yazarsa create_exchange_request fonksiyonunu çağır.",
+    order: r.order,
   };
 }
 
@@ -800,23 +1004,16 @@ async function handleOrderStatus(input: any, conv: any, ip: string): Promise<Ord
     if (phone.length < 10) {
       return { message: "HATA: Bu sorgu için siparişte kullanılan telefon numarası da gerekli. Müşteriden iste." };
     }
-    // IP hız sınırı — track-order EF ile ORTAK order_track_rate_limit (15/10 dk;
-    // başarılı/başarısız her deneme sayılır → order_no/telefon tahmini yavaşlar).
-    const cutoff = new Date(Date.now() - 10 * 60000).toISOString();
-    const { count: recent, error: rlErr } = await admin.from("order_track_rate_limit")
-      .select("id", { count: "exact", head: true })
-      .eq("ip", ip).gte("created_at", cutoff);
-    if (rlErr) {
-      chatLog("error", "order_status_rate_db_error", { detail: rlErr.message });
-      return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini ya da sitedeki Sipariş Takip sayfasını öner." };
-    }
-    if ((recent ?? 0) >= 15) {
+    // Doğrulama-kapılı hız sınırı — track-order EF ile ORTAK order_track_rate_limit.
+    // Yalnız BAŞARISIZ (eşleşmeyen) sorgular sayılır → order_no/telefon tahmini
+    // yavaşlar ama meşru sorgu (paylaşımlı IP dahil) kotaya takılmaz.
+    if (await verifyGateBlocked(ip, "order_track_rate_limit", null, 600, 15)) {
       chatLog("warn", "order_status_rate_limited", { ip });
       return { message: "HATA: Çok fazla sorgu yapıldı (hız sınırı). Müşteriye biraz sonra tekrar denemesini öner." };
     }
-    await admin.from("order_track_rate_limit").insert({ ip });
     if (!order || chatNormPhone(order.phone) !== phone) {
-      // enumeration savunması: hangisinin yanlış olduğu sızdırılmaz
+      // enumeration savunması: hangisinin yanlış olduğu sızdırılmaz; başarısız sorgu sayılır
+      await noteVerifyFailure(ip, "order_track_rate_limit", null);
       return { message: "HATA: Sipariş no veya telefon eşleşmedi. Müşteriden iki bilgiyi de kontrol etmesini iste; hangisinin yanlış olduğunu SÖYLEME." };
     }
   }
@@ -890,19 +1087,12 @@ async function verifyOrderForUpdate(
   if (phone.length < 10) return { message: "HATA: Siparişte kullanılan telefon numarası gerekli. Müşteriden iste." };
   if (!chatIsValidOrderNo(orderNoIn)) return { message: MISMATCH };
 
-  const cutoff = new Date(Date.now() - 60 * 60000).toISOString();
-  const { count: recent, error: rlErr } = await admin.from("form_rate_limit")
-    .select("id", { count: "exact", head: true })
-    .eq("ip", ip).eq("kind", "order_update").gte("created_at", cutoff);
-  if (rlErr) {
-    chatLog("error", "order_update_rate_db_error", { detail: rlErr.message });
-    return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini öner." };
-  }
-  if ((recent ?? 0) >= 5) {
+  // Doğrulama-kapılı hız sınırı: yalnız BAŞARISIZ eşleşmeler sayılır (adres +
+  // havale ORTAK bütçe). Doğrulanmış müşteri güncelleme rötuşlarıyla takılmaz.
+  if (await verifyGateBlocked(ip, "form_rate_limit", "order_update", 3600, 8)) {
     chatLog("warn", "order_update_rate_limited", { ip });
     return { message: `HATA: Çok fazla deneme yapıldı (hız sınırı). Müşteriye biraz sonra tekrar denemesini ya da WhatsApp ${WHATSAPP} hattını öner.` };
   }
-  await admin.from("form_rate_limit").insert({ ip, kind: "order_update" });
 
   const { data: order, error: oErr } = await admin.from("orders")
     .select(select).eq("order_no", orderNoIn).maybeSingle();
@@ -910,7 +1100,10 @@ async function verifyOrderForUpdate(
     chatLog("error", "order_update_read_error", { detail: oErr.message });
     return { message: "HATA: Sistem hatası. Müşteriye biraz sonra tekrar denemesini öner." };
   }
-  if (!order || chatNormPhone((order as any).phone) !== phone) return { message: MISMATCH };
+  if (!order || chatNormPhone((order as any).phone) !== phone) {
+    await noteVerifyFailure(ip, "form_rate_limit", "order_update");
+    return { message: MISMATCH };
+  }
   return { order };
 }
 
@@ -1602,13 +1795,13 @@ async function geminiGenerate(key: string, sys: string, contents: any[], withToo
         ? {
           tools: [{
             functionDeclarations: [
-              SUMMARY_TOOL, ORDER_TOOL, EXCHANGE_TOOL, ORDER_STATUS_TOOL, BENEFITS_TOOL,
+              SUMMARY_TOOL, ORDER_TOOL, EXCHANGE_TOOL, EXCHANGE_SUMMARY_TOOL, ORDER_STATUS_TOOL, BENEFITS_TOOL,
               ADDRESS_TOOL, TRANSFER_TOOL, PRICE_ALERT_TOOL, PRODUCT_CARD_TOOL,
             ],
           }],
         }
         : {}),
-      generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
+      generationConfig: { maxOutputTokens: 1024, temperature: 0.7, ...THINKING_OFF },
     }),
   });
   if (!res.ok) {
@@ -1616,7 +1809,10 @@ async function geminiGenerate(key: string, sys: string, contents: any[], withToo
     return null;
   }
   const data = await res.json();
-  return (data.candidates || [])[0]?.content?.parts || [];
+  const cand = (data.candidates || [])[0];
+  const parts = cand?.content?.parts || [];
+  if (!parts.length) chatLog("warn", "gemini_empty_parts", { finishReason: cand?.finishReason || null });
+  return parts;
 }
 
 async function askGemini(history: any[], conv: any, ip: string): Promise<AiResult> {
@@ -1638,6 +1834,7 @@ async function askGemini(history: any[], conv: any, ip: string): Promise<AiResul
     if (saved) sys += saved;
   }
   let order: Record<string, unknown> | undefined;
+  let retriedEmpty = false; // boş metin+boş tool yanıtında 1 kez otomatik tekrar
   // function-calling döngüsü (en fazla birkaç tur)
   for (let turn = 0; turn < 4; turn++) {
     const parts = await geminiGenerate(key, sys, contents, true);
@@ -1653,6 +1850,8 @@ async function askGemini(history: any[], conv: any, ip: string): Promise<AiResul
         ? await handleSummary(fargs, conv)
         : fname === "create_exchange_request"
         ? await handleCreateExchange(fargs, ip)
+        : fname === "show_exchange_summary"
+        ? await handleExchangeSummary(fargs, conv, ip)
         : fname === "get_order_status"
         ? await handleOrderStatus(fargs, conv, ip)
         : fname === "get_customer_benefits"
@@ -1711,6 +1910,14 @@ async function askGemini(history: any[], conv: any, ip: string): Promise<AiResul
         .trim();
       text = (text3 && !hasKuponPromise(text3) && !hasIadeCommitment(text3)) ? text3 : kuponSafeText();
     }
+    // Boş yanıt emniyet ağı: bir kez ephemeral nudge ile tekrar dene (nudge
+    // yalnız bu çağrının contents'inde kalır, DB geçmişine yazılmaz).
+    if (!text && !retriedEmpty) {
+      retriedEmpty = true;
+      chatLog("warn", "gemini_empty_text_retry", { conversation_id: conv?.id, turn });
+      contents.push({ role: "user", parts: [{ text: "(Sistem notu: yanıtın boş geldi. Lütfen müşterinin son mesajına kısa ve net Türkçe yanıtını şimdi yaz.)" }] });
+      continue;
+    }
     return { text: text || "Bunu tam anlayamadım, biraz daha açabilir misiniz?", order };
   }
   return { text: "İşleminizi tamamlayamadım, lütfen tekrar dener misiniz?", order };
@@ -1721,11 +1928,69 @@ async function verify(conversationId: string, token: string) {
   if (!conversationId || !token) return null;
   const { data } = await admin
     .from("chat_conversations")
-    .select("id,status,visitor_name,visitor_email,user_id,summary,pending_order,pending_order_at")
+    .select("id,status,visitor_name,visitor_email,user_id,summary,pending_order,pending_order_at,pending_exchange,pending_exchange_at")
     .eq("id", conversationId)
     .eq("visitor_token", token)
     .maybeSingle();
   return data;
+}
+
+// Bekleyen değişim/iptal talebini Gemini'ye uğramadan deterministik işler
+// (confirm_order deseninin aynası). Hem confirm_exchange aksiyonu (buton)
+// hem send içindeki kısa-onay kısayolu kullanır. userMsg null ise kullanıcı
+// mesajı ZATEN eklenmiş demektir (send yolu). Dönen obje json() yanıtıdır.
+async function runExchangeConfirm(conv: any, ip: string, userMsg: string | null): Promise<Record<string, unknown>> {
+  const pending = (conv as any).pending_exchange;
+  const atRaw = (conv as any).pending_exchange_at;
+  const at = atRaw ? new Date(atRaw).getTime() : 0;
+  if (!pending || !at || Date.now() - at > PENDING_ORDER_TTL_MS) {
+    // bekleyen özet yok/bayat → widget serbest-metin fallback'ine düşer
+    return { error: "no_pending" };
+  }
+  // pending'i HEMEN temizle: çifte tıklama ikinci istekte no_pending görür (idempotent)
+  await admin.from("chat_conversations")
+    .update({ pending_exchange: null, pending_exchange_at: null }).eq("id", conv.id);
+  if (userMsg) {
+    await admin.from("chat_messages").insert({ conversation_id: conv.id, role: "user", content: userMsg });
+  }
+  // countRate:false — sayaç teklif (show_exchange_summary) aşamasında arttı;
+  // eşleşme/canon/stok/mükerrerlik burada YENİDEN doğrulanır (ham girdi).
+  const result = await handleCreateExchange(pending, ip, { countRate: false });
+  const typeTr = (EXCH_TYPE_TR[String(pending.request_type)] || "değişim").toLocaleLowerCase("tr");
+  const m = result.message;
+  let aiMsg: string;
+  let ok = true;
+  // Değişimde süreç adımları — deterministik tam metin (Gemini'ye uğramadan).
+  // E-posta gönderildiyse (handleCreateExchange functionResponse'unda işaretli)
+  // bunu da söyle; yanlış "e-posta gönderdik" vaadi kurulmasın.
+  const stepsTxt = pending.request_type === "exchange"
+    ? "\n\nDeğişim sürecinde izlemeniz gereken adımlar:\n" +
+      exchangeInstructions(EXCHANGE_RETURN_ADDRESS).map((s, i) => `${i + 1}. ${s}`).join("\n") +
+      (m.includes("e-posta") ? "\n\nBu adımları e-posta adresinize de gönderdik." : "")
+    : "";
+  if (m.startsWith("BAŞARILI (GÜNCELLEME)")) {
+    aiMsg = `Mevcut ${typeTr} talebiniz yeni tercihlerinizle güncellendi ✅ Ekibimiz en kısa sürede (Pazartesi–Cumartesi 08:00–19:00) size dönüş yapacak.` + stepsTxt;
+  } else if (m.startsWith("BAŞARILI")) {
+    const pref = [pending.new_color ? `renk: ${pending.new_color}` : "", pending.new_size ? `beden: ${pending.new_size}` : ""].filter(Boolean).join(", ");
+    aiMsg =
+      `${pending.order_no} numaralı siparişiniz için ${typeTr} talebiniz alındı ✅` +
+      (pref ? ` Yeni tercihiniz (${pref}) talebinize işlendi.` : "") +
+      ` Ekibimiz en kısa sürede (Pazartesi–Cumartesi 08:00–19:00) size dönüş yapacak.` +
+      (pending.request_type === "exchange" ? " Değişimde gidiş-geliş kargo bedeli size aittir." : "") +
+      stepsTxt;
+  } else if (m.startsWith("BİLGİ")) {
+    aiMsg = "Bu sipariş için zaten açık bir talebiniz var; ekibimiz mevcut talebinizle ilgileniyor, yeni kayıt açmanıza gerek yok.";
+  } else if (/stok/i.test(m)) {
+    ok = false;
+    aiMsg = "Üzgünüm, tam onay sırasında istediğiniz renk/bedenin stokta kalmadığını gördüm. Dilerseniz başka bir renk ya da beden seçelim.";
+  } else {
+    ok = false;
+    aiMsg = `Üzgünüm, talebinizi şu an kaydedemedim. Birazdan tekrar deneyebilir ya da WhatsApp ${WHATSAPP} hattımızdan bize ulaşabilirsiniz.`;
+  }
+  await admin.from("chat_messages").insert({ conversation_id: conv.id, role: "ai", content: aiMsg });
+  await admin.from("chat_conversations")
+    .update({ last_message_at: new Date().toISOString(), unread_admin: true }).eq("id", conv.id);
+  return ok ? { ok: true } : { error: "failed" };
 }
 
 // ---- kalıcı hafıza: önceki görüşmeyi özetleyip yeni konuşmaya not düş ----
@@ -1761,7 +2026,8 @@ async function summarizeConversation(convId: string, prevNote: string | null): P
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: 256, temperature: 0.2 },
+      // 256'lık bütçe thinking'e daha da hassas
+      generationConfig: { maxOutputTokens: 256, temperature: 0.2, ...THINKING_OFF },
     }),
   });
   if (!res.ok) {
@@ -1913,11 +2179,32 @@ Deno.serve(async (req) => {
       await admin.from("chat_messages").insert({
         conversation_id: conv.id, role: "user", content: text,
       });
-      // her serbest kullanıcı mesajı bekleyen sipariş özetini bayatlatır:
-      // müşteri özetten sonra değişiklik yazdıysa onay butonu ESKİ özeti
-      // işlememeli (Gemini gerekirse yeni özet çıkarır; buton fallback'i çalışır)
+
+      // KISA ONAY KISAYOLU: bekleyen değişim özeti tazeyken müşteri butona
+      // basmak yerine "onaylıyorum" YAZARSA Gemini'ye hiç gitmeden deterministik
+      // işle (boş model yanıtı onayı düşüremez). Kullanıcı mesajı yukarıda
+      // zaten eklendi → runExchangeConfirm'e userMsg:null geçilir.
+      {
+        const px = (conv as any).pending_exchange;
+        const pxAt = (conv as any).pending_exchange_at ? new Date((conv as any).pending_exchange_at).getTime() : 0;
+        if (conv.status === "ai" && px && pxAt && Date.now() - pxAt <= PENDING_ORDER_TTL_MS && isShortConfirm(text)) {
+          await admin.from("chat_conversations")
+            .update({ last_message_at: new Date().toISOString(), unread_admin: true, pending_order: null, pending_order_at: null })
+            .eq("id", conv.id);
+          const resp = await runExchangeConfirm(conv, ip, null);
+          if (resp.error !== "no_pending") {
+            // ai yanıtı runExchangeConfirm içinde yazıldı; widget poll ile alır
+            return json({ ok: true, status: conv.status }, 200, cors);
+          }
+          // no_pending (yarış durumu): normal Gemini akışına düş
+        }
+      }
+
+      // her serbest kullanıcı mesajı bekleyen sipariş VE değişim özetini
+      // bayatlatır: müşteri özetten sonra değişiklik yazdıysa onay butonu
+      // ESKİ özeti işlememeli (Gemini gerekirse yeni özet çıkarır)
       await admin.from("chat_conversations")
-        .update({ last_message_at: new Date().toISOString(), unread_admin: true, pending_order: null, pending_order_at: null })
+        .update({ last_message_at: new Date().toISOString(), unread_admin: true, pending_order: null, pending_order_at: null, pending_exchange: null, pending_exchange_at: null })
         .eq("id", conv.id);
 
       // AI modundaysa hemen yanıt üret; canlı destekteyse operatör yanıtlar
@@ -2014,6 +2301,40 @@ Deno.serve(async (req) => {
       await admin.from("chat_messages").insert({
         conversation_id: conv.id, role: "ai",
         content: "Elbette, özeti iptal ettim. Üründe, adreste ya da ödeme yönteminde değişiklik yapmak isterseniz buradayım — nasıl yardımcı olabilirim?",
+      });
+      await admin.from("chat_conversations")
+        .update({ last_message_at: new Date().toISOString() }).eq("id", conv.id);
+      return json({ ok: true }, 200, cors);
+    }
+
+    // ---- bekleyen değişim/iptal talebini onayla ("Talebi Onayla" butonu) ----
+    // confirm_order aynası: onay Gemini'ye bırakılmaz; show_exchange_summary
+    // sırasında saklanan pending_exchange doğrudan işlenir → boş model yanıtı
+    // ("Bunu tam anlayamadım") onay akışını asla düşüremez.
+    if (action === "confirm_exchange") {
+      const conv = await verify(body.conversation_id, body.visitor_token);
+      if (!conv) return json({ error: "unauthorized" }, 403, cors);
+      if (await rateLimited(ip, "confirm")) {
+        return json({ error: "rate", message: "Çok hızlı denediniz, lütfen birkaç saniye sonra tekrar deneyin." }, 429, cors);
+      }
+      await rateHit(ip, "confirm");
+      const resp = await runExchangeConfirm(conv, ip, "Onaylıyorum.");
+      return json({ ...resp, status: conv.status }, 200, cors);
+    }
+
+    // ---- bekleyen değişim özetinden vazgeç ("Vazgeç" butonu) ----
+    if (action === "cancel_exchange") {
+      const conv = await verify(body.conversation_id, body.visitor_token);
+      if (!conv) return json({ error: "unauthorized" }, 403, cors);
+      await admin.from("chat_conversations")
+        .update({ pending_exchange: null, pending_exchange_at: null }).eq("id", conv.id);
+      // sıralı insert: created_at eşitliğinde kullanıcı/ai sırası bozulmasın
+      await admin.from("chat_messages").insert({
+        conversation_id: conv.id, role: "user", content: "Talebi şimdilik onaylamıyorum.",
+      });
+      await admin.from("chat_messages").insert({
+        conversation_id: conv.id, role: "ai",
+        content: "Elbette, talebi iptal ettim. Farklı bir renk/beden düşünmek isterseniz ya da başka bir konuda yardım gerekirse buradayım.",
       });
       await admin.from("chat_conversations")
         .update({ last_message_at: new Date().toISOString() }).eq("id", conv.id);

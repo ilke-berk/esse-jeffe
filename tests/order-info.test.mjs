@@ -3,12 +3,32 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   EXCH_STATUS_TR,
+  exchangeInstructions,
   formatOrderList,
   formatOrderStatus,
   ORDER_STATUS_TR,
   PAYMENT_METHOD_TR,
   PAYMENT_STATUS_TR,
 } from "../backend/functions/chat/order-info.ts";
+
+// ---- exchangeInstructions (değişim süreç talimatları) ----
+test("exchangeInstructions: adres verilirse adres satırı, verilmezse 'ekip iletecek'", () => {
+  const withAddr = exchangeInstructions("Örnek Mah. No:1 Esenler/İstanbul");
+  assert.ok(withAddr.some((s) => s.includes("Örnek Mah. No:1")));
+  assert.ok(!withAddr.some((s) => s.includes("ekibimiz tarafından size iletilecek")));
+  const noAddr = exchangeInstructions(null);
+  assert.ok(noAddr.some((s) => s.includes("ekibimiz tarafından size iletilecek")));
+});
+
+test("exchangeInstructions: zorunlu koşullar her iki modda da var", () => {
+  for (const steps of [exchangeInstructions(null), exchangeInstructions("adres")]) {
+    assert.equal(steps.length, 6);
+    assert.ok(steps.some((s) => s.includes("etiketi çıkarılmamış")));
+    assert.ok(steps.some((s) => s.includes("orijinal ambalajı")));
+    assert.ok(steps.some((s) => s.includes("sipariş numaranız")));
+    assert.ok(steps.some((s) => s.includes("kargo bedeli müşterimize aittir")));
+  }
+});
 
 // ---- map'ler schema.sql CHECK listeleriyle birebir ----
 test("ORDER_STATUS_TR: orders.status CHECK değerlerinin tamamı var", () => {

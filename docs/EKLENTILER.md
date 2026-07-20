@@ -89,7 +89,7 @@
 ### Kapıda ödeme risk kontrolü — ✅ YAPILDI (2026-07-17)
 - **Ne:** Aynı telefonla tekrarlanan iptal geçmişi olan COD siparişlerini admin-siparisler'de işaretleme + eşik aşımında "Onay bekliyor" bekletmesi.
 - **Neden:** COD'un en büyük zararını (teslim almama) keser.
-- **Nasıl yapıldı:** `codrisk_signals` RPC (normalize telefonla son 180 günde iptal/teslim/açık COD sayısı) + `_shared/cod-risk.ts` saf skorlama (create-order, COD'da insert öncesi çağırır; fail-soft) → `orders.risk_*` snapshot kolonları. Admin'de "Riskli/Dikkat/Onay bekliyor" rozetleri, "Riskli" filtresi, detayda Risk kartı + "Onayı kaldır". Kurulum: `backend/cod-risk-kurulum.md`. Ürünleşme yol haritası: `docs/PLAN-kapida-risk-urun.md`.
+- **Nasıl yapıldı:** `codrisk_signals` RPC (normalize telefonla son 180 günde iptal/teslim/açık COD sayısı) + `_shared/cod-risk.ts` saf skorlama (create-order, COD'da insert öncesi çağırır; fail-soft) → `orders.risk_*` snapshot kolonları. Admin'de "Riskli/Dikkat/Onay bekliyor" rozetleri, "Riskli" filtresi, detayda Risk kartı + "Onayı kaldır". Kurulum: `backend/cod-risk-kurulum.md`.
 
 ---
 

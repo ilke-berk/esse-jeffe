@@ -291,6 +291,11 @@ alter table chat_conversations add column if not exists summary text;
 -- mesajı ve onay/vazgeçme kaydı temizler; 30 dk sonra bayat sayılır (TTL EF'te).
 alter table chat_conversations add column if not exists pending_order    jsonb;
 alter table chat_conversations add column if not exists pending_order_at timestamptz;
+-- Deterministik değişim onayı (2026-07-18): show_exchange_summary çağrısında
+-- ham tool girdisi buraya yazılır; "Talebi Onayla" butonu veya "onaylıyorum"
+-- kısa mesajı Gemini'ye uğramadan confirm_exchange ile işler (pending_order aynası).
+alter table chat_conversations add column if not exists pending_exchange    jsonb;
+alter table chat_conversations add column if not exists pending_exchange_at timestamptz;
 -- Konuşma puanlama (2026-07-17): widget kapanışta 1-5 yıldız sorar
 -- (chat EF 'rate' aksiyonu yazar); admin.html listeler + ortalama gösterir.
 alter table chat_conversations add column if not exists rating smallint check (rating between 1 and 5);
@@ -904,6 +909,15 @@ create policy exchange_requests_admin_read on exchange_requests
 drop policy if exists exchange_requests_admin_update on exchange_requests;
 create policy exchange_requests_admin_update on exchange_requests
   for update to authenticated using (is_admin()) with check (is_admin());
+-- 2026-07-21 — girişli müşteri KENDİ siparişine bağlı talepleri okuyabilir
+-- (hesap.html rozeti). Misafir görünürlüğü track-order EF ile (no+telefon).
+drop policy if exists exchange_requests_owner_read on exchange_requests;
+create policy exchange_requests_owner_read on exchange_requests
+  for select to authenticated
+  using (exists (
+    select 1 from orders o
+    where o.id = exchange_requests.order_id and o.user_id = (select auth.uid())
+  ));
 
 -- ============================================================
 --  SADAKAT PROGRAMI (birikimli indirim kuponu)

@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
   // --- siparişi çek (order_no benzersiz) ve telefonu doğrula ---
   const { data: order, error: oErr } = await admin
     .from("orders")
-    .select("order_no,status,payment_method,payment_status,subtotal,shipping_fee,total,city,district,created_at,phone,carrier,tracking_no," +
+    .select("id,order_no,status,payment_method,payment_status,subtotal,shipping_fee,total,city,district,created_at,phone,carrier,tracking_no," +
       "order_items(product_name,model_desc,color,size,qty,unit_price)")
     .eq("order_no", orderNo)
     .maybeSingle();
@@ -97,6 +97,21 @@ Deno.serve(async (req) => {
     return json({ error: "Sipariş no veya telefon eşleşmedi. Bilgileri kontrol edin." }, 404);
   }
   log.info("track_ok", { ip, order_no: order.order_no });
+
+  // Değişim/iptal talebi görünürlüğü: siparişe bağlı EN GÜNCEL talep (varsa)
+  // müşteriye durumuyla gösterilir. Kimlik zaten no+telefon ile doğrulandı;
+  // yalnız durum alanları döner (details/serbest metin dönmez). FAIL-SOFT:
+  // sorgu hatası takip yanıtını bozmaz.
+  let exchange: Record<string, unknown> | null = null;
+  const { data: exch, error: exErr } = await admin
+    .from("exchange_requests")
+    .select("request_type,status,product_name,new_color,new_size,created_at,updated_at")
+    .eq("order_id", order.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (exErr) log.warn("exchange_read_error", { ip, detail: exErr.message });
+  else if (exch) exchange = exch;
 
   // yalnız güvenli alanları dön (telefonu geri gönderme)
   return json({
@@ -114,6 +129,7 @@ Deno.serve(async (req) => {
       carrier: order.carrier || null,
       tracking_no: order.tracking_no || null,
       items: order.order_items || [],
+      exchange,
     },
   });
 });

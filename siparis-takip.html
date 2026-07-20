@@ -127,12 +127,14 @@
 <script defer src="backend/supabase-config.js"></script>
 <script defer src="backend/ej-supabase.js?v=16"></script>
 <script defer src="ej.js?v=12"></script>
-<script defer src="ej-chat.js?v=20"></script>
+<script defer src="ej-chat.js?v=21"></script>
 <script>
 (function(){
   var STATUS = { pending:'Alındı — hazırlanıyor', preparing:'Hazırlanıyor', shipped:'Kargoda', delivered:'Teslim edildi', cancelled:'İptal edildi' };
   var PAYM   = { cod:'Kapıda ödeme', card:'Kredi/banka kartı', transfer:'Havale/EFT' };
   var PAYS   = { pending:'Ödeme bekleniyor', paid:'Ödendi', failed:'Ödeme başarısız', cod:'Teslimatta ödenecek' };
+  var EXCH_TYPE   = { exchange:'Değişim', cancel:'İptal' };
+  var EXCH_STATUS = { new:'Alındı — inceleme bekliyor', in_progress:'İşlemde', closed:'Sonuçlandı' };
   function fmt(n){ return (n||0).toLocaleString('tr-TR') + ' TL'; }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function dt(iso){ try{ return new Date(iso).toLocaleDateString('tr-TR',{day:'2-digit',month:'long',year:'numeric'}); }catch(e){ return ''; } }
@@ -175,12 +177,22 @@
       cargo = '<div class="oc-line"><span>Kargo'+(o.carrier?' ('+esc(o.carrier)+')':'')+'</span><span>'+
         (o.tracking_no?'Takip No: '+esc(o.tracking_no):'—')+'</span></div>';
     }
+    // değişim/iptal talebi satırı (sohbet asistanı veya formdan açılan talep)
+    var exch = '';
+    if(o.exchange){
+      var x = o.exchange;
+      var pref = []; if(x.new_color) pref.push('yeni renk: '+esc(x.new_color)); if(x.new_size) pref.push('yeni beden: '+esc(x.new_size));
+      exch = '<div class="oc-line" style="background:#faf6ef;border-radius:8px;padding:8px 10px;margin-top:6px">'+
+        '<span><b>'+(EXCH_TYPE[x.request_type]||esc(x.request_type))+' talebi</b>'+
+        (x.product_name?' · '+esc(x.product_name):'')+(pref.length?' ('+pref.join(', ')+')':'')+'</span>'+
+        '<span>'+(EXCH_STATUS[x.status]||esc(x.status))+'</span></div>';
+    }
     wrap.innerHTML = '<div class="order-card">'+
       '<div class="oc-top"><span class="oc-no">'+esc(o.order_no)+' <span class="oc-date">· '+dt(o.created_at)+'</span></span>'+
       '<span class="oc-status" data-st="'+esc(o.status)+'">'+(STATUS[o.status]||esc(o.status))+'</span></div>'+
       timelineHTML(o.status)+
       '<div class="oc-line" style="opacity:.75"><span>'+payLine+'</span><span>'+esc(o.district||'')+(o.district&&o.city?' / ':'')+esc(o.city||'')+'</span></div>'+
-      items+ cargo +
+      items+ cargo + exch +
       '<div class="oc-total"><span>Toplam</span><span>'+fmt(o.total)+'</span></div></div>'+
       '<p style="margin-top:16px;font-size:13px;color:var(--muted)">Bir sorun mu var? <a href="iletisim.html" style="text-decoration:underline">Bize ulaşın</a> ya da <a href="https://api.whatsapp.com/send?phone=%2B908502551237" style="text-decoration:underline">WhatsApp</a>.</p>';
   }

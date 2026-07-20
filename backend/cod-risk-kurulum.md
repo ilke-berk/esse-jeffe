@@ -5,10 +5,6 @@ uygulaması: aynı telefonla geçmişte iptal edilmiş siparişi olan COD
 siparişleri oluşturulurken skorlanır, admin-siparisler'de rozetlenir ve
 eşik aşımında "Onay bekliyor" (bekletme) işareti alır.
 
-> **Ürünleşme notu:** Bu özellik ileride bağımsız bir SaaS ürününe
-> dönüştürülecek şekilde katmanlı yazıldı — yol haritası:
-> `docs/PLAN-kapida-risk-urun.md`.
-
 ## Mimari
 
 ```

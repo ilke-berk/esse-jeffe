@@ -93,6 +93,24 @@ export function formatOrderStatus(
   return `BAŞARILI: ${lines.join(" ")} Müşteriye bu bilgileri sıcak bir dille aktar; bu metinde OLMAYAN durum/takip bilgisi SÖYLEME.`;
 }
 
+/**
+ * Değişim sürecinde müşterinin izleyeceği adımlar (kaynak: hizmetler.html
+ * "Değişim Şartları" + degisim-iptal.html koşulları — site metniyle tutarlı).
+ * returnAddr: EXCHANGE_RETURN_ADDRESS secret'ı (yoksa "ekip iletecek" satırı).
+ */
+export function exchangeInstructions(returnAddr: string | null): string[] {
+  return [
+    "Ürünün etiketi çıkarılmamış, kullanılmamış/yıkanmamış ve leke, parfüm ya da makyaj izi bulaşmamış olmalı.",
+    "Ürünü orijinal ambalajı ve varsa aksesuarlarıyla eksiksiz paketleyin; kargo poşeti içinde gönderin, ürün kutusunun üzerine ek bant yapıştırmayın.",
+    "Fatura veya sipariş bilginizi (sipariş numaranız yeterli) paketin içine ekleyin.",
+    returnAddr
+      ? `Paketi şu adrese gönderin: ${returnAddr}.`
+      : "Gönderim adresi ve anlaşmalı kargo bilgisi ekibimiz tarafından size iletilecek (Pazartesi–Cumartesi 08:00–19:00).",
+    "Gidiş-geliş kargo bedeli müşterimize aittir; kargo ücretini gönderirken kargo firmasına ödersiniz.",
+    "Ürün bize ulaşıp incelendikten sonra yeni ürününüz aynı gün kargoya verilir.",
+  ];
+}
+
 /** Girişli kullanıcının sipariş listesi metni. */
 export function formatOrderList(rows: OrderInfoRow[]): string {
   if (!rows.length) {

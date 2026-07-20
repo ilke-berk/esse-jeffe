@@ -138,7 +138,7 @@
 <script defer src="backend/supabase-config.js"></script>
 <script defer src="backend/ej-supabase.js?v=16"></script>
 <script defer src="ej.js?v=12"></script>
-<script defer src="ej-chat.js?v=20"></script>
+<script defer src="ej-chat.js?v=21"></script>
 <script>
 (function(){
   var STATUS = { pending:'Hazırlanıyor', preparing:'Hazırlanıyor', shipped:'Kargoda', delivered:'Teslim edildi', cancelled:'İptal edildi' };
@@ -172,6 +172,10 @@
     }).join('') + '</ul>';
   }
 
+  var EXCH_TYPE   = { exchange:'Değişim', cancel:'İptal' };
+  var EXCH_STATUS = { new:'Alındı — inceleme bekliyor', in_progress:'İşlemde', closed:'Sonuçlandı' };
+  var exchByOrderNo = {}; // order_no → en güncel değişim/iptal talebi (RLS: yalnız kendi siparişleri)
+
   function renderOrders(list){
     var wrap = document.getElementById('acctOrders');
     if(!list || !list.length){ wrap.innerHTML = '<p class="acct-empty">Henüz siparişiniz yok. <a href="koleksiyon.html" style="text-decoration:underline">Koleksiyona göz atın.</a></p>'; return; }
@@ -185,11 +189,20 @@
         cargo = '<div class="oc-line"><span>Kargo'+(o.carrier?' ('+esc(o.carrier)+')':'')+'</span><span>'+
           (o.tracking_no?'Takip No: '+esc(o.tracking_no):'—')+'</span></div>';
       }
+      var exch = '';
+      var x = exchByOrderNo[o.order_no];
+      if(x){
+        var pref = []; if(x.new_color) pref.push('yeni renk: '+esc(x.new_color)); if(x.new_size) pref.push('yeni beden: '+esc(x.new_size));
+        exch = '<div class="oc-line" style="background:#faf6ef;border-radius:8px;padding:8px 10px;margin-top:6px">'+
+          '<span><b>'+(EXCH_TYPE[x.request_type]||esc(x.request_type))+' talebi</b>'+
+          (x.product_name?' · '+esc(x.product_name):'')+(pref.length?' ('+pref.join(', ')+')':'')+'</span>'+
+          '<span>'+(EXCH_STATUS[x.status]||esc(x.status))+'</span></div>';
+      }
       return '<div class="order-card">'+
         '<div class="oc-top"><span class="oc-no">'+esc(o.order_no)+' <span class="oc-date">· '+dt(o.created_at)+'</span></span>'+
         '<span class="oc-status" data-st="'+esc(o.status)+'">'+(STATUS[o.status]||esc(o.status))+'</span></div>'+
         timelineHTML(o.status)+
-        items+ cargo +
+        items+ cargo + exch +
         '<div class="oc-total"><span>Toplam</span><span>'+fmt(o.total)+'</span></div></div>';
     }).join('');
   }
@@ -345,10 +358,23 @@
         .then(function(r){ if(r.data && r.data.is_admin){ document.getElementById('acctAdmin').style.display='flex'; } });
       initProfile(u);
       initAddresses(u);
+      // değişim/iptal talepleri (RLS owner-read: yalnız kendi siparişlerine
+      // bağlı talepler döner) — hata olursa rozetsiz devam (fail-soft)
       window.EJData.client()
-        .from('orders')
-        .select('order_no,status,total,created_at,carrier,tracking_no,order_items(product_name,color,size,qty,unit_price)')
+        .from('exchange_requests')
+        .select('order_no,request_type,status,product_name,new_color,new_size,created_at')
         .order('created_at',{ascending:false})
+        .then(function(r){
+          (r.data||[]).forEach(function(x){
+            if(!exchByOrderNo[x.order_no]) exchByOrderNo[x.order_no] = x; // en güncel talep
+          });
+        })
+        .then(function(){
+          return window.EJData.client()
+            .from('orders')
+            .select('order_no,status,total,created_at,carrier,tracking_no,order_items(product_name,color,size,qty,unit_price)')
+            .order('created_at',{ascending:false});
+        })
         .then(function(res){
           if(res.error){ document.getElementById('acctOrders').innerHTML='<p class="acct-empty">Siparişler yüklenemedi.</p>'; console.error(res.error); return; }
           renderOrders(res.data||[]);

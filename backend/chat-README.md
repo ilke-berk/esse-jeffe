@@ -33,13 +33,26 @@ alır ve `create_order` aracını çağırır.
 | `../ej-chat.js` | Ziyaretçi widget'ı (tüm sayfalara eklendi); kart siparişinde PayTR iframe'ini açar |
 | `../admin.html` | Operatör paneli (giriş + Realtime + yanıt) |
 
-## ⚠️ Deploy (sohbetle sipariş eklendiğinde)
+## ⚠️ Deploy (chat fonksiyonu değiştiğinde)
 
-`functions/chat/index.ts` değişti — Supabase'e yeniden deploy edin.
+**DİKKAT: chat fonksiyonu artık TEK dosya DEĞİL.** `index.ts` beş kardeş modül
+import eder: `order-email.ts`, `guards.ts`, `exchange.ts`, `order-info.ts`,
+`discount.ts`. Deploy'da **6 dosyanın hepsi birden** yüklenmelidir; yalnız
+`index.ts` yüklenirse import'lar kırılır ve fonksiyon boot hatası verir.
 
-Bu makinede `npx supabase` npm TLS hatası verdi (`UNABLE_TO_VERIFY_LEAF_SIGNATURE`)
-ve `curl` schannel CRL kontrolünde takıldı; ikisi de aşağıdaki yöntemle çözüldü.
-**Çalışan yöntem — Management API (curl, CLI gerekmez):**
+**Tercih edilen yöntem — `backend/deploy-chat.ps1`:**
+
+```powershell
+$env:SUPABASE_ACCESS_TOKEN = "sbp_..."   # https://supabase.com/dashboard/account/tokens
+powershell -ExecutionPolicy Bypass -File backend/deploy-chat.ps1
+```
+
+Script dosyaları önce ASCII yola kopyalar (curl.exe Türkçe karakterli yoldan
+okuyamıyor) ve Management API'ye 6 dosyalı multipart deploy yapar. İş bitince
+token'ı dashboard'dan revoke edin. NOT: MCP `deploy_edge_function` bu fonksiyon
+için KULLANILAMAZ — 6 dosya ~170KB, tek çağrı limitine sığmıyor.
+
+**Alternatif — Management API (curl, elle):**
 
 ```bash
 # <TOKEN> = https://supabase.com/dashboard/account/tokens (sbp_...)
@@ -47,12 +60,29 @@ curl --ssl-no-revoke -X POST \
   "https://api.supabase.com/v1/projects/grdinhjtsmoograktgge/functions/deploy?slug=chat" \
   -H "Authorization: Bearer <TOKEN>" \
   -F 'metadata={"entrypoint_path":"index.ts","name":"chat","verify_jwt":false};type=application/json' \
-  -F 'file=@backend/functions/chat/index.ts;type=application/typescript'
+  -F 'file=@backend/functions/chat/index.ts;type=application/typescript' \
+  -F 'file=@backend/functions/chat/order-email.ts;type=application/typescript' \
+  -F 'file=@backend/functions/chat/guards.ts;type=application/typescript' \
+  -F 'file=@backend/functions/chat/exchange.ts;type=application/typescript' \
+  -F 'file=@backend/functions/chat/order-info.ts;type=application/typescript' \
+  -F 'file=@backend/functions/chat/discount.ts;type=application/typescript'
 ```
 
 `--ssl-no-revoke` = yalnız sertifika iptal (CRL) kontrolünü atlar, zincir doğrulaması sürer.
-Başarılı yanıt `version` numarasını arttırır (HTTP 201). Alternatif: Supabase Dashboard
-→ Edge Functions → chat → kod editörüne yapıştır → Deploy.
+Başarılı yanıt `version` numarasını arttırır (HTTP 201).
+
+### Deterministik değişim onayı (2026-07-18, widget v=21)
+
+Değişim/iptal onayı artık sipariş onayıyla aynı desende deterministiktir:
+model tüm bilgileri toplayınca `show_exchange_summary` tool'unu çağırır →
+sunucu doğrulama+stok kontrolünü yapar, HAM girdiyi
+`chat_conversations.pending_exchange`(+`_at`)'a yazar, widget'a özet kartı
+döner. Onay iki yoldan Gemini'ye uğramadan işlenir: karttaki "Talebi Onayla"
+butonu (`confirm_exchange` aksiyonu) veya müşterinin "onaylıyorum" tarzı kısa
+mesajı (send içi `isShortConfirm` kısayolu). Kayıt anında her şey yeniden
+doğrulanır; her serbest mesaj pending'i bayatlatır (TTL 30 dk). Ayrıca Gemini
+çağrılarında `thinkingBudget:0` + boş-yanıt retry eklendi ("Bunu tam
+anlayamadım" vakası). Şema: `migrations/2026-07-18-pending-exchange.sql`.
 
 `paytr-token` fonksiyonu değişmedi (kart akışı onu olduğu gibi kullanır).
 Widget cache sürümü `ej-chat.js?v=7`'ye yükseltildi (tüm HTML'lerde).
