@@ -17,7 +17,8 @@
   if (/\/admin/i.test(location.pathname)) return;               // admin sayfalarında gösterme
 
   var ENDPOINT = cfg.SUPABASE_URL.replace(/\/$/, '') + '/functions/v1/chat';
-  var LSKEY = 'ej_chat';
+  var LSKEY = 'ej_chat';        // son konuşma kaydı (yalnız "kaldığım yerden devam" butonunu besler)
+  var SSKEY = 'ej_chat_live';   // AKTİF konuşma: sekme ömürlü — sayfa/sekme kapanınca doğal olarak biter
   // Uyarlanabilir yoklama (poll): sabit setInterval yerine duruma göre aralık.
   // - Canlı destek/bekleme (operatör her an yazabilir): kısa aralık.
   // - AI modu boşta (senkron yanıt zaten 'send' cevabında gelir; burada yalnız
@@ -38,7 +39,8 @@
     { t: 'Kapıda Ödeme', q: 'Kapıda ödeme var mı?' }
   ];
 
-  var conv = load();          // {id, token} | null
+  var conv = load();          // {id, token} | null — yalnız AYNI sekme içinde sürer
+  var prevConv = conv ? null : loadPrev();  // önceki oturumdan kalan konuşma (buton adayı)
   var lastTs = '1970-01-01';  // görülen son mesaj zamanı
   var seen = {};              // id -> true
   var status = 'ai';
@@ -114,6 +116,8 @@
   '.ej-wchips button{background:none;border:1px solid var(--line-strong,#d4d4d4);color:var(--soft,#56534c);' +
     'font:inherit;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;padding:8px 14px;border-radius:999px;cursor:pointer;white-space:nowrap;transition:all .2s}' +
   '.ej-wchips button:hover{background:' + INK + ';color:#fff;border-color:' + INK + '}' +
+  '.ej-resume{margin-top:6px;background:none;border:none;color:var(--zeytin,#3c4a3a);font:inherit;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;border-bottom:1px solid currentColor;padding:0 0 3px;transition:color .2s}' +
+  '.ej-resume:hover{color:var(--ink,#1b1a17)}' +
 
   /* mesajlar */
   '.ej-row{display:flex;flex-direction:column;gap:5px;max-width:84%}' +
@@ -248,6 +252,7 @@
         '<h4>Esse Jeffe\'ye hoş geldiniz</h4>' +
         '<p>Abiye seçimi, beden, renk ya da kargo — her konuda yardımcı olalım. Size nasıl yardımcı olabiliriz?</p>' +
         '<div class="ej-wchips" id="ejChatChips">' + chipsHTML + '</div>' +
+        '<button type="button" class="ej-resume" id="ejChatResume" style="display:none">Kaldığım yerden devam et</button>' +
       '</div>' +
       '<div class="ej-typing" id="ejChatTyping"><span></span><span></span><span></span></div>' +
     '</div>' +
@@ -301,6 +306,7 @@
   var dotEl = document.getElementById('ejChatDot');
   var payEl = document.getElementById('ejChatPay');
   var payBodyEl = document.getElementById('ejChatPayBody');
+  var resumeEl = document.getElementById('ejChatResume');
 
   // ---------- olaylar ----------
   btn.addEventListener('click', openPanel);
@@ -346,6 +352,7 @@
   });
   document.getElementById('ejChatRateSkip').addEventListener('click', function () { hideRateStep(); endChat(); });
   document.getElementById('ejChatPayBack').addEventListener('click', closeCardPayment);
+  resumeEl.addEventListener('click', resumePrev);
   sendBtn.addEventListener('click', doSend);
   chipsEl.addEventListener('click', function (e) {
     var b = e.target.closest('button');
@@ -372,16 +379,12 @@
     panel.classList.add('open');
     btn.style.display = 'none';           // ikon gizlenir; panel köşeye oturur
     dotEl.style.display = 'none';
-    // Konuşma YOKSA otomatik başlatma: karşılama/seçim ekranı görünür kalsın.
-    // Konuşma ancak kullanıcı bir çipe tıklayınca ya da mesaj yazınca başlar.
-    // İstisna: girişli kullanıcının sunucuda süren bir konuşması varsa devral
-    // (farklı cihaz/tarayıcıdan kaldığı yerden devam).
+    // Konuşma YOKSA otomatik başlatma ve otomatik devralma YOK: her yeni sayfa
+    // oturumu boş karşılamayla açılır. Önceki oturumdan konuşma varsa (yerelde
+    // ya da girişli kullanıcı için sunucuda) karşılamada "Kaldığım yerden devam et"
+    // butonu belirir; devam ancak o butonla olur.
     if (conv && conv.id) { poll(); startPolling(); }
-    else {
-      resumeIfPossible().then(function () {
-        if (conv && conv.id && panel.classList.contains('open')) { poll(); startPolling(); }
-      });
-    }
+    else { updateResumeUI(); }
     setTimeout(function () { textEl.focus(); }, 80);
   }
   // uyarlanabilir yoklama: duruma göre bir sonraki aralığı seç (bkz. POLL_* sabitleri)
@@ -422,6 +425,7 @@
       api('end', { conversation_id: conv.id, visitor_token: conv.token }).catch(function () {});
     }
     resumeTried = Promise.resolve();   // kullanıcı bilinçli sonlandırdı: bu sayfa ömründe devralma yok
+    prevConv = null; hideResumeBtn();
     conv = null; save(null);
     seen = {}; lastTs = '1970-01-01'; status = 'ai'; userMsgCount = 0; pollMisses = 0;
     burst = []; burstRow = null; sendQueue = [];
@@ -462,17 +466,16 @@
     if (starting) return Promise.resolve();
     starting = true;
     startErr = null;
-    // önce girişli kullanıcının önceki konuşmasını devralmayı dene (farklı cihaz/tarayıcı)
-    return resumeIfPossible().then(function () {
-      if (conv && conv.id) { starting = false; return; }
-      return prefill().then(function (info) {
-        // user_id gönderilmez; backend girişli kullanıcıyı access_token (JWT) ile doğrular
-        return api('start', { name: info.name, email: info.email, access_token: info.access_token, page: location.pathname });
-      }).then(function (res) {
-        if (res && res.conversation_id) { conv = { id: res.conversation_id, token: res.visitor_token }; save(conv); }
-        else if (res && res.error) { startErr = res.message || 'Sohbet şu an başlatılamadı, lütfen biraz sonra tekrar deneyin.'; }
-        starting = false;
-      });
+    // Otomatik devralma yok: kullanıcı devam butonuna basmadıysa mesaj yazması
+    // her zaman YENİ bir konuşma başlatır (önceki oturumun konuşması geride kalır).
+    return prefill().then(function (info) {
+      // user_id gönderilmez; backend girişli kullanıcıyı access_token (JWT) ile doğrular
+      return api('start', { name: info.name, email: info.email, access_token: info.access_token, page: location.pathname });
+    }).then(function (res) {
+      if (res && res.conversation_id) { conv = { id: res.conversation_id, token: res.visitor_token }; save(conv); }
+      else if (res && res.error) { startErr = res.message || 'Sohbet şu an başlatılamadı, lütfen biraz sonra tekrar deneyin.'; }
+      starting = false;
+      prevConv = null; hideResumeBtn();   // yeni konuşma açıldı: devam teklifi artık geçersiz
     }).catch(function () { starting = false; });
   }
 
@@ -504,22 +507,46 @@
     return Promise.resolve(null);
   }
 
-  // Girişli kullanıcının son konuşmasını sunucudan devral (localStorage boşsa:
-  // farklı cihaz, farklı tarayıcı ya da temizlenmiş depolama). Sayfa ömründe
-  // bir kez denenir; sonuç ne olursa olsun aynı promise paylaşılır ki
-  // openPanel ile ensureConv yarışıp iki konuşma açmasın.
-  function resumeIfPossible() {
-    if (conv || resumeTried) return resumeTried || Promise.resolve();
+  // ---------- "Kaldığım yerden devam et" ----------
+  // Önceki oturumun konuşması OTOMATİK devralınmaz; yalnız karşılama ekranındaki
+  // butonla sürdürülür. Buton adayı iki kaynaktan gelir:
+  //  1) localStorage'daki son konuşma kaydı (aynı tarayıcı, önceki oturum)
+  //  2) girişli kullanıcı için sunucudaki açık konuşma (farklı cihaz/tarayıcı)
+  function updateResumeUI() {
+    if (conv) { hideResumeBtn(); return; }
+    if (prevConv && prevConv.id) { showResumeBtn(); return; }
+    // yerelde kayıt yok: girişliyse sunucuya bir kez sor (aday olarak sakla, adopte etme)
+    if (resumeTried) return;
     resumeTried = userToken().then(function (jwt) {
-      if (!jwt || conv) return;
+      if (!jwt || conv || prevConv) return;
       return api('resume', { access_token: jwt }, 15000).then(function (res) {
         if (res && res.conversation_id && res.visitor_token && !conv) {
-          conv = { id: res.conversation_id, token: res.visitor_token };
-          save(conv);
+          prevConv = { id: res.conversation_id, token: res.visitor_token };
+          if (panel.classList.contains('open')) showResumeBtn();
         }
       });
     }).catch(function () {});
-    return resumeTried;
+  }
+  function showResumeBtn() { if (resumeEl) resumeEl.style.display = ''; }
+  function hideResumeBtn() { if (resumeEl) resumeEl.style.display = 'none'; }
+  function resumePrev() {
+    if (conv || !prevConv || !prevConv.id) { hideResumeBtn(); return; }
+    conv = prevConv; prevConv = null;
+    save(conv);
+    hideResumeBtn();
+    introShown = true;                 // geçmişi olan konuşmada sahte giriş oynamasın
+    poll().then(function () {
+      if (status === 'closed' || !bodyEl.querySelector('.ej-row')) {
+        // konuşma sunucuda kapanmış/boş: sessizce sıfırla, kullanıcı yeniden başlasın
+        conv = null; save(null);
+        introShown = false;
+        addMsg('sys', 'Önceki görüşmeniz sona ermiş. Yeni bir mesaj yazarak sohbete başlayabilirsiniz.', null, null);
+        scrollDown();
+        return;
+      }
+      startPolling();
+      scrollDown();
+    });
   }
 
   function doSend() {
@@ -710,6 +737,7 @@
     if (order.mode === 'summary') renderOrderCard(order);   // onay öncesi görsel özet kartı
     else if (order.mode === 'card') openCardPayment(order);
     else if (order.mode === 'product') renderProductCard(order.product); // görsel ürün kartı
+    else if (order.mode === 'exchange_summary') renderExchangeCard(order); // değişim/iptal onay kartı
     // cod: AI yanıtı sipariş numarasını ve özeti zaten içeriyor
   }
 
@@ -726,7 +754,8 @@
       ? '<s style="opacity:.55;font-weight:400;margin-right:6px">' + money(p.old_price) + '</s>' + money(p.price)
       : money(p.price);
     var thumb = p.image ? '<img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" loading="lazy">' : '';
-    var url = 'urun.html?slug=' + encodeURIComponent(p.slug || '');
+    var url = 'urun.html?slug=' + encodeURIComponent(p.slug || '')
+      + (p.color ? '&renk=' + encodeURIComponent(p.color) : '');
 
     var row = document.createElement('div');
     row.className = 'ej-row bot ej-ordrow';
@@ -871,6 +900,98 @@
   function cancelOrder() {
     if (!conv) return;
     api('cancel_order', { conversation_id: conv.id, visitor_token: conv.token })
+      .then(function () { return poll(); })
+      .catch(function () {});
+  }
+
+  // ---------- sohbette değişim/iptal onay kartı (show_exchange_summary) ----------
+  // Sipariş özet kartının değişim aynası: sunucu doğrulama+stok kontrolünü
+  // yapıp ham talebi pending_exchange'e yazdı; buton confirm_exchange ile
+  // Gemini'ye uğramadan talebi kaydeder.
+  function renderExchangeCard(x) {
+    welcomeEl.classList.add('hide');
+    showTyping(false);
+    var p = x.product || null;
+    var itemHTML = '';
+    if (p) {
+      var cur = [p.current_color, p.current_size].filter(Boolean).map(esc).join(' · ');
+      var nw = [x.new_color, x.new_size].filter(Boolean).map(esc).join(' · ');
+      var thumb = p.image ? '<img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" loading="lazy">' : '';
+      itemHTML =
+        '<div class="ej-ord-items"><div class="ej-ord-item">' +
+          '<div class="ej-ord-thumb">' + thumb + '</div>' +
+          '<div class="ej-ord-meta"><div class="ej-ord-pname">' + esc(p.name) + '</div>' +
+            (cur ? '<div class="ej-ord-pvar">Mevcut: ' + cur + '</div>' : '') +
+            (nw ? '<div class="ej-ord-pvar">Yeni: ' + nw + '</div>' : '') +
+          '</div>' +
+        '</div></div>';
+    }
+    var row = document.createElement('div');
+    row.className = 'ej-row bot ej-ordrow';
+    row.innerHTML =
+      '<span class="ej-name">' + esc(senderName()) + '</span>' +
+      '<div class="ej-order">' +
+        itemHTML +
+        (x.details ? '<div class="ej-ord-ship"><div class="ej-ord-line"><span>' + esc(x.details) + '</span></div></div>' : '') +
+        (x.updating ? '<div class="ej-ord-ship"><div class="ej-ord-line" style="opacity:.7"><span>Mevcut açık talebiniz güncellenecek.</span></div></div>' : '') +
+        '<div class="ej-ord-foot">' +
+          '<span class="ej-ord-pay">' + esc(x.type_tr || '') + (x.reason_tr ? ' · ' + esc(x.reason_tr) : '') + '</span>' +
+          '<span class="ej-ord-total">' + esc(x.order_no || '') + '</span>' +
+        '</div>' +
+        '<button type="button" class="ej-ord-confirm">Talebi Onayla</button>' +
+        '<button type="button" class="ej-ord-cancel">Vazgeç</button>' +
+      '</div>';
+
+    bodyEl.insertBefore(row, typingEl);
+    var cbtn = row.querySelector('.ej-ord-confirm');
+    var xbtn = row.querySelector('.ej-ord-cancel');
+    cbtn.addEventListener('click', function () {
+      if (cbtn.disabled) return;
+      cbtn.disabled = true; xbtn.disabled = true;
+      cbtn.textContent = 'Onaylandı';
+      confirmExchange(function () {
+        cbtn.disabled = false; xbtn.disabled = false;
+        cbtn.textContent = 'Talebi Onayla';
+      });
+    });
+    xbtn.addEventListener('click', function () {
+      if (xbtn.disabled) return;
+      cbtn.disabled = true; xbtn.disabled = true;
+      cancelExchange();
+    });
+    scrollDown();
+  }
+
+  // confirmOrder'ın değişim aynası: bekleyen özet yoksa/bayatsa serbest-metin
+  // fallback'i (sunucudaki kısa-onay kısayolu veya Gemini yakalar).
+  function confirmExchange(onFail) {
+    if (!conv) return;
+    if (burst.length || sending) { sendText('Onaylıyorum.'); return; }
+    showTyping(true);
+    api('confirm_exchange', { conversation_id: conv.id, visitor_token: conv.token }, 45000)
+      .then(function (res) {
+        showTyping(false);
+        if (res && res.error === 'no_pending') { sendText('Onaylıyorum.'); return; }
+        if (res && res.error) {
+          if (onFail) onFail();
+          // sunucu açıklayıcı ai mesajını konuşmaya yazdı; poll ile çek
+          return poll().then(function () {
+            if (res.message) { addMsg('sys', res.message, null, null); scrollDown(); }
+          });
+        }
+        return poll();
+      })
+      .catch(function () {
+        showTyping(false);
+        if (onFail) onFail();
+        addMsg('sys', 'Onay iletilemedi, lütfen tekrar deneyin.', null, null);
+        scrollDown();
+      });
+  }
+
+  function cancelExchange() {
+    if (!conv) return;
+    api('cancel_exchange', { conversation_id: conv.id, visitor_token: conv.token })
       .then(function () { return poll(); })
       .catch(function () {});
   }
@@ -1036,9 +1157,14 @@
     return (h < 10 ? '0' : '') + h + ':' + (mi < 10 ? '0' : '') + mi;
   }
 
-  // ---------- localStorage ----------
-  function load() { try { return JSON.parse(localStorage.getItem(LSKEY) || 'null'); } catch (e) { return null; } }
+  // ---------- depolama ----------
+  // Aktif konuşma sessionStorage'da: sekme/tarayıcı kapanınca kendiliğinden düşer,
+  // sonraki ziyarette chat boş karşılamayla açılır. localStorage kopyası ise yalnız
+  // "kaldığım yerden devam et" butonunu beslemek için tutulur (kullanıcı sonlandırınca silinir).
+  function load() { try { return JSON.parse(sessionStorage.getItem(SSKEY) || 'null'); } catch (e) { return null; } }
+  function loadPrev() { try { return JSON.parse(localStorage.getItem(LSKEY) || 'null'); } catch (e) { return null; } }
   function save(c) {
+    try { c ? sessionStorage.setItem(SSKEY, JSON.stringify(c)) : sessionStorage.removeItem(SSKEY); } catch (e) {}
     try { c ? localStorage.setItem(LSKEY, JSON.stringify(c)) : localStorage.removeItem(LSKEY); } catch (e) {}
   }
   function esc(s) {

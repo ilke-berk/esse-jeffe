@@ -458,6 +458,14 @@ async function ejInitFerris(){
 
   // test modeli siyah elbise — siyah kopya orijinal dokusunu korur, onunla başla
   let cur = Math.max(0, COLORS.findIndex(c => /siyah/i.test(c.name)));
+  // ?renk= ile gelindiyse (ör. chat "Ürünü İncele" linki) o rengi öne al
+  (function () {
+    const want = new URLSearchParams(location.search).get('renk');
+    if (!want) return;
+    const norm = s => String(s || '').toLocaleLowerCase('tr').trim();
+    const i = COLORS.findIndex(c => norm(c.name) === norm(want));
+    if (i >= 0) cur = i;
+  })();
 
   // seçili rengi başlığa, noktaya ve büyük fotoğrafa yansıt (3D'li ve 3D'siz ortak)
   function applyColor(){
@@ -1026,7 +1034,7 @@ if (window.EJ_CONFIG && window.EJ_CONFIG.SUPABASE_URL) {
 })();
 </script>
 <script defer src="ej.js?v=12"></script>
-<script defer src="ej-chat.js?v=20"></script>
+<script defer src="ej-chat.js?v=21"></script>
 <script defer src="ej-beden.js?v=1"></script>
 <script>
 // beden asistanı → çekmecede; öneriden "Bu Bedeni Seç" gerçek bedeni işaretler
