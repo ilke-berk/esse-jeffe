@@ -859,6 +859,9 @@
   else {
     var s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.0';
+    // SRI: CDN ele geçirilse bile değişmiş SDK çalışmaz (sürüm sabitken hash sabit)
+    s.integrity = 'sha384-DjOvX/sJLsmbMrw4wTvf6l3kiGBjdxyOO6X2MTFwOOXGkjN/mE08BoDzrpaaIjil';
+    s.crossOrigin = 'anonymous';
     s.onload = init;
     s.onerror = function () { console.error('[EJ] Supabase SDK yüklenemedi (internet?).'); };
     document.head.appendChild(s);

@@ -31,7 +31,7 @@ $work = "C:\temp\ej-chat-deploy"
 if (Test-Path $work) { Remove-Item -Recurse -Force $work }
 New-Item -ItemType Directory -Force $work | Out-Null
 
-$files = @("index.ts","order-email.ts","guards.ts","exchange.ts","order-info.ts","discount.ts")
+$files = @("index.ts","order-email.ts","guards.ts","exchange.ts","order-info.ts","discount.ts","cod-risk.ts")
 foreach ($f in $files) {
   Copy-Item (Join-Path $src $f) (Join-Path $work $f)
 }
@@ -44,16 +44,18 @@ $meta = '{"name":"chat","entrypoint_path":"index.ts","verify_jwt":false}'
 Set-Location $work
 $url = "https://api.supabase.com/v1/projects/$projectRef/functions/deploy?slug=chat"
 
-& curl.exe -sS --ssl-no-revoke -X POST $url `
-  -H "Authorization: Bearer $env:SUPABASE_ACCESS_TOKEN" `
-  -F "metadata=<meta.json;type=application/json" `
-  -F "file=@index.ts" `
-  -F "file=@order-email.ts" `
-  -F "file=@guards.ts" `
-  -F "file=@exchange.ts" `
-  -F "file=@order-info.ts" `
-  -F "file=@discount.ts" `
-  -o response.json -w "HTTP %{http_code}`n"
+# -F listesi $files dizisinden TURETILIR. Elle yazilan ikinci bir liste
+# tutulursa yeni dosya eklendiginde kayar (cod-risk.ts eklenirken oldu:
+# dosya kopyalandi ama yuklenmedi -> "Module not found" bundle hatasi).
+$curlArgs = @(
+  "-sS", "--ssl-no-revoke", "-X", "POST", $url,
+  "-H", "Authorization: Bearer $env:SUPABASE_ACCESS_TOKEN",
+  "-F", "metadata=<meta.json;type=application/json"
+)
+foreach ($f in $files) { $curlArgs += @("-F", "file=@$f") }
+$curlArgs += @("-o", "response.json", "-w", "HTTP %{http_code}`n")
+
+& curl.exe @curlArgs
 
 Write-Host "--- API yaniti (response.json) ---"
 Get-Content (Join-Path $work "response.json") | Write-Host

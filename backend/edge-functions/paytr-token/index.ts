@@ -129,11 +129,17 @@ Deno.serve(async (req) => {
   }
 
   // --- girişli kullanıcıyı (varsa) çöz ---
+  // sessionEmail: YALNIZ kupon kimliği için. PayTR payload'u/hash'i form
+  // e-postasını kullanmaya devam eder (fatura/bildirim adresi müşterinin seçimi).
   let userId: string | null = null;
+  let sessionEmail: string | null = null;
   const authz = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
   if (authz) {
     const { data } = await admin.auth.getUser(authz);
-    if (data?.user) userId = data.user.id;
+    if (data?.user) {
+      userId = data.user.id;
+      sessionEmail = String(data.user.email || "").trim().toLowerCase() || null;
+    }
   }
 
   // --- fiyatları DB'den oku (GÜVENLİK: client fiyatına güvenme) ---
@@ -218,7 +224,9 @@ Deno.serve(async (req) => {
   let freeShipping = false;
   const couponInput = normCode(form.coupon);
   if (couponInput) {
-    const c = await claimDiscount(admin, couponInput, email.toLowerCase(), subtotal);
+    // K-1: girişlide kupon kimliği OTURUMDAN; form e-postası yok sayılır.
+    const couponEmail = sessionEmail || email.toLowerCase();
+    const c = await claimDiscount(admin, couponInput, couponEmail, subtotal);
     if (!c.ok) {
       await restoreStock();
       log.warn("coupon_rejected", { ip });

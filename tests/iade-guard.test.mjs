@@ -22,6 +22,18 @@ const VIOLATIONS = [
   "İade talebinizi oluşturabilirim.",
   "Tabii, iade alabiliriz.",
   "PARA İADESİ YAPILIR.",                          // tamamı büyük harf
+  // ---- 3a kaçış kapatma (dolaylı iade AKSİYONU taahhütleri) ----
+  "İade işleminizi başlatıyorum.",
+  "İade sürecinizi başlatacağım.",
+  "İadenizi başlatabilirim.",
+  "İade talebinizi başlatalım.",
+  "İadenizi gerçekleştireceğim.",
+  "İade işleminizi gerçekleştiriyorum.",
+  "Paranızı geri göndereceğim.",
+  "Ücretinizi geri aktaracağım.",
+  "Bedelinizi geri ödeyeceğiz.",
+  "Ödemenizi geri yatıracağım.",
+  "PARANIZI GERİ GÖNDERECEĞİM.",                   // tamamı büyük harf (İ/I normalizasyonu)
 ];
 
 // ---- yakalanmaMASI gereken (doğru politika / olumsuz) örnekler ----
@@ -37,6 +49,12 @@ const SAFE = [
   "Değişim her zaman vardır; 14 gün içinde beden ve renk değişimi yapıyoruz.",
   "Merhaba! Size nasıl yardımcı olabilirim?",
   "Kargo tüm siparişlerde ücretsizdir.",
+  // ---- 3a olumsuzlar: iade AKSİYONUNU yapamayacağını söyleyen cümleler ----
+  "İade işlemini buradan başlatamıyorum, WhatsApp hattımızdan yazabilirsiniz.",
+  "İadenizi gerçekleştiremem; ürünler sipariş üzerine hazırlanıyor.",
+  "Paranızı geri gönderemeyiz; iade yerine değişim sunuyoruz.",
+  "Ücretinizi geri aktaramam.",
+  "İade yerine değişim işlemini başlatalım.",       // "iade" var ama başlatılan DEĞİŞİM
   "",
 ];
 

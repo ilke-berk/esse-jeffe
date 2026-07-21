@@ -86,11 +86,16 @@ Deno.serve(async (req) => {
   }
 
   // --- girişli kullanıcıyı (varsa) çöz → sipariş hesapta görünsün ---
+  // sessionEmail: kupon kimliği için — form.email istemci kontrolündedir.
   let userId: string | null = null;
+  let sessionEmail: string | null = null;
   const authz = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
   if (authz) {
     const { data } = await admin.auth.getUser(authz);
-    if (data?.user) userId = data.user.id;
+    if (data?.user) {
+      userId = data.user.id;
+      sessionEmail = String(data.user.email || "").trim().toLowerCase() || null;
+    }
   }
 
   // --- fiyatları DB'den oku (GÜVENLİK: client fiyatına güvenme) ---
@@ -169,7 +174,13 @@ Deno.serve(async (req) => {
   // --- indirim kodu (varsa): ATOMİK claim — GÜVENLİK: tutar sunucuda ---
   // Kod, stok ayrıldıktan SONRA claim edilir; buradan sonraki her hata
   // yolunda releaseDiscount ile geri açılır (restoreStock'un kupon eşi).
-  const customerEmail = String(form.email || "").trim().toLowerCase() || null;
+  // K-1: kupon kimliği girişlide OTURUMDAN gelir; form.email yok sayılır.
+  // Aksi halde girişli bir kullanıcı forma başkasının e-postasını yazıp o
+  // kişiye tanımlı kişisel kuponu claim edebilir. Misafirde form e-postası
+  // (kullanıcı kararı: misafir kodu elle yazıp kullanmaya devam eder).
+  const customerEmail = sessionEmail
+    || String(form.email || "").trim().toLowerCase()
+    || null;
   let discount = 0;
   let discountRef: ClaimRef | null = null;
   let discountCode: string | null = null;

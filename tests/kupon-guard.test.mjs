@@ -19,6 +19,15 @@ const VIOLATIONS = [
   "İndirim uygulayabilirim tabii ki.",
   "SİZE ÖZEL KUPON OLUŞTURDUM.",            // tamamı büyük harf (İ/I normalizasyonu)
   "İndirim kodu hazırlayayım mı?",
+  // ---- 3a kaçış kapatma ----
+  "Size hemen bir kupon kodu üreteceğim.",
+  "İndirim kodu üretebilirim.",
+  "Bir kod üretiyorum sizin için.",
+  "Bu sipariş için indirim sağlayabilirim.",
+  "Size indirim sağlarım tabii.",
+  "Sizin için özel fiyat yapabilirim.",
+  "Özel fiyat veririm, merak etmeyin.",
+  "ÖZEL FİYAT YAPARIM.",                    // tamamı büyük harf
 ];
 
 // ---- yakalanmaMASI gereken (meşru) örnekler ----
@@ -34,6 +43,12 @@ const SAFE = [
   "Kuponlar sipariş sırasında otomatik önerilir.",
   "Sadakat programında her sipariş %5 kazandırır.",
   "Merhaba! Size nasıl yardımcı olabilirim?",
+  // ---- 3a olumsuzlar: yetkisizliği/olumsuzluğu anlatan cümleler ----
+  "Kod üretemem, yetkim yok.",
+  "İndirim kodu üretemiyorum.",
+  "İndirim sağlayamıyorum, kupon tanımlama yetkim yok.",
+  "Size özel fiyat yapamam.",
+  "Özel fiyat veremem, fiyatlar sabittir.",
   "",
 ];
 

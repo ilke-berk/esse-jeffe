@@ -296,6 +296,12 @@ alter table chat_conversations add column if not exists pending_order_at timesta
 -- kısa mesajı Gemini'ye uğramadan confirm_exchange ile işler (pending_order aynası).
 alter table chat_conversations add column if not exists pending_exchange    jsonb;
 alter table chat_conversations add column if not exists pending_exchange_at timestamptz;
+-- Kart kalıcılığı (2026-07-21, Faz 2): render-hazır onay kartı payload'u. HAM
+-- girdi (pending_*) onay anında yeniden-doğrulama için; bu kolon poll/resume/start
+-- yanıtındaki taze `pending` ile widget'ın kartı ephemeral HTTP yanıtı olmadan
+-- yeniden kurmasını sağlar ("metin var, buton yok" semptomunu kapatır).
+alter table chat_conversations add column if not exists pending_order_card    jsonb;
+alter table chat_conversations add column if not exists pending_exchange_card jsonb;
 -- Konuşma puanlama (2026-07-17): widget kapanışta 1-5 yıldız sorar
 -- (chat EF 'rate' aksiyonu yazar); admin.html listeler + ortalama gösterir.
 alter table chat_conversations add column if not exists rating smallint check (rating between 1 and 5);

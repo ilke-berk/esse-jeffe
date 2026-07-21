@@ -39,7 +39,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { sendOrderEmails } from "./order-email.ts";
 import {
   hasIadeCommitment, hasKuponPromise, IADE_FIX_INSTRUCTION, iadeSafeText,
-  KUPON_FIX_INSTRUCTION, kuponSafeText,
+  KUPON_FIX_INSTRUCTION, kuponSafeText, isApprovalPrompt, findUnbackedClaim,
+  findFabricatedCoupon,
 } from "./guards.ts";
 import { appendDetails, pickOrderItem, stockAvailability } from "./exchange.ts";
 import {
@@ -50,6 +51,7 @@ import {
   claimDiscount, fmtCouponOffer, listPersonalCoupons, normCode,
   releaseDiscount, setDiscountOrder, validateCouponReadOnly, type ClaimRef,
 } from "./discount.ts";
+import { assessCodRisk, CODRISK_HOLD_MIN } from "./cod-risk.ts";
 
 const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") || "gemini-3.1-flash-lite";
 // Thinking ayarı model ailesine göre: 2.5'te thinking token'ları maxOutputTokens
@@ -120,6 +122,12 @@ function json(body: unknown, status = 200, cors: Record<string, string> = corsHe
 // Yalnız bu fonksiyon (service_role) yazar/okur; client erişimi yok (RLS).
 function clientIp(req: Request): string {
   const xff = req.headers.get("x-forwarded-for") || "";
+  // GÖLGE LOG (Y-1 ölçümü): davranış DEĞİŞMEZ. Platformun XFF'e kaç atlama
+  // eklediğini canlıda ölçüyoruz — istemci sahte XFF enjekte edebiliyorsa
+  // hop sayısı 1'den büyük ve ilk değer istemci kontrolünde demektir.
+  // Ölçüm netleşince "ilk" yerine "sondan N." atlama seçilecek (Faz 2).
+  const hops = xff ? xff.split(",").length : 0;
+  chatLog("info", "xff_shape", { hops, has_xff: !!xff });
   return xff.split(",")[0].trim() || "unknown";
 }
 
@@ -129,7 +137,11 @@ function clientIp(req: Request): string {
 // visitor_token'a bağlıdır → NAT'tan bağımsız, masum kullanıcıyı hiç etkilemez.
 const RATE_LIMITS: Record<string, { max: number; sec: number }[]> = {
   start: [{ max: 10, sec: 600 }, { max: 150, sec: 86400 }],  // 10 dk'da 10 (burst), günde 150 — paylaşımlı IP/CGNAT payı
-  send: [{ max: 20, sec: 60 }],                              // dakikada 20 (yalnız burst guard)
+  // O-7: burst guard tek başına fatura amplifikasyonunu durdurmuyordu — dakikada
+  // 19 mesaj gün boyu sürdürülebilir (~27k Gemini çağrısı). Günlük tavan start'ın
+  // 150/gün deseniyle orantılı: ~12 tam uzunlukta konuşma (CONV_SEND_MAX=50).
+  // CGNAT mağduriyeti görülürse ilk yükseltilecek sayı burasıdır.
+  send: [{ max: 20, sec: 60 }, { max: 600, sec: 86400 }],    // dakikada 20 (burst) + günde 600
   resume: [{ max: 10, sec: 60 }],                            // girişli kullanıcının konuşma devralması
   confirm: [{ max: 10, sec: 60 }],                           // sipariş/değişim onay butonu (burst guard)
 };
@@ -809,6 +821,7 @@ async function handleCreateExchange(input: any, ip: string, opts?: { dryRun?: bo
           const avail = stockAvailability((stockRows || []) as any, targetColor, targetSize);
           if (!avail.ok) {
             return {
+              status: "oos",
               message:
                 `HATA: "${p.name}" ürününün ${[targetColor, targetSize].filter(Boolean).join(" / ")} varyantı şu an stokta yok; talebi bu varyantla AÇMA. ` +
                 (avail.alternatives.length
@@ -867,7 +880,7 @@ async function handleCreateExchange(input: any, ip: string, opts?: { dryRun?: bo
   }
   if (existing) {
     if (!newColor && !newSize && !details) {
-      return { message: `BİLGİ: Bu sipariş için zaten açık bir ${EXCH_TYPE_TR[type]} talebi var. Müşteriye ekibimizin mevcut talebiyle ilgilendiğini, yeni kayıt açmaya gerek olmadığını nazikçe söyle.` };
+      return { status: "duplicate", message: `BİLGİ: Bu sipariş için zaten açık bir ${EXCH_TYPE_TR[type]} talebi var. Müşteriye ekibimizin mevcut talebiyle ilgilendiğini, yeni kayıt açmaya gerek olmadığını nazikçe söyle.` };
     }
     const note = [prefTxt ? `yeni tercih — ${prefTxt}` : "", details || ""].filter(Boolean).join("; ");
     const mergedDetails = appendDetails(existing.details, note, new Date().toISOString().slice(0, 10));
@@ -890,6 +903,8 @@ async function handleCreateExchange(input: any, ip: string, opts?: { dryRun?: bo
     const emailedUpd = await notifyExchangeCustomer(order, { type, product_name: itemName, new_color: effColor, new_size: effSize, updated: true });
     chatLog("info", "exchange_updated_chat", { order_no: order.order_no, type });
     return {
+      status: "updated",
+      emailed: emailedUpd,
       message:
         `BAŞARILI (GÜNCELLEME): ${order.order_no} için mevcut açık ${EXCH_TYPE_TR[type]} talebi güncellendi ve kayda geçti.` +
         (effTxt ? ` Kayıtlı yeni tercih — ${effTxt}${stockChecked ? " (stok kontrol edildi: mevcut)" : ""}.` : "") +
@@ -911,6 +926,8 @@ async function handleCreateExchange(input: any, ip: string, opts?: { dryRun?: bo
   const emailed = await notifyExchangeCustomer(order, { type, product_name: itemName, new_color: newColor, new_size: newSize });
   chatLog("info", "exchange_saved_chat", { order_no: order.order_no, type });
   return {
+    status: "created",
+    emailed,
     message:
       `BAŞARILI: ${order.order_no} numaralı sipariş için ${EXCH_TYPE_TR[type]} talebi (${EXCH_REASON_TR[reason]}) kaydedildi.` +
       (prefTxt ? ` Kayıtlı yeni tercih — ${prefTxt}${stockChecked ? " (stok kontrol edildi: mevcut)" : ""}.` : "") +
@@ -927,8 +944,10 @@ async function handleExchangeSummary(input: any, conv: any, ip: string): Promise
   const r = await handleCreateExchange(input, ip, { dryRun: true, countRate: true });
   if (!r.order) return r; // HATA/BİLGİ dalları aynen modele gider (kart yok)
   if (conv?.id) {
+    // HAM girdi (pending_exchange) onay anında yeniden-doğrulama için; render-hazır
+    // kart (pending_exchange_card) poll/resume re-derive için (Faz 2, pending_order aynası).
     const { error: pErr } = await admin.from("chat_conversations")
-      .update({ pending_exchange: input, pending_exchange_at: new Date().toISOString() })
+      .update({ pending_exchange: input, pending_exchange_at: new Date().toISOString(), pending_exchange_card: r.order })
       .eq("id", conv.id);
     if (pErr) chatLog("warn", "pending_exchange_save_error", { detail: pErr.message });
   }
@@ -1375,6 +1394,10 @@ function matchProduct(name: string): Product | null {
 type OrderResult = {
   message: string;                 // AI'a (functionResponse) dönecek metin
   order?: Record<string, unknown>; // widget'a iletilecek (kartta PayTR tetikler)
+  // Değişim/iptal kaydının YAPISAL sonucu — runExchangeConfirm bunun üzerinden
+  // deterministik dallanır (metin startsWith/`/stok/` kırılganlığı yerine).
+  status?: "created" | "updated" | "duplicate" | "oos" | "error";
+  emailed?: boolean;               // müşteriye süreç e-postası GERÇEKTEN gitti mi
 };
 
 // _shared/util.ts'teki canonVariant ile aynı mantık — chat farklı deploy
@@ -1492,12 +1515,19 @@ function resolveOrder(input: any): { error?: string; data?: ResolvedOrder } {
 // show_order_summary: onay öncesi görsel özet kartı için veri döner (sipariş OLUŞTURMAZ)
 // Kupon claim kimliği: girişli müşteride HER ZAMAN hesabın e-postası (sunucu
 // doğrulamalı — kullanıcı kuralı), misafirde sipariş formundaki e-posta.
-async function couponIdentity(conv: any, formEmail: string | null): Promise<string | null> {
+// `verified` = e-posta SUNUCUDAN (oturumdan) çözüldü. Girişli konuşmada
+// resolveUserEmail fail-soft null dönerse forma DÜŞÜLMEZ: aksi halde girişli
+// bir kullanıcı forma başkasının e-postasını yazıp onun kuponunu claim edebilir
+// (K-1'in ikinci kaçış yolu). Misafirde e-posta doğrulanmamıştır.
+async function couponIdentity(
+  conv: any,
+  formEmail: string | null,
+): Promise<{ email: string | null; verified: boolean }> {
   if (conv?.user_id) {
     const e = await resolveUserEmail(conv.user_id);
-    if (e) return e;
+    return { email: e || null, verified: !!e };
   }
-  return formEmail || null;
+  return { email: formEmail || null, verified: false };
 }
 
 async function handleSummary(input: any, conv: any): Promise<OrderResult> {
@@ -1510,7 +1540,8 @@ async function handleSummary(input: any, conv: any): Promise<OrderResult> {
   // paytr-token). Böylece onaylanmayan/bayatlayan özet kupon kilitleyemez.
   let discount = 0;
   let couponNote = "";
-  const custEmail = await couponIdentity(conv, data.form.email);
+  const ident = await couponIdentity(conv, data.form.email);
+  const custEmail = ident.email;
   if (data.form.coupon) {
     const prev = await validateCouponReadOnly(admin, data.form.coupon, custEmail, data.subtotal);
     if (!prev.ok) {
@@ -1522,7 +1553,10 @@ async function handleSummary(input: any, conv: any): Promise<OrderResult> {
     }
     discount = prev.discount;
     couponNote = ` KUPON: ${data.form.coupon} kuponu özete uygulandı (indirim −${discount.toLocaleString("tr-TR")} TL); kesin tutar onay anında yeniden doğrulanır.`;
-  } else if (custEmail) {
+  } else if (ident.verified && custEmail) {
+    // K-1: proaktif öneri YALNIZ girişli müşteride ve YALNIZ oturumdan çözülmüş
+    // e-postayla. Misafirde form e-postası doğrulanmamıştır — başkasının
+    // e-postası yazılıp o kişiye tanımlı kuponlar okunabiliyordu (kupon çalınması).
     // Proaktif öneri (deterministik): müşteriye TANIMLI kupon varsa modele bildir.
     try {
       const coupons = await listPersonalCoupons(admin, custEmail);
@@ -1537,16 +1571,6 @@ async function handleSummary(input: any, conv: any): Promise<OrderResult> {
   }
   const total = data.total - discount;
 
-  // Bekleyen siparişi konuşmaya yaz: widget'taki "Siparişi Onayla" butonu
-  // Gemini'ye uğramadan confirm_order aksiyonuyla bu HAM girdiyi işler
-  // (deterministik onay). Ham girdi saklanır ki onay anında resolveOrder
-  // yeniden koşup fiyat/stok/kupon tazelensin (coupon_code da ham girdide).
-  if (conv?.id) {
-    const { error: pErr } = await admin.from("chat_conversations")
-      .update({ pending_order: input, pending_order_at: new Date().toISOString() })
-      .eq("id", conv.id);
-    if (pErr) chatLog("warn", "pending_order_save_error", { detail: pErr.message });
-  }
   // il/ilçe OSM (Nominatim) teyidi — deterministik, fail-soft
   const geo = await geocodeDistrict(data.form.city, data.form.district);
   let geoNote = "";
@@ -1556,18 +1580,33 @@ async function handleSummary(input: any, conv: any): Promise<OrderResult> {
     geoNote = " ADRES UYARISI: İl/ilçe haritada doğrulanamadı; onay sorusunda müşteriden il ve ilçe yazımını kontrol etmesini KİBARCA iste (siparişi ENGELLEME, müşteri doğrusundan eminse devam et).";
   }
   const totalTxt = total.toLocaleString("tr-TR") + " TL";
+  // Render-hazır özet kartı payload'u — TEK kaynak: hem HTTP yanıtında döner
+  // hem de pending_order_card'a yazılır (Faz 2). Böylece poll/resume kartı
+  // ephemeral HTTP yanıtı kaçsa bile (timeout / 2. sekme / panel yeniden-açma)
+  // yeniden kurabilir; "metin var, buton yok" semptomu kökten kapanır.
+  const orderCard = {
+    mode: "summary", payment_method: data.pm, items: data.cardItems,
+    form: data.form, subtotal: data.subtotal, shipping: data.shipping,
+    discount, discount_code: discount > 0 ? data.form.coupon : null, total,
+    geo: (geo && geo.ok) ? { ok: true, display: geo.display } : null,
+  };
+  // Bekleyen siparişi konuşmaya yaz. İki kolon iki amaca hizmet eder:
+  //  - pending_order (HAM girdi): "Siparişi Onayla" butonu / kısa-onay kısayolu
+  //    onay ANINDA resolveOrder ile fiyat/stok/kupon tazelesin (coupon_code ham girdide).
+  //  - pending_order_card (render-hazır kart): poll/resume re-derive kartı yeniden kursun.
+  if (conv?.id) {
+    const { error: pErr } = await admin.from("chat_conversations")
+      .update({ pending_order: input, pending_order_at: new Date().toISOString(), pending_order_card: orderCard })
+      .eq("id", conv.id);
+    if (pErr) chatLog("warn", "pending_order_save_error", { detail: pErr.message });
+  }
   return {
     message:
       `BAŞARILI: Sipariş özeti müşteriye GÖRSEL bir kart olarak gösterildi (ürün görseli, teslimat bilgileri, ` +
       `ödeme yöntemi ve ${totalTxt} toplam dâhil). Şimdi SADECE kısa bir cümleyle onay iste (ör. "Aşağıda siparişinizin ` +
       `özeti var, onaylıyor musunuz?"). Ürün/adres/tutar gibi detayları metinde TEKRARLAMA. Müşteri onaylayınca create_order'ı çağır.` +
       couponNote + geoNote,
-    order: {
-      mode: "summary", payment_method: data.pm, items: data.cardItems,
-      form: data.form, subtotal: data.subtotal, shipping: data.shipping,
-      discount, discount_code: discount > 0 ? data.form.coupon : null, total,
-      geo: (geo && geo.ok) ? { ok: true, display: geo.display } : null,
-    },
+    order: orderCard,
   };
 }
 
@@ -1620,7 +1659,7 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
   let couponRef: ClaimRef | null = null;
   let discount = 0;
   if (form.coupon) {
-    const claimEmail = await couponIdentity(conv, form.email);
+    const claimEmail = (await couponIdentity(conv, form.email)).email;
     const cr = await claimDiscount(admin, form.coupon, claimEmail, subtotal);
     if (!cr.ok) {
       return {
@@ -1653,6 +1692,15 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
     return { message: "HATA: Seçilen üründen yeterli stok kalmadı. Müşteriye durumu nazikçe açıkla; farklı beden/renk ya da benzer başka bir ürün öner." };
   }
 
+  // O-2: COD risk skorlama — create-order ile AYNI politika (fail-soft: risk
+  // motoru arızası satışı ASLA engellemez). Bu dal koşulsuz payment_method
+  // 'cod' olduğundan her chat siparişinde çalışır; chat, risk skorlamasının
+  // atlandığı arka kapı olmasın. CODRISK_HOLD=0 bekletmeyi kapatır (skor yazılır).
+  const risk = await assessCodRisk(admin, { phone: form.phone });
+  if (!risk) chatLog("warn", "codrisk_unavailable", { ip });
+  const riskHold = Deno.env.get("CODRISK_HOLD") !== "0"
+    && !!risk && risk.score >= CODRISK_HOLD_MIN;
+
   const oid = orderNo();
   const { data: orderRow, error: oErr } = await admin.from("orders").insert({
     order_no: oid, status: "pending", user_id: conv?.user_id || null,
@@ -1662,6 +1710,8 @@ async function handleCreateOrder(input: any, conv: any, ip: string): Promise<Ord
     full_name: form.full_name, phone: form.phone, email: form.email,
     city: form.city, district: form.district, address: form.address,
     postal_code: form.postal_code, note: form.note,
+    risk_score: risk?.score ?? null, risk_level: risk?.level ?? null,
+    risk_reasons: risk?.reasons ?? null, risk_hold: riskHold,
   }).select("id").single();
   if (oErr || !orderRow) {
     chatLog("error", "cod_order_insert_error", { detail: oErr?.message });
@@ -1815,6 +1865,25 @@ async function geminiGenerate(key: string, sys: string, contents: any[], withToo
   return parts;
 }
 
+// 3b yardımcı: uydurma-kupon guard'ı için MEŞRU kupon kaynağı metinleri —
+// müşterinin kendi mesajları (role:user) + tool dönüşleri (role:function). Model
+// taslakları (role:model) BİLEREK dışarıda: modelin uydurduğu kod meşru sayılmasın.
+function collectCouponSourceText(contents: any[]): string[] {
+  const out: string[] = [];
+  for (const c of contents) {
+    if (!c || !Array.isArray(c.parts)) continue;
+    if (c.role === "user") {
+      for (const p of c.parts) if (typeof p.text === "string") out.push(p.text);
+    } else if (c.role === "function") {
+      for (const p of c.parts) {
+        const r = p?.functionResponse?.response?.result;
+        if (typeof r === "string") out.push(r);
+      }
+    }
+  }
+  return out;
+}
+
 async function askGemini(history: any[], conv: any, ip: string): Promise<AiResult> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) {
@@ -1835,6 +1904,14 @@ async function askGemini(history: any[], conv: any, ip: string): Promise<AiResul
   }
   let order: Record<string, unknown> | undefined;
   let retriedEmpty = false; // boş metin+boş tool yanıtında 1 kez otomatik tekrar
+  // Bu turda BAŞARILI olan side-effect tool anahtarları — "asılsız başarı"
+  // backstop'u (findUnbackedClaim) modelin metnini bunlara göre doğrular.
+  const succeeded = new Set<string>();
+  const TOOL_KEY: Record<string, string> = {
+    show_order_summary: "summary", show_exchange_summary: "summary", show_product_card: "product",
+    create_order: "order", create_exchange_request: "exchange", notify_bank_transfer: "transfer",
+    update_delivery_address: "address", set_price_alert: "alert",
+  };
   // function-calling döngüsü (en fazla birkaç tur)
   for (let turn = 0; turn < 4; turn++) {
     const parts = await geminiGenerate(key, sys, contents, true);
@@ -1866,6 +1943,16 @@ async function askGemini(history: any[], conv: any, ip: string): Promise<AiResul
         ? await handleShowProduct(fargs)
         : await handleCreateOrder(fargs, conv, ip);
       if (result.order) order = result.order;
+      // Tool başarı sinyali: order payload'u VAR ya da mesaj "BAŞARILI" ile başlıyor.
+      // (Özet/kart tool'ları başarıda order döner; kayıt tool'ları "BAŞARILI: ..." der.)
+      const ok = !!result.order || /^BAŞARILI/.test(String(result.message || ""));
+      // O-6: create_order'ın KART dalı sipariş OLUŞTURMAZ (yalnız ödeme ekranı
+      // açılır; sipariş paytr-callback ile kesinleşir). "order" anahtarını
+      // vermek order_placed guard'ını devre dışı bırakıyordu → ayrı anahtar.
+      const toolKey = (fname === "create_order" && (result.order as any)?.mode === "card")
+        ? "card_checkout"
+        : TOOL_KEY[fname];
+      if (ok && toolKey) succeeded.add(toolKey);
       // modelin function-call turunu + bizim function-response'umuzu geçmişe ekle, tekrar sor
       contents.push({ role: "model", parts });
       contents.push({
@@ -1910,6 +1997,46 @@ async function askGemini(history: any[], conv: any, ip: string): Promise<AiResul
         .trim();
       text = (text3 && !hasKuponPromise(text3) && !hasIadeCommitment(text3)) ? text3 : kuponSafeText();
     }
+    // 3b — UYDURMA TANIMLI KUPON KORUMASI (deterministik): model, hiçbir tool
+    // dönüşünde ya da müşteri mesajında geçmeyen spesifik bir kupon kodunu (vaat
+    // fiili olmadan da, "HOSGELDIN10 kuponunuz hazır" gibi) anmışsa bir kez
+    // düzelttir; ikinci deneme de uydurma kod içerirse sabit güvenli metin.
+    if (text) {
+      const known = collectCouponSourceText(contents);
+      const bogus = findFabricatedCoupon(text, known);
+      if (bogus) {
+        chatLog("warn", "fabricated_coupon_hit", { conversation_id: conv?.id, code: bogus.slice(0, 24) });
+        contents.push({ role: "model", parts: [{ text }] });
+        contents.push({ role: "user", parts: [{ text: KUPON_FIX_INSTRUCTION }] });
+        const parts5 = (await geminiGenerate(key, sys, contents, false)) || [];
+        const text5 = parts5
+          .filter((p: any) => typeof p.text === "string")
+          .map((p: any) => p.text)
+          .join("\n")
+          .trim();
+        text = (text5 && !findFabricatedCoupon(text5, known) && !hasKuponPromise(text5))
+          ? text5 : kuponSafeText();
+      }
+    }
+    // ASILSIZ BAŞARI KORUMASI (deterministik): metin bir başarı/kart iddiası
+    // içerip gereken tool bu turda BAŞARILI olmadıysa (ör. "özetiniz aşağıda"
+    // dedi ama show_*_summary çağırmadı; "talebiniz alındı" dedi ama kayıt yok)
+    // bir kez düzelttir; ikinci deneme de ihlalse sabit güvenli metinle değiştir.
+    {
+      const g = text && findUnbackedClaim(text, succeeded);
+      if (g) {
+        chatLog("warn", "unbacked_claim_hit", { conversation_id: conv?.id, guard: g.name });
+        contents.push({ role: "model", parts: [{ text }] });
+        contents.push({ role: "user", parts: [{ text: g.fix }] });
+        const parts4 = (await geminiGenerate(key, sys, contents, false)) || [];
+        const text4 = parts4
+          .filter((p: any) => typeof p.text === "string")
+          .map((p: any) => p.text)
+          .join("\n")
+          .trim();
+        text = (text4 && !findUnbackedClaim(text4, succeeded)) ? text4 : g.safe(WHATSAPP);
+      }
+    }
     // Boş yanıt emniyet ağı: bir kez ephemeral nudge ile tekrar dene (nudge
     // yalnız bu çağrının contents'inde kalır, DB geçmişine yazılmaz).
     if (!text && !retriedEmpty) {
@@ -1928,11 +2055,32 @@ async function verify(conversationId: string, token: string) {
   if (!conversationId || !token) return null;
   const { data } = await admin
     .from("chat_conversations")
-    .select("id,status,visitor_name,visitor_email,user_id,summary,pending_order,pending_order_at,pending_exchange,pending_exchange_at")
+    .select("id,status,visitor_name,visitor_email,user_id,summary,pending_order,pending_order_at,pending_order_card,pending_exchange,pending_exchange_at,pending_exchange_card")
     .eq("id", conversationId)
     .eq("visitor_token", token)
     .maybeSingle();
   return data;
+}
+
+// Faz 2: konuşmanın TAZE bekleyen kartını (varsa) döner — poll/resume/start
+// yanıtına eklenir; widget kartı ephemeral HTTP yanıtı olmadan yeniden kurar.
+// Sipariş ile değişim ayrı akışlar; normalde en fazla biri tazedir. Her ikisi
+// de tazeyse (nadir yarış) daha YENİ olanı seç.
+function freshPendingFor(
+  conv: any,
+): { kind: "order" | "exchange"; card: unknown; at: string } | null {
+  const now = Date.now();
+  const poAt = conv?.pending_order_at ? new Date(conv.pending_order_at).getTime() : 0;
+  const pxAt = conv?.pending_exchange_at ? new Date(conv.pending_exchange_at).getTime() : 0;
+  const poFresh = !!conv?.pending_order_card && !!poAt && now - poAt <= PENDING_ORDER_TTL_MS;
+  const pxFresh = !!conv?.pending_exchange_card && !!pxAt && now - pxAt <= PENDING_ORDER_TTL_MS;
+  if (poFresh && (!pxFresh || poAt >= pxAt)) {
+    return { kind: "order", card: conv.pending_order_card, at: conv.pending_order_at };
+  }
+  if (pxFresh) {
+    return { kind: "exchange", card: conv.pending_exchange_card, at: conv.pending_exchange_at };
+  }
+  return null;
 }
 
 // Bekleyen değişim/iptal talebini Gemini'ye uğramadan deterministik işler
@@ -1949,7 +2097,7 @@ async function runExchangeConfirm(conv: any, ip: string, userMsg: string | null)
   }
   // pending'i HEMEN temizle: çifte tıklama ikinci istekte no_pending görür (idempotent)
   await admin.from("chat_conversations")
-    .update({ pending_exchange: null, pending_exchange_at: null }).eq("id", conv.id);
+    .update({ pending_exchange: null, pending_exchange_at: null, pending_exchange_card: null }).eq("id", conv.id);
   if (userMsg) {
     await admin.from("chat_messages").insert({ conversation_id: conv.id, role: "user", content: userMsg });
   }
@@ -1958,19 +2106,29 @@ async function runExchangeConfirm(conv: any, ip: string, userMsg: string | null)
   const result = await handleCreateExchange(pending, ip, { countRate: false });
   const typeTr = (EXCH_TYPE_TR[String(pending.request_type)] || "değişim").toLocaleLowerCase("tr");
   const m = result.message;
+  // YAPISAL statü birincil kaynak; eski prose (startsWith/`/stok/`) yalnız statü
+  // gelmezse defansif fallback (ileride etiketlenmemiş bir dal sessizce yanlış
+  // sınıflanmasın). E-posta iddiası da result.emailed'e bağlı, metne değil.
+  let eff = result.status;
+  if (!eff) {
+    if (/^BAŞARILI \(GÜNCELLEME\)/.test(m)) eff = "updated";
+    else if (/^BAŞARILI/.test(m)) eff = "created";
+    else if (/^BİLGİ/.test(m)) eff = "duplicate";
+    else if (/stok/i.test(m)) eff = "oos";
+    else eff = "error";
+  }
+  const emailed = result.emailed ?? m.includes("e-posta");
   let aiMsg: string;
   let ok = true;
   // Değişimde süreç adımları — deterministik tam metin (Gemini'ye uğramadan).
-  // E-posta gönderildiyse (handleCreateExchange functionResponse'unda işaretli)
-  // bunu da söyle; yanlış "e-posta gönderdik" vaadi kurulmasın.
   const stepsTxt = pending.request_type === "exchange"
     ? "\n\nDeğişim sürecinde izlemeniz gereken adımlar:\n" +
       exchangeInstructions(EXCHANGE_RETURN_ADDRESS).map((s, i) => `${i + 1}. ${s}`).join("\n") +
-      (m.includes("e-posta") ? "\n\nBu adımları e-posta adresinize de gönderdik." : "")
+      (emailed ? "\n\nBu adımları e-posta adresinize de gönderdik." : "")
     : "";
-  if (m.startsWith("BAŞARILI (GÜNCELLEME)")) {
+  if (eff === "updated") {
     aiMsg = `Mevcut ${typeTr} talebiniz yeni tercihlerinizle güncellendi ✅ Ekibimiz en kısa sürede (Pazartesi–Cumartesi 08:00–19:00) size dönüş yapacak.` + stepsTxt;
-  } else if (m.startsWith("BAŞARILI")) {
+  } else if (eff === "created") {
     const pref = [pending.new_color ? `renk: ${pending.new_color}` : "", pending.new_size ? `beden: ${pending.new_size}` : ""].filter(Boolean).join(", ");
     aiMsg =
       `${pending.order_no} numaralı siparişiniz için ${typeTr} talebiniz alındı ✅` +
@@ -1978,9 +2136,9 @@ async function runExchangeConfirm(conv: any, ip: string, userMsg: string | null)
       ` Ekibimiz en kısa sürede (Pazartesi–Cumartesi 08:00–19:00) size dönüş yapacak.` +
       (pending.request_type === "exchange" ? " Değişimde gidiş-geliş kargo bedeli size aittir." : "") +
       stepsTxt;
-  } else if (m.startsWith("BİLGİ")) {
+  } else if (eff === "duplicate") {
     aiMsg = "Bu sipariş için zaten açık bir talebiniz var; ekibimiz mevcut talebinizle ilgileniyor, yeni kayıt açmanıza gerek yok.";
-  } else if (/stok/i.test(m)) {
+  } else if (eff === "oos") {
     ok = false;
     aiMsg = "Üzgünüm, tam onay sırasında istediğiniz renk/bedenin stokta kalmadığını gördüm. Dilerseniz başka bir renk ya da beden seçelim.";
   } else {
@@ -1991,6 +2149,68 @@ async function runExchangeConfirm(conv: any, ip: string, userMsg: string | null)
   await admin.from("chat_conversations")
     .update({ last_message_at: new Date().toISOString(), unread_admin: true }).eq("id", conv.id);
   return ok ? { ok: true } : { error: "failed" };
+}
+
+// Bekleyen siparişi (pending_order) Gemini'ye uğramadan deterministik işler —
+// runExchangeConfirm'in sipariş aynası. Hem confirm_order aksiyonu (buton) hem
+// send içindeki sipariş kısa-onay kısayolu kullanır. userMsg null ise kullanıcı
+// mesajı ZATEN eklenmiş demektir (send yolu). Dönen obje json() gövdesidir
+// (kart modunda order payload'u da taşır → widget PayTR ekranını açar).
+async function runOrderConfirm(conv: any, ip: string, userMsg: string | null): Promise<Record<string, unknown>> {
+  const pending = (conv as any).pending_order;
+  const atRaw = (conv as any).pending_order_at;
+  const at = atRaw ? new Date(atRaw).getTime() : 0;
+  if (!pending || !at || Date.now() - at > PENDING_ORDER_TTL_MS) {
+    // bekleyen özet yok/bayat → widget serbest-metin fallback'ine düşer
+    return { error: "no_pending" };
+  }
+  // pending'i HEMEN temizle: çifte tıklama ikinci istekte no_pending görür (idempotent)
+  await admin.from("chat_conversations")
+    .update({ pending_order: null, pending_order_at: null, pending_order_card: null }).eq("id", conv.id);
+  if (userMsg) {
+    await admin.from("chat_messages").insert({ conversation_id: conv.id, role: "user", content: userMsg });
+  }
+  const result = await handleCreateOrder(pending, conv, ip);
+  const ord: any = result.order;
+  let aiMsg: string;
+  let resp: Record<string, unknown>;
+  if (ord && ord.mode === "cod") {
+    aiMsg =
+      `Siparişiniz alındı 🎉 Sipariş numaranız: ${ord.order_no}. ` +
+      `Toplam ${Number(ord.total).toLocaleString("tr-TR")} TL — kargo ücretsiz, ödemeyi teslimatta yapacaksınız. ` +
+      `Siparişiniz hazırlanıp kargoya verildiğinde takip bilgisi iletilecek. Bizi tercih ettiğiniz için teşekkür ederiz!`;
+    resp = { ok: true, order: ord };
+  } else if (ord && ord.mode === "card") {
+    aiMsg =
+      "Güvenli kart ödeme ekranı şimdi açılıyor; kart bilgilerinizi o ekranda girebilirsiniz. " +
+      "Ödemeniz onaylanınca siparişiniz kesinleşecek.";
+    resp = { ok: true, order: ord };
+  } else {
+    // handleCreateOrder hatası (AI'a yönelik "HATA: ..." metni) → müşteri diline çevir
+    const stock = /stok/i.test(result.message);
+    const coupon = /kupon|indirim kodu/i.test(result.message);
+    aiMsg = stock
+      ? "Üzgünüm, tam onay sırasında seçtiğiniz üründen yeterli stok kalmadığını gördüm. Dilerseniz farklı bir beden/renk seçelim ya da size benzer bir model önereyim."
+      : coupon
+      ? "Üzgünüm, kuponunuz onay sırasında geçerliliğini yitirmiş görünüyor (kullanılmış ya da süresi dolmuş olabilir). Dilerseniz siparişinizi kuponsuz tamamlayalım — özeti yeniden göstereyim mi?"
+      : `Üzgünüm, siparişinizi şu an tamamlayamadım (geçici bir sistem sorunu olabilir). Birazdan tekrar deneyebilir ya da WhatsApp ${WHATSAPP} hattımızdan bize ulaşabilirsiniz.`;
+    resp = { error: "failed" };
+  }
+  await admin.from("chat_messages").insert({ conversation_id: conv.id, role: "ai", content: aiMsg });
+  await admin.from("chat_conversations")
+    .update({ last_message_at: new Date().toISOString(), unread_admin: true }).eq("id", conv.id);
+  return resp;
+}
+
+// Kısa-onay kısayolu güvenlik kapısı: kullanıcıdan önceki SON AI mesajı bir onay
+// sorusu mu? (send yolunda kullanıcı mesajı zaten eklendiği için "son ai mesajı"
+// bir önceki bot çıktısıdır.) Değilse alakasız bir "evet" deterministik commit
+// tetiklemesin diye kısayol atlanır.
+async function lastAiIsApproval(convId: string): Promise<boolean> {
+  const { data } = await admin.from("chat_messages")
+    .select("content").eq("conversation_id", convId).eq("role", "ai")
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  return !!data && isApprovalPrompt(String((data as any).content || ""));
 }
 
 // ---- kalıcı hafıza: önceki görüşmeyi özetleyip yeni konuşmaya not düş ----
@@ -2114,11 +2334,11 @@ Deno.serve(async (req) => {
       const er = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
       if (er?.waitUntil) er.waitUntil(memTask);
       else await memTask;
-      const greeting = "Merhaba, ben Esin 👗 Esse Jeffe stil danışmanınızım. Abiye seçimi, beden, renk veya kargo gibi her konuda yardımcı olabilirim; dilerseniz sohbetin içinde siparişinizi de oluşturabilirim. Size nasıl yardımcı olabilirim?";
-      await admin.from("chat_messages").insert({
-        conversation_id: conv.id, role: "ai", content: greeting,
-      });
-      return json({ conversation_id: conv.id, visitor_token: conv.visitor_token }, 200, cors);
+      // Karşılama mesajı kaldırıldı: ilk hamleyi her zaman kullanıcı yaptığı için
+      // araya jenerik "Merhaba ben Esin" balonu girmesi akışı bozup robotik
+      // hissettiriyordu. Artık doğrudan kullanıcının sorusuna cevap veriliyor.
+      // pending: yeni konuşmada her zaman null — poll/resume ile aynı sözleşme (Faz 2).
+      return json({ conversation_id: conv.id, visitor_token: conv.visitor_token, pending: null }, 200, cors);
     }
 
     // ---- konuşmayı devral (girişli kullanıcı, farklı cihaz/tarayıcı) ----
@@ -2135,14 +2355,15 @@ Deno.serve(async (req) => {
       const cutoff = new Date(Date.now() - RESUME_LOOKBACK_MS).toISOString();
       const { data: found } = await admin
         .from("chat_conversations")
-        .select("id,visitor_token,status")
+        .select("id,visitor_token,status,pending_order_at,pending_order_card,pending_exchange_at,pending_exchange_card")
         .eq("user_id", uid)
         .neq("status", "closed")            // sonlandırılan görüşme geri açılmaz
         .gte("last_message_at", cutoff)
         .order("last_message_at", { ascending: false })
         .limit(1).maybeSingle();
       if (!found) return json({ conversation_id: null }, 200, cors);
-      return json({ conversation_id: found.id, visitor_token: found.visitor_token, status: found.status }, 200, cors);
+      // Faz 2: devralınacak konuşmanın taze bekleyen kartını da bildir.
+      return json({ conversation_id: found.id, visitor_token: found.visitor_token, status: found.status, pending: freshPendingFor(found) }, 200, cors);
     }
 
     // ---- görüşmeyi sonlandır (widget'taki "Evet" onayı) ----
@@ -2180,21 +2401,38 @@ Deno.serve(async (req) => {
         conversation_id: conv.id, role: "user", content: text,
       });
 
-      // KISA ONAY KISAYOLU: bekleyen değişim özeti tazeyken müşteri butona
-      // basmak yerine "onaylıyorum" YAZARSA Gemini'ye hiç gitmeden deterministik
-      // işle (boş model yanıtı onayı düşüremez). Kullanıcı mesajı yukarıda
-      // zaten eklendi → runExchangeConfirm'e userMsg:null geçilir.
-      {
-        const px = (conv as any).pending_exchange;
+      // KISA ONAY KISAYOLU: bekleyen sipariş/değişim özeti tazeyken müşteri
+      // butona basmak yerine "onaylıyorum" YAZARSA Gemini'ye hiç gitmeden
+      // deterministik işle (boş model yanıtı onayı düşüremez). Kullanıcı mesajı
+      // yukarıda zaten eklendi → run*Confirm'e userMsg:null geçilir.
+      // GÜVENLİK KAPILARI: (a) yalnız TEK taze pending varsa commit et — hem
+      // sipariş hem değişim özeti aynı anda tazeyse belirsizdir, Gemini'ye bırak
+      // (aksi halde biri sessizce onaylanıp diğeri silinirdi); (b) yalnız
+      // kullanıcıdan önceki son AI mesajı bir onay sorusuysa commit et — TTL
+      // içindeki alakasız bir "evet" bekleyen özeti onaylamasın.
+      if (conv.status === "ai" && isShortConfirm(text)) {
+        const poAt = (conv as any).pending_order_at ? new Date((conv as any).pending_order_at).getTime() : 0;
         const pxAt = (conv as any).pending_exchange_at ? new Date((conv as any).pending_exchange_at).getTime() : 0;
-        if (conv.status === "ai" && px && pxAt && Date.now() - pxAt <= PENDING_ORDER_TTL_MS && isShortConfirm(text)) {
-          await admin.from("chat_conversations")
-            .update({ last_message_at: new Date().toISOString(), unread_admin: true, pending_order: null, pending_order_at: null })
-            .eq("id", conv.id);
-          const resp = await runExchangeConfirm(conv, ip, null);
-          if (resp.error !== "no_pending") {
+        const poFresh = !!(conv as any).pending_order && !!poAt && Date.now() - poAt <= PENDING_ORDER_TTL_MS;
+        const pxFresh = !!(conv as any).pending_exchange && !!pxAt && Date.now() - pxAt <= PENDING_ORDER_TTL_MS;
+        // poFresh !== pxFresh → tam olarak biri taze (XOR); ikisi de/hiçbiri değilse atla
+        if (poFresh !== pxFresh && await lastAiIsApproval(conv.id)) {
+          if (pxFresh) {
+            // değişimi onayla; olası bayat sipariş pending'ini de temizle
+            await admin.from("chat_conversations")
+              .update({ last_message_at: new Date().toISOString(), unread_admin: true, pending_order: null, pending_order_at: null, pending_order_card: null })
+              .eq("id", conv.id);
+            const resp = await runExchangeConfirm(conv, ip, null);
             // ai yanıtı runExchangeConfirm içinde yazıldı; widget poll ile alır
-            return json({ ok: true, status: conv.status }, 200, cors);
+            if (resp.error !== "no_pending") return json({ ok: true, status: conv.status }, 200, cors);
+          } else {
+            // siparişi onayla; olası bayat değişim pending'ini de temizle
+            await admin.from("chat_conversations")
+              .update({ last_message_at: new Date().toISOString(), unread_admin: true, pending_exchange: null, pending_exchange_at: null, pending_exchange_card: null })
+              .eq("id", conv.id);
+            const resp = await runOrderConfirm(conv, ip, null);
+            // kart modunda order payload'u widget'a taşınır → PayTR ekranı açılır
+            if (resp.error !== "no_pending") return json({ ...resp, status: conv.status }, 200, cors);
           }
           // no_pending (yarış durumu): normal Gemini akışına düş
         }
@@ -2204,7 +2442,7 @@ Deno.serve(async (req) => {
       // bayatlatır: müşteri özetten sonra değişiklik yazdıysa onay butonu
       // ESKİ özeti işlememeli (Gemini gerekirse yeni özet çıkarır)
       await admin.from("chat_conversations")
-        .update({ last_message_at: new Date().toISOString(), unread_admin: true, pending_order: null, pending_order_at: null, pending_exchange: null, pending_exchange_at: null })
+        .update({ last_message_at: new Date().toISOString(), unread_admin: true, pending_order: null, pending_order_at: null, pending_order_card: null, pending_exchange: null, pending_exchange_at: null, pending_exchange_card: null })
         .eq("id", conv.id);
 
       // AI modundaysa hemen yanıt üret; canlı destekteyse operatör yanıtlar
@@ -2239,52 +2477,9 @@ Deno.serve(async (req) => {
         return json({ error: "rate", message: "Çok hızlı denediniz, lütfen birkaç saniye sonra tekrar deneyin." }, 429, cors);
       }
       await rateHit(ip, "confirm");
-      const pending = (conv as any).pending_order;
-      const pendingAtRaw = (conv as any).pending_order_at;
-      const pendingAt = pendingAtRaw ? new Date(pendingAtRaw).getTime() : 0;
-      if (!pending || !pendingAt || Date.now() - pendingAt > PENDING_ORDER_TTL_MS) {
-        // bekleyen özet yok/bayat → widget serbest-metin fallback'ine düşer
-        return json({ error: "no_pending" }, 200, cors);
-      }
-      // pending'i HEMEN temizle: çifte tıklama ikinci istekte no_pending görür (idempotent)
-      await admin.from("chat_conversations")
-        .update({ pending_order: null, pending_order_at: null }).eq("id", conv.id);
-      // geçmiş tutarlı kalsın: onay, kullanıcı mesajı olarak kayda geçer
-      await admin.from("chat_messages").insert({
-        conversation_id: conv.id, role: "user", content: "Siparişi onaylıyorum.",
-      });
-
-      const result = await handleCreateOrder(pending, conv, ip);
-      const ord: any = result.order;
-      let aiMsg: string;
-      let resp: Record<string, unknown>;
-      if (ord && ord.mode === "cod") {
-        aiMsg =
-          `Siparişiniz alındı 🎉 Sipariş numaranız: ${ord.order_no}. ` +
-          `Toplam ${Number(ord.total).toLocaleString("tr-TR")} TL — kargo ücretsiz, ödemeyi teslimatta yapacaksınız. ` +
-          `Siparişiniz hazırlanıp kargoya verildiğinde takip bilgisi iletilecek. Bizi tercih ettiğiniz için teşekkür ederiz!`;
-        resp = { ok: true, order: ord };
-      } else if (ord && ord.mode === "card") {
-        aiMsg =
-          "Güvenli kart ödeme ekranı şimdi açılıyor; kart bilgilerinizi o ekranda girebilirsiniz. " +
-          "Ödemeniz onaylanınca siparişiniz kesinleşecek.";
-        resp = { ok: true, order: ord };
-      } else {
-        // handleCreateOrder hatası (AI'a yönelik "HATA: ..." metni) → müşteri diline çevir
-        const stock = /stok/i.test(result.message);
-        const coupon = /kupon|indirim kodu/i.test(result.message);
-        aiMsg = stock
-          ? "Üzgünüm, tam onay sırasında seçtiğiniz üründen yeterli stok kalmadığını gördüm. Dilerseniz farklı bir beden/renk seçelim ya da size benzer bir model önereyim."
-          : coupon
-          ? "Üzgünüm, kuponunuz onay sırasında geçerliliğini yitirmiş görünüyor (kullanılmış ya da süresi dolmuş olabilir). Dilerseniz siparişinizi kuponsuz tamamlayalım — özeti yeniden göstereyim mi?"
-          : `Üzgünüm, siparişinizi şu an tamamlayamadım (geçici bir sistem sorunu olabilir). Birazdan tekrar deneyebilir ya da WhatsApp ${WHATSAPP} hattımızdan bize ulaşabilirsiniz.`;
-        resp = { error: "failed" };
-      }
-      await admin.from("chat_messages").insert({
-        conversation_id: conv.id, role: "ai", content: aiMsg,
-      });
-      await admin.from("chat_conversations")
-        .update({ last_message_at: new Date().toISOString(), unread_admin: true }).eq("id", conv.id);
+      // Tüm onay/kayıt mantığı runOrderConfirm'de (send kısayoluyla paylaşılır);
+      // "Siparişi onaylıyorum." mesajı burada kullanıcı satırı olarak kayda geçer.
+      const resp = await runOrderConfirm(conv, ip, "Siparişi onaylıyorum.");
       return json({ ...resp, status: conv.status }, 200, cors);
     }
 
@@ -2293,7 +2488,7 @@ Deno.serve(async (req) => {
       const conv = await verify(body.conversation_id, body.visitor_token);
       if (!conv) return json({ error: "unauthorized" }, 403, cors);
       await admin.from("chat_conversations")
-        .update({ pending_order: null, pending_order_at: null }).eq("id", conv.id);
+        .update({ pending_order: null, pending_order_at: null, pending_order_card: null }).eq("id", conv.id);
       // sıralı insert: created_at eşitliğinde kullanıcı/ai sırası bozulmasın
       await admin.from("chat_messages").insert({
         conversation_id: conv.id, role: "user", content: "Siparişi şimdilik onaylamıyorum.",
@@ -2327,7 +2522,7 @@ Deno.serve(async (req) => {
       const conv = await verify(body.conversation_id, body.visitor_token);
       if (!conv) return json({ error: "unauthorized" }, 403, cors);
       await admin.from("chat_conversations")
-        .update({ pending_exchange: null, pending_exchange_at: null }).eq("id", conv.id);
+        .update({ pending_exchange: null, pending_exchange_at: null, pending_exchange_card: null }).eq("id", conv.id);
       // sıralı insert: created_at eşitliğinde kullanıcı/ai sırası bozulmasın
       await admin.from("chat_messages").insert({
         conversation_id: conv.id, role: "user", content: "Talebi şimdilik onaylamıyorum.",
@@ -2375,9 +2570,14 @@ Deno.serve(async (req) => {
       let q = admin.from("chat_messages")
         .select("id,role,content,created_at")
         .eq("conversation_id", conv.id).order("created_at");
-      if (body.after) q = q.gt("created_at", body.after);
+      // 3c: `.gt` yerine `.gte` — aynı milisaniyede sonradan eklenen (kullanıcı+ai
+      // sıralı insert) bir mesaj `.gt(lastTs)` ile atlanabiliyordu. `.gte` sınır
+      // mesajını her poll'da geri döner; widget id-dedup (seen[]) ile tekrarı eler.
+      if (body.after) q = q.gte("created_at", body.after);
       const { data: msgs } = await q;
-      return json({ messages: msgs || [], status: conv.status }, 200, cors);
+      // Faz 2: taze bekleyen kartı da dön → widget kartı yeniden kurabilir
+      // (timeout / 2. sekme / panel yeniden-açma sonrası "buton yok" fallback'i).
+      return json({ messages: msgs || [], status: conv.status, pending: freshPendingFor(conv) }, 200, cors);
     }
 
     return json({ error: "unknown action" }, 400, cors);

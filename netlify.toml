@@ -12,6 +12,18 @@
   to = "/404.html"
   status = 404
 
+# Kurulum notları: secret adları, tablo/RPC adları, hız sınırı eşikleri,
+# verify_jwt ayarları sızdırıyor
+[[redirects]]
+  from = "/backend/*.md"
+  to = "/404.html"
+  status = 404
+
+[[redirects]]
+  from = "/backend/*.ps1"
+  to = "/404.html"
+  status = 404
+
 [[redirects]]
   from = "/backend/edge-functions/*"
   to = "/404.html"

@@ -71,6 +71,7 @@
   var burst = [];             // henüz gönderilmemiş kullanıcı satırları
   var burstRow = null;        // bu satırları biriktiren tek 'pending' balon
   var coalesceTimer = null;
+  var pendingCardSig = null;  // Faz 2: ekrandaki bekleyen onay kartının imzası (re-derive idempotent kalsın)
 
   // ---------- stil ----------
   var INK = 'var(--ink,#1b1a17)';
@@ -734,11 +735,54 @@
   // kartta {mode:'card',items,form,total} → PayTR güvenli ödeme ekranını aç.
   function handleOrder(order) {
     if (!order) return;
-    if (order.mode === 'summary') renderOrderCard(order);   // onay öncesi görsel özet kartı
+    if (order.mode === 'summary') renderPendingCard('order', order);   // onay öncesi görsel özet kartı
     else if (order.mode === 'card') openCardPayment(order);
     else if (order.mode === 'product') renderProductCard(order.product); // görsel ürün kartı
-    else if (order.mode === 'exchange_summary') renderExchangeCard(order); // değişim/iptal onay kartı
+    else if (order.mode === 'exchange_summary') renderPendingCard('exchange', order); // değişim/iptal onay kartı
     // cod: AI yanıtı sipariş numarasını ve özeti zaten içeriyor
+  }
+
+  // ---------- Faz 2: bekleyen onay kartı (kalıcı, re-derive edilebilir) ----------
+  // Kart artık yalnız send/confirm_* HTTP yanıtından değil, poll/resume'daki taze
+  // `pending` alanından da kurulabilir. İki yol da buradan geçer; imza (cardSig)
+  // ile idempotent: aynı özet iki kez render edilmez, farklı özet eskisini değiştirir.
+  function cardSig(kind, card) {
+    if (!card) return '';
+    if (kind === 'exchange') {
+      return ['x', card.order_no, card.request_type, card.new_color, card.new_size, card.updating ? 1 : 0].join('|');
+    }
+    var items = (card.items || []).map(function (i) {
+      return (i.name || '') + '#' + (i.color || '') + '#' + (i.size || '') + '#' + (i.qty || 1);
+    }).join(',');
+    return ['o', card.payment_method, card.total, card.discount || 0, card.discount_code || '', items].join('|');
+  }
+  // Taze bir bekleyen kartı kur (yoksa) — hem send hızlı yolu hem poll re-derive çağırır.
+  function renderPendingCard(kind, card) {
+    if (!card) return;
+    var sig = cardSig(kind, card);
+    var existing = bodyEl.querySelector('.ej-ordrow[data-pcard]');
+    if (existing && pendingCardSig === sig) return;   // aynı kart zaten ekranda → idempotent
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);  // farklı özet → değiştir
+    pendingCardSig = sig;
+    var row = (kind === 'order') ? renderOrderCard(card) : renderExchangeCard(card);
+    if (row) row.dataset.pcard = sig;
+  }
+  // Sunucuda bekleyen temizlendiğinde kartı geçersiz kıl: butonu henüz kullanılmamış
+  // (canlı) kart ölü butonla kalmasın → kaldır; kullanıcı zaten onayladıysa (buton
+  // devre dışı, "Onaylandı") kartı kayıt olarak bırak, yalnız izlemeyi bırak.
+  function clearPendingCard() {
+    pendingCardSig = null;
+    var rows = bodyEl.querySelectorAll('.ej-ordrow[data-pcard]');
+    for (var i = 0; i < rows.length; i++) {
+      var btn = rows[i].querySelector('.ej-ord-confirm');
+      if (btn && !btn.disabled && rows[i].parentNode) rows[i].parentNode.removeChild(rows[i]);
+      else rows[i].removeAttribute('data-pcard');
+    }
+  }
+  // poll/resume yanıtındaki taze `pending`'i ekrana yansıt (garanti fallback).
+  function derivePending(pending) {
+    if (pending && pending.card) renderPendingCard(pending.kind === 'exchange' ? 'exchange' : 'order', pending.card);
+    else clearPendingCard();
   }
 
   // sohbet içinde görsel ürün kartı (show_product_card): foto + fiyat + seçenekler + link
@@ -858,9 +902,12 @@
     xbtn.addEventListener('click', function () {
       if (xbtn.disabled) return;
       cbtn.disabled = true; xbtn.disabled = true;
-      cancelOrder();
+      cancelOrder(function () {   // iptal iletilemedi: butonları geri aç
+        cbtn.disabled = false; xbtn.disabled = false;
+      });
     });
     scrollDown();
+    return row;
   }
 
   // Onay butonu: onayı serbest metin olarak Gemini'ye yorumlatmak yerine
@@ -873,12 +920,14 @@
     if (!conv) return;
     // kullanıcı özetten sonra yazmaya devam ettiyse sunucudaki özet zaten
     // geçersiz; onayı normal mesaj olarak gönder (Gemini yeniden özetler)
-    if (burst.length || sending) { sendText('Siparişi onaylıyorum.'); return; }
+    if (burst.length || sending) { if (onFail) onFail(); sendText('Siparişi onaylıyorum.'); return; }
     showTyping(true);
     api('confirm_order', { conversation_id: conv.id, visitor_token: conv.token }, 45000)
       .then(function (res) {
         showTyping(false);
-        if (res && res.error === 'no_pending') { sendText('Siparişi onaylıyorum.'); return; }
+        // bekleyen özet bayatlamış/yok: buton "Onaylandı"da ölü kalmasın — sıfırla,
+        // sonra serbest-metin fallback'ine düş.
+        if (res && res.error === 'no_pending') { if (onFail) onFail(); sendText('Siparişi onaylıyorum.'); return; }
         if (res && res.error) {
           if (onFail) onFail();
           // sunucu açıklayıcı ai mesajını konuşmaya yazdı; poll ile çek
@@ -896,12 +945,21 @@
       });
   }
 
-  // "Vazgeç": bekleyen özeti sunucuda temizler; sohbet doğal biçimde devam eder
-  function cancelOrder() {
+  // "Vazgeç": bekleyen özeti sunucuda temizler; sohbet doğal biçimde devam eder.
+  // Hata olursa (ağ/sunucu) butonlar sessizce kilitli kalmasın: onFail ile geri aç
+  // ve kullanıcıya bildir.
+  function cancelOrder(onFail) {
     if (!conv) return;
     api('cancel_order', { conversation_id: conv.id, visitor_token: conv.token })
-      .then(function () { return poll(); })
-      .catch(function () {});
+      .then(function (res) {
+        if (res && res.error) throw new Error(res.error);
+        return poll();
+      })
+      .catch(function () {
+        if (onFail) onFail();
+        addMsg('sys', 'İşlem iptal edilemedi, lütfen tekrar deneyin.', null, null);
+        scrollDown();
+      });
   }
 
   // ---------- sohbette değişim/iptal onay kartı (show_exchange_summary) ----------
@@ -957,21 +1015,25 @@
     xbtn.addEventListener('click', function () {
       if (xbtn.disabled) return;
       cbtn.disabled = true; xbtn.disabled = true;
-      cancelExchange();
+      cancelExchange(function () {   // iptal iletilemedi: butonları geri aç
+        cbtn.disabled = false; xbtn.disabled = false;
+      });
     });
     scrollDown();
+    return row;
   }
 
   // confirmOrder'ın değişim aynası: bekleyen özet yoksa/bayatsa serbest-metin
   // fallback'i (sunucudaki kısa-onay kısayolu veya Gemini yakalar).
   function confirmExchange(onFail) {
     if (!conv) return;
-    if (burst.length || sending) { sendText('Onaylıyorum.'); return; }
+    if (burst.length || sending) { if (onFail) onFail(); sendText('Onaylıyorum.'); return; }
     showTyping(true);
     api('confirm_exchange', { conversation_id: conv.id, visitor_token: conv.token }, 45000)
       .then(function (res) {
         showTyping(false);
-        if (res && res.error === 'no_pending') { sendText('Onaylıyorum.'); return; }
+        // bekleyen talep bayatlamış/yok: ölü "Onaylandı" butonunu sıfırla, sonra fallback.
+        if (res && res.error === 'no_pending') { if (onFail) onFail(); sendText('Onaylıyorum.'); return; }
         if (res && res.error) {
           if (onFail) onFail();
           // sunucu açıklayıcı ai mesajını konuşmaya yazdı; poll ile çek
@@ -989,11 +1051,18 @@
       });
   }
 
-  function cancelExchange() {
+  function cancelExchange(onFail) {
     if (!conv) return;
     api('cancel_exchange', { conversation_id: conv.id, visitor_token: conv.token })
-      .then(function () { return poll(); })
-      .catch(function () {});
+      .then(function (res) {
+        if (res && res.error) throw new Error(res.error);
+        return poll();
+      })
+      .catch(function () {
+        if (onFail) onFail();
+        addMsg('sys', 'İşlem iptal edilemedi, lütfen tekrar deneyin.', null, null);
+        scrollDown();
+      });
   }
 
   // girişliyse kullanıcı JWT'si (sipariş hesaba bağlansın), değilse anon key
@@ -1071,6 +1140,10 @@
           if (confirmPendingUser(m)) return;   // balon yerinde onaylandı; sona taşınmaz
           addMsg(roleClass(m.role), m.content, m.id, m.created_at);
         });
+        // Faz 2: taze bekleyen kartı ekrana yansıt (idempotent). `pending` alanı
+        // tanımlıysa sunucu re-derive'i destekliyor demektir; tanımsızsa (eski
+        // sunucu) mevcut hızlı yol tek başına çalışmaya devam eder.
+        if (res.hasOwnProperty('pending')) derivePending(res.pending);
         if (added && stick) scrollDown();   // yalnız yeni mesaj VARSA ve alttaydıysa kaydır
         pollMisses = added ? 0 : pollMisses + 1;   // idle backoff sayacı (yeni mesajda sıfırla)
       }).catch(function () {});
