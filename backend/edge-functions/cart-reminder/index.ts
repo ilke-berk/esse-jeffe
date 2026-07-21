@@ -8,6 +8,10 @@
 //     CART_CRON_SECRET secret'ı (pg_cron JWT gönderemez).
 //   GET ?unsub=<restore_token> — maildeki "hatırlatmaları kapat" linki.
 //     Onayı kapatır, sepeti boşaltır, reminder_optout'a yazar.
+//   GET ?resub=<restore_token> — opt-out'u geri açmanın TEK meşru yolu (O-1).
+//     Token yalnız o adrese mail ile gittiği için sahiplik kanıtıdır;
+//     cart-sync artık opt-out silemez (kimliksiz istek başkasının
+//     opt-out'unu iptal edebiliyordu).
 //
 //  Deploy: verify_jwt KAPALI (paytr-callback gibi) — cron ve tarayıcı
 //  linki JWT taşıyamaz; güvenlik secret/token iledir.
@@ -23,10 +27,11 @@
 //  Secret'lar: CART_CRON_SECRET (zorunlu), CART_DISCOUNT_PERCENT (ops.,
 //  varsayılan 10), RESEND_API_KEY, ORDER_FROM_EMAIL, SITE_URL.
 // ============================================================
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 import { createLogger, errMsg, type Logger } from "../_shared/log.ts";
 import { makeDiscountCode } from "../_shared/discount.ts";
 import { sendCartReminder } from "../_shared/cart-email.ts";
+import { timingSafeEqualStr } from "../_shared/util.ts";
 
 const ABANDON_HOURS = 3; // son güncellemeden sonra bekleme
 const MAX_AGE_DAYS = 7; // bundan eski sepetlere (ilk kurulum/duraklama) mail atma
@@ -50,6 +55,13 @@ function unsubUrl(token: string): string {
   const base = Deno.env.get("SUPABASE_URL") || "";
   return `${base}/functions/v1/cart-reminder?unsub=${encodeURIComponent(token)}`;
 }
+
+function resubUrl(token: string): string {
+  const base = Deno.env.get("SUPABASE_URL") || "";
+  return `${base}/functions/v1/cart-reminder?resub=${encodeURIComponent(token)}`;
+}
+
+const TOKEN_RE = /^[0-9a-f-]{36}$/i;
 
 const sendEmailReminder: Sender = async (cart, code, percent) => {
   const r = await sendCartReminder({
@@ -90,7 +102,7 @@ function unsubPage(msg: string): Response {
 }
 
 async function handleUnsub(admin: any, token: string, log: Logger): Promise<Response> {
-  if (!/^[0-9a-f-]{36}$/i.test(token)) return unsubPage("Geçersiz bağlantı.");
+  if (!TOKEN_RE.test(token)) return unsubPage("Geçersiz bağlantı.");
   const { data: cart } = await admin
     .from("abandoned_carts")
     .select("id, email")
@@ -105,8 +117,47 @@ async function handleUnsub(admin: any, token: string, log: Logger): Promise<Resp
     .update({ consent: false, items: [] })
     .eq("id", cart.id);
   log.info("reminder_optout", { cart_id: cart.id });
+  // Geri açma linki: token TOKEN_RE ile hex/tire'ye sınırlı → HTML'e gömmek güvenli.
   return unsubPage(
-    "Sepet hatırlatmaları kapatıldı. Fikriniz değişirse sepet sayfasındaki onay kutusunu yeniden işaretleyebilirsiniz.",
+    "Sepet hatırlatmaları kapatıldı." +
+      `<br><br><a href="${resubUrl(token)}" style="color:#b08d57;">Yanlışlıkla mı kapattınız? Yeniden açın</a>`,
+  );
+}
+
+/**
+ * O-1 — opt-out'u geri açmanın TEK meşru yolu.
+ * Yetki kanıtı = restore_token bilgisi (yalnız o e-posta adresine gönderildi).
+ * cart-sync'teki kimliksiz `delete .eq("email", ...)` bunun yerine kaldırıldı.
+ */
+async function handleResub(admin: any, token: string, log: Logger): Promise<Response> {
+  if (!TOKEN_RE.test(token)) return unsubPage("Geçersiz bağlantı.");
+  const { data: cart, error } = await admin
+    .from("abandoned_carts")
+    .select("id, email")
+    .eq("restore_token", token)
+    .maybeSingle();
+  if (error) {
+    log.error("resub_read_error", { detail: error.message });
+    return unsubPage("Şu anda işlem yapılamadı. Lütfen daha sonra tekrar deneyin.");
+  }
+  if (!cart) return unsubPage("Bağlantı bulunamadı veya süresi dolmuş.");
+  if (cart.email) {
+    const { error: dErr } = await admin
+      .from("reminder_optout")
+      .delete()
+      .eq("email", cart.email);
+    if (dErr) {
+      log.error("resub_delete_error", { cart_id: cart.id, detail: dErr.message });
+      return unsubPage("Şu anda işlem yapılamadı. Lütfen daha sonra tekrar deneyin.");
+    }
+  }
+  await admin
+    .from("abandoned_carts")
+    .update({ consent: true, consent_at: new Date().toISOString() })
+    .eq("id", cart.id);
+  log.info("reminder_resub", { cart_id: cart.id });
+  return unsubPage(
+    "Sepet hatırlatmaları yeniden açıldı. Dilediğiniz zaman maildeki bağlantıdan tekrar kapatabilirsiniz.",
   );
 }
 
@@ -117,17 +168,22 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // ---------- GET ?unsub=... : hatırlatmalardan çık ----------
+  // ---------- GET ?unsub= / ?resub= : hatırlatma tercihi ----------
   if (req.method === "GET") {
-    const token = new URL(req.url).searchParams.get("unsub") || "";
-    if (!token) return new Response("Not found", { status: 404 });
-    return handleUnsub(admin, token, log);
+    const qs = new URL(req.url).searchParams;
+    const unsub = qs.get("unsub") || "";
+    if (unsub) return handleUnsub(admin, unsub, log);
+    const resub = qs.get("resub") || "";
+    if (resub) return handleResub(admin, resub, log);
+    return new Response("Not found", { status: 404 });
   }
   if (req.method !== "POST") return new Response("POST bekleniyor", { status: 405 });
 
   // ---------- POST: cron taraması ----------
   const secret = Deno.env.get("CART_CRON_SECRET");
-  if (!secret || req.headers.get("x-cron-secret") !== secret) {
+  // Sabit zamanlı karşılaştırma: `!==` ilk farklı baytta döner ve yanıt
+  // süresi secret'ı bayt bayt sızdırabilirdi.
+  if (!secret || !timingSafeEqualStr(req.headers.get("x-cron-secret"), secret)) {
     log.warn("bad_cron_secret");
     return new Response(JSON.stringify({ error: "yetkisiz" }), { status: 401 });
   }
@@ -222,12 +278,22 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    // Opt-out kontrolü.
-    const { data: opt } = await admin
+    // Opt-out kontrolü — fail-CLOSED.
+    // Eskiden error yok sayılıyordu: geçici bir DB hatası "opt-out yok"
+    // gibi okunup KVKK'ya aykırı şekilde mail gönderilmesine yol açardı.
+    // Okuyamıyorsak göndermeyiz; sepet reminded_at=null kalır, sonraki
+    // koşu yeniden dener (kalıcı kayıp yok).
+    const { data: opt, error: optErr } = await admin
       .from("reminder_optout")
       .select("email")
       .eq("email", cart.email)
       .maybeSingle();
+    if (optErr) {
+      log.error("optout_read_error", { cart_id: cart.id, detail: optErr.message });
+      errors.push("optout_read: " + optErr.message);
+      skipped++;
+      continue;
+    }
     if (opt) {
       skipped++;
       continue;

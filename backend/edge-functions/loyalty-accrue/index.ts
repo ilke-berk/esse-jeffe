@@ -16,7 +16,7 @@
 //  LOYALTY_MIN_SUBTOTAL, LOYALTY_MAX_DISCOUNT, LOYALTY_VALID_DAYS
 //  (hepsi opsiyonel, varsayılan 5/50/1000/1500/180) + Resend ikilisi.
 // ============================================================
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 import { createLogger } from "../_shared/log.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { accrueLoyalty } from "../_shared/loyalty.ts";

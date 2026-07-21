@@ -12,6 +12,10 @@ import {
   resolveOrigin,
   normVariant,
   canonVariant,
+  timingSafeEqualStr,
+  looksLikeIp,
+  ipOrDefault,
+  xffShape,
 } from "../backend/edge-functions/_shared/util.ts";
 
 const reqWith = (headers) => ({ headers: { get: (n) => headers[n.toLowerCase()] ?? null } });
@@ -24,6 +28,100 @@ test("clientIp: x-forwarded-for zincirinin ilk halkasını alır", () => {
 test("clientIp: başlık yoksa 'unknown'", () => {
   assert.equal(clientIp(reqWith({})), "unknown");
   assert.equal(clientIp(reqWith({ "x-forwarded-for": "" })), "unknown");
+});
+
+test("clientIp: hops=0 GÖLGE — cf/x-real varken bile davranış değişmez (Y-1)", () => {
+  // Gölge modunun tek sözleşmesi: sayaç anahtarı KAYMAZ. cf-connecting-ip
+  // gelse bile hops=0'da seçim hâlâ xff[0] — canlı fn_rate_limit sayaçları
+  // bir kez sıfırlanmış gibi olmasın diye.
+  assert.equal(
+    clientIp(reqWith({ "x-forwarded-for": "1.1.1.1, 9.9.9.9", "cf-connecting-ip": "8.8.8.8" }), 0),
+    "1.1.1.1",
+  );
+  assert.equal(clientIp(reqWith({ "x-real-ip": "8.8.8.8" }), 0), "unknown");
+});
+
+test("clientIp: hops>0 öncelik zinciri cf → x-real → xff[len-N] → xff[0]", () => {
+  const xff = "1.1.1.1, 9.9.9.9";
+  // cf-connecting-ip her şeyin önünde
+  assert.equal(clientIp(reqWith({ "x-forwarded-for": xff, "cf-connecting-ip": "8.8.8.8" }), 1), "8.8.8.8");
+  // cf yoksa x-real-ip
+  assert.equal(clientIp(reqWith({ "x-forwarded-for": xff, "x-real-ip": "7.7.7.7" }), 1), "7.7.7.7");
+  // ikisi de yoksa xff[len-N]; bot sol halkayı değiştirse de anahtar sabit
+  assert.equal(clientIp(reqWith({ "x-forwarded-for": "1.1.1.1, 9.9.9.9" }), 1), "9.9.9.9");
+  assert.equal(clientIp(reqWith({ "x-forwarded-for": "2.2.2.2, 9.9.9.9" }), 1), "9.9.9.9");
+  // N=2 → iki proxy
+  assert.equal(clientIp(reqWith({ "x-forwarded-for": "1.1.1.1, 9.9.9.9, 10.0.0.1" }), 2), "9.9.9.9");
+  // zincir N'den kısa → xff[0]'a clamp (herkesi tek anahtara toplamamak için)
+  assert.equal(clientIp(reqWith({ "x-forwarded-for": "9.9.9.9" }), 3), "9.9.9.9");
+  assert.equal(clientIp(reqWith({}), 1), "unknown");
+});
+
+test("clientIp: hops>0 şekil doğrulaması — çöp halka atlanır", () => {
+  // cf çöpse x-real'e, o da çöpse xff'e düşülmeli
+  assert.equal(
+    clientIp(reqWith({ "cf-connecting-ip": "unknown", "x-real-ip": "7.7.7.7" }), 1),
+    "7.7.7.7",
+  );
+  assert.equal(
+    clientIp(reqWith({ "cf-connecting-ip": "<script>", "x-forwarded-for": "1.1.1.1, 9.9.9.9" }), 1),
+    "9.9.9.9",
+  );
+  // seçilen xff halkası çöpse xff[0]'a düş
+  assert.equal(clientIp(reqWith({ "x-forwarded-for": "1.1.1.1, bozuk" }), 1), "1.1.1.1");
+  // hepsi çöpse "unknown" (çöp değeri sayaç anahtarı yapma)
+  assert.equal(clientIp(reqWith({ "x-forwarded-for": "bozuk, cöp" }), 1), "unknown");
+  assert.equal(clientIp(reqWith({ "x-forwarded-for": "::1, 2001:db8::1" }), 1), "2001:db8::1");
+});
+
+test("looksLikeIp: yalnız IP BİÇİMİ (sahiplik iddiası değil)", () => {
+  assert.ok(looksLikeIp("9.9.9.9"));
+  assert.ok(looksLikeIp("255.255.255.255"));
+  assert.ok(looksLikeIp("::1"));
+  assert.ok(looksLikeIp("2001:db8::1"));
+  assert.ok(!looksLikeIp("256.1.1.1")); // oktet > 255
+  assert.ok(!looksLikeIp("unknown"));
+  assert.ok(!looksLikeIp(""));
+  assert.ok(!looksLikeIp(null));
+  assert.ok(!looksLikeIp("<script>alert(1)</script>"));
+});
+
+test("ipOrDefault: çöp IP dış servise gitmez (PayTR user_ip)", () => {
+  assert.equal(ipOrDefault("9.9.9.9"), "9.9.9.9");
+  assert.equal(ipOrDefault("unknown"), "127.0.0.1");
+  assert.equal(ipOrDefault(""), "127.0.0.1");
+  assert.equal(ipOrDefault(null), "127.0.0.1");
+  assert.equal(ipOrDefault("unknown", "10.0.0.1"), "10.0.0.1");
+});
+
+test("xffShape: ölçüm kaydı zincirin şeklini taşır", () => {
+  const s = xffShape(
+    reqWith({ "x-forwarded-for": "1.1.1.1, 9.9.9.9", "cf-connecting-ip": "8.8.8.8" }),
+    0,
+  );
+  assert.equal(s.len, 2);
+  assert.equal(s.hops, 0);
+  assert.equal(s.first, "1.1.1.1"); // bugün kullanılan
+  assert.equal(s.last, "9.9.9.9"); // N=1'de kullanılacak
+  assert.equal(s.cf, "8.8.8.8");
+  assert.equal(s.real, null);
+
+  const empty = xffShape(reqWith({}), 0);
+  assert.equal(empty.len, 0);
+  assert.equal(empty.first, null);
+  assert.equal(empty.last, null);
+});
+
+test("timingSafeEqualStr: doğru sonuç verir (sabit zamanlı secret karşılaştırma)", () => {
+  assert.ok(timingSafeEqualStr("s3cr3t", "s3cr3t"));
+  assert.ok(!timingSafeEqualStr("s3cr3t", "s3cr3T"));
+  assert.ok(!timingSafeEqualStr("s3cr3t", "s3cr3"));   // kısa
+  assert.ok(!timingSafeEqualStr("s3cr3t", "s3cr3tt")); // uzun
+  assert.ok(!timingSafeEqualStr(null, "s3cr3t"));
+  assert.ok(!timingSafeEqualStr(undefined, "s3cr3t"));
+  // farkın konumu sonucu değiştirmez (erken dönüş yok)
+  assert.ok(!timingSafeEqualStr("Xs3cr3", "s3cr3t"));
+  assert.ok(!timingSafeEqualStr("s3cr3X", "s3cr3t"));
 });
 
 test("normPhone: 0 / +90 / boşluk / tire farklarını yok sayar", () => {
@@ -87,6 +185,13 @@ test("isAllowedOrigin: listedekiler + localhost kabul, diğerleri ret", () => {
   assert.ok(!isAllowedOrigin("", allowed));
   // localhost görünümlü sahte alan adları reddedilmeli
   assert.ok(!isAllowedOrigin("https://localhost.kotu-site.com", allowed));
+});
+
+test("isAllowedOrigin: allowLocal=false ile yerel muafiyet kapanır (prod)", () => {
+  const allowed = ["https://essejeffe.com"];
+  assert.ok(!isAllowedOrigin("http://localhost:8080", allowed, false));
+  assert.ok(!isAllowedOrigin("http://127.0.0.1:3000", allowed, false));
+  assert.ok(isAllowedOrigin("https://essejeffe.com", allowed, false));
 });
 
 test("resolveOrigin: izinsiz origin ilk izinliye sabitlenir (açık yönlendirme savunması)", () => {

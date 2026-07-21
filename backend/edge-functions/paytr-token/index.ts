@@ -18,10 +18,17 @@
 //  allowlist'teyse kullanılır; değilse ilk izinli origin'e sabitlenir. Böylece
 //  kötü niyetli bir client kullanıcıyı başka bir siteye yönlendiremez.
 // ============================================================
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 import { createLogger, errMsg } from "../_shared/log.ts";
 import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
-import { canonVariant, clientIp, makeOrderNo, parseOriginList, resolveOrigin } from "../_shared/util.ts";
+import {
+  canonVariant,
+  clientIp,
+  ipOrDefault,
+  makeOrderNo,
+  parseOriginList,
+  resolveOrigin,
+} from "../_shared/util.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import {
   type ClaimRef,
@@ -292,8 +299,12 @@ Deno.serve(async (req) => {
   await recordRateLimit(admin, ORDER_RATE.table, ip, ORDER_RATE.kind);
 
   // --- PayTR token ---
-  const userIp =
-    (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "127.0.0.1";
+  // Y-1: inline XFF kopyası KALDIRILDI — :120'deki ip (clientIp) tek kaynak.
+  // Aksi halde hops>0 yapıldığında hız sınırı yeni IP'yi, PayTR eski/uydurma
+  // IP'yi görürdü. "unknown" PayTR'de geçersiz alan → IP biçimli varsayılan.
+  // Hash bizim GÖNDERDİĞİMİZ değerle üretildiği için ödeme akışı bozulmaz;
+  // değişimin etkisi yalnız PayTR'nin fraud skorlamasındadır.
+  const userIp = ipOrDefault(ip);
   const userBasket = b64str(JSON.stringify(basket));
   const noInstallment = "0";
   const maxInstallment = "0";

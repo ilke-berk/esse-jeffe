@@ -19,7 +19,7 @@
 //
 //  SUPABASE_URL ve SUPABASE_SERVICE_ROLE_KEY platform tarafından gelir.
 // ============================================================
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 import { createLogger } from "../_shared/log.ts";
 import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
 import { clientIp } from "../_shared/util.ts";
@@ -241,6 +241,36 @@ Deno.serve(async (req) => {
     if (!consent) return json({ error: "Hatırlatma için onay gerekli." }, 400);
   }
 
+  // O-1 — misafir yolunda opt-out KAPISI (kimlik kanıtı yok!).
+  // Misafir dalı e-postayı yalnız body'den alır; sahiplik kanıtlanmaz.
+  // Kapı olmadan saldırgan, kurbanın e-postasıyla sync çağırıp:
+  //   1) aşağıdaki `.eq("email", email)` ile kurbanın satırını ELE GEÇİRİR
+  //      (items/consent/consent_at üzerine yazar),
+  //   2) reminded_at=null ile hatırlatma döngüsünü SIFIRLAR
+  //      → her turda yeni mail = mail bombalama primitifi.
+  // Bu yüzden opt-out'lu bir e-posta için misafir yolu tamamen reddedilir.
+  // Yeniden açmanın tek meşru yolu cart-reminder'ın token'lı ?resub= yolu
+  // (token yalnız o adrese mail ile gitti → sahiplik kanıtı).
+  if (!userId) {
+    const { data: opt, error: optErr } = await admin
+      .from("reminder_optout")
+      .select("email")
+      .eq("email", email)
+      .maybeSingle();
+    if (optErr) {
+      // fail-CLOSED: opt-out okunamıyorsa yazmayı reddet (mail atmaktan iyidir)
+      log.error("optout_read_error", { ip, detail: optErr.message });
+      return json({ error: "Sunucu hatası." }, 500);
+    }
+    if (opt) {
+      log.warn("optout_guest_sync_blocked", { ip });
+      return json({
+        error:
+          "Bu e-posta için sepet hatırlatmaları kapalı. Yeniden açmak için size gönderdiğimiz e-postadaki bağlantıyı kullanın.",
+      }, 403);
+    }
+  }
+
   const rawItems: any[] = Array.isArray(payload?.items) ? payload.items : [];
   const items = rawItems.slice(0, MAX_ITEMS).map(sanitizeItem).filter(Boolean);
 
@@ -277,10 +307,11 @@ Deno.serve(async (req) => {
     return json({ error: "Kaydedilemedi." }, 500);
   }
 
-  // Açık rıza yenilendi → eski opt-out kaydını kaldır.
-  if (consent && email) {
-    await admin.from("reminder_optout").delete().eq("email", email);
-  }
+  // O-1: BURADA opt-out SİLİNMEZ. Eskiden `consent && email` yeterliydi ve
+  // sahiplik kanıtı istemediği için herkes başkasının opt-out'unu iptal
+  // edebiliyordu. Opt-out'u geri açmanın tek yolu cart-reminder ?resub=<token>.
+  // Üye (JWT) satırında consent=true kalsa bile cart-reminder gönderim
+  // öncesi reminder_optout'a bakar → mail yine çıkmaz.
 
   await recordRateLimit(admin, SYNC_RATE.table, ip, SYNC_RATE.kind);
   log.info("cart_synced", { ip, member: !!userId, item_count: items.length });

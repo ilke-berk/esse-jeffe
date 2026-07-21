@@ -16,7 +16,7 @@
 //
 //  Secret: GEMINI_API_KEY (chat ile ortak), GEMINI_MODEL (ops.).
 // ============================================================
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 
 // NOT: Bu fonksiyon bilinçli olarak KENDİ KENDİNE YETER (chat EF emsali):
 // _shared zinciri (log→sentry, cors→util) yerine minimal yerleşik logger +

@@ -11,11 +11,12 @@
 //    https://<proje-ref>.supabase.co/functions/v1/paytr-callback
 //  verify_jwt = false (PayTR JWT göndermez; kimlik doğrulama hash ile).
 // ============================================================
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 import { sendOrderEmails } from "../_shared/order-email.ts";
 import { createLogger, errMsg } from "../_shared/log.ts";
 import { markCartRecovered, releaseDiscountByOrder } from "../_shared/discount.ts";
 import { accrueLoyalty } from "../_shared/loyalty.ts";
+import { timingSafeEqualStr } from "../_shared/util.ts";
 
 async function hmacB64(message: string, key: string): Promise<string> {
   const k = await crypto.subtle.importKey(
@@ -58,8 +59,10 @@ Deno.serve(async (req) => {
   if (!merchantOid || !postedHash) return fail("eksik alan");
 
   // --- imza doğrulama ---
+  // Sabit zamanlı: `!==` ilk farklı baytta döner; saldırgan yanıt süresine
+  // bakarak geçerli imzayı bayt bayt inşa etmeye çalışabilirdi.
   const calcHash = await hmacB64(merchantOid + MSALT + status + totalAmount, MKEY);
-  if (calcHash !== postedHash) {
+  if (!timingSafeEqualStr(calcHash, postedHash)) {
     // sahte/oynanmış bildirim girişimi — izlemeye değer
     log.warn("bad_hash", { order_no: merchantOid });
     return fail("bad hash");

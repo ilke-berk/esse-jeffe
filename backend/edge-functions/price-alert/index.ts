@@ -22,10 +22,10 @@
 //  Secret'lar: CART_CRON_SECRET (cron için zorunlu), RESEND_API_KEY,
 //  ORDER_FROM_EMAIL, SITE_URL (yoksa gönderim sessizce atlanır).
 // ============================================================
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 import { createLogger, errMsg, type Logger } from "../_shared/log.ts";
 import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
-import { clientIp } from "../_shared/util.ts";
+import { clientIp, timingSafeEqualStr } from "../_shared/util.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { esc, sendViaResend, shell, tl } from "../_shared/order-email.ts";
 
@@ -292,7 +292,8 @@ Deno.serve(async (req) => {
   const cronHeader = req.headers.get("x-cron-secret");
   if (cronHeader !== null) {
     const secret = Deno.env.get("CART_CRON_SECRET");
-    if (!secret || cronHeader !== secret) {
+    // Sabit zamanlı: `!==` yanıt süresiyle secret'ı sızdırabilirdi.
+    if (!secret || !timingSafeEqualStr(cronHeader, secret)) {
       log.warn("bad_cron_secret");
       return new Response(JSON.stringify({ error: "yetkisiz" }), { status: 401 });
     }

@@ -18,9 +18,10 @@
 //  Secret'lar: CART_CRON_SECRET (zorunlu), RESEND_API_KEY, ORDER_FROM_EMAIL,
 //  ORDER_NOTIFY_EMAIL (alıcı), STOCK_ALERT_THRESHOLD (ops., varsayılan 3).
 // ============================================================
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 import { createLogger, errMsg } from "../_shared/log.ts";
 import { esc, sendViaResend, shell } from "../_shared/order-email.ts";
+import { timingSafeEqualStr } from "../_shared/util.ts";
 
 const MAX_ROWS = 500; // koşu başına taranan varyant üst sınırı (güvenlik supabı)
 
@@ -85,7 +86,8 @@ Deno.serve(async (req) => {
 
   // --- cron kimlik doğrulaması (cart-reminder deseni) ---
   const secret = Deno.env.get("CART_CRON_SECRET");
-  if (!secret || req.headers.get("x-cron-secret") !== secret) {
+  // Sabit zamanlı: `!==` yanıt süresiyle secret'ı sızdırabilirdi.
+  if (!secret || !timingSafeEqualStr(req.headers.get("x-cron-secret"), secret)) {
     log.warn("bad_cron_secret");
     return json({ error: "yetkisiz" }, 401);
   }

@@ -20,7 +20,7 @@
 //  Secret'lar: RESEND_API_KEY, ORDER_FROM_EMAIL (yoksa gönderim atlanır),
 //  SITE_URL (takip linki için, ops.).
 // ============================================================
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 import { createLogger, errMsg } from "../_shared/log.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 import { esc, sendViaResend, shell, tl } from "../_shared/order-email.ts";

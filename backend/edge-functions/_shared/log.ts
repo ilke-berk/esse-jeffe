@@ -16,6 +16,7 @@
 //  modül Node testlerinde de sorunsuz import edilir (saf yardımcılar test edilebilir).
 // ============================================================
 import { captureError } from "./sentry.ts";
+import { xffShape } from "./util.ts";
 
 export type LogLevel = "info" | "warn" | "error";
 
@@ -39,6 +40,8 @@ export interface LoggerOpts {
   // Test/özel kullanım için enjekte edilebilir; verilmezse ortamdan okunur.
   sentryDsn?: string;
   waitUntil?: (p: Promise<unknown>) => void;
+  // Y-1 gölge ölçümü; testlerde kapatmak için false verilir.
+  xffShadow?: boolean;
 }
 
 // Ortam erişimi typeof ile korunur (Node/test'te Deno tanımsızsa patlamaz).
@@ -48,6 +51,19 @@ function envSentryDsn(): string | undefined {
     return typeof Deno !== "undefined" ? Deno.env.get("SENTRY_DSN") ?? undefined : undefined;
   } catch {
     return undefined;
+  }
+}
+
+// Y-1 gölge logu varsayılan AÇIK; ölçüm bitince EJ_XFF_SHADOW=0 ile kapatılır
+// (kapatmak yeniden deploy değil, yalnız secret değişimi gerektirir).
+function envXffShadow(): boolean {
+  try {
+    // @ts-ignore — Deno yalnız runtime'da var
+    if (typeof Deno === "undefined") return false; // Node testlerinde sessiz
+    // @ts-ignore
+    return !/^(0|false|off|no)$/i.test(Deno.env.get("EJ_XFF_SHADOW") ?? "1");
+  } catch {
+    return false;
   }
 }
 
@@ -114,6 +130,16 @@ export function createLogger(fn: string, req?: Request, opts?: LoggerOpts): Logg
       if (waitUntil) waitUntil(p); // yanıt sonrası tamamlansın (fonksiyon erken bitmesin)
     }
   };
+
+  // --- Y-1 gölge ölçümü ---
+  // Logger her fonksiyonda EN BAŞTA kurulur; kaydı buraya koymak, ölçümün
+  // gövde/secret doğrulamasından ÖNCE düşmesini garanti eder (400/401 dönen
+  // istekler de sayılır → yanlış negatif olmaz).
+  if (req && (opts?.xffShadow ?? envXffShadow())) {
+    try {
+      emit("info", "xff_shape", xffShape(req));
+    } catch { /* ölçüm asıl akışı ASLA bozmaz */ }
+  }
 
   return {
     requestId,

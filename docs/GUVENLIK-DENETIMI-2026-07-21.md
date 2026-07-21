@@ -40,10 +40,14 @@ gerçekten zorlanıyor).
 | O-6 kart dalı | Ayrı `card_checkout` anahtarı; `order_placed` guard'ı artık devrede | `chat/index.ts` |
 | O-7 günlük tavan | `send`'e `{max:600, sec:86400}` eklendi | `chat/index.ts` |
 | O-8 doküman sızıntısı | `/backend/*.md` + `/backend/*.ps1` → 404 | `netlify.toml` |
-| Y-1 XFF | **Düzeltilmedi** — yalnız `xff_shape` gölge logu (hop sayısı ölçümü); davranış değişmedi | `chat/index.ts` |
+| Y-1 XFF | **Kısmen** — `clientIp` artık `XFF_TRUSTED_PROXIES` ile sağdan sayabiliyor; varsayılan 0 = eski davranış. Ölçüm yapılıp N ayarlanana kadar açık **kapanmadı** | `_shared/util.ts` |
+| O-1 kimliksiz opt-out | Kapatıldı — `cart-sync`'teki `reminder_optout` silme kaldırıldı; opt-out'lu e-postada misafir yolu 403; geri açma yalnız `cart-reminder?resub=<token>`; `cart-reminder` opt-out okuması fail-closed | `cart-sync/index.ts`, `cart-reminder/index.ts` |
+| D sabit zamanlı karşılaştırma | `x-cron-secret` (3 fonksiyon) + PayTR HMAC → `timingSafeEqualStr` | `_shared/util.ts` + 4 fonksiyon |
+| D localhost CORS | `EDGE_ALLOW_LOCALHOST` bayrağına alındı (varsayılan KAPALI) | `_shared/cors.ts` |
+| D sürüm sabitleme | 13 fonksiyon `supabase-js@2` → `@2.110.7` | `*/index.ts` |
 
 **Kapsam dışı (bilinçli):** Y-2 (onay cümlelerini sunucu üretsin, L boyutunda),
-O-1 (`cart-sync` kimliksiz opt-out), O-5 (prompt injection) ve tüm DÜŞÜK maddeler.
+O-5 (prompt injection) ve kalan DÜŞÜK maddeler.
 `claimDiscount`'un e-posta bağı kullanıcı kararıyla değiştirilmedi — misafir kuponu
 elle yazıp kullanmaya devam eder; kalan risk "e-posta + kod birlikte bilinmeli"ye iner.
 
@@ -258,6 +262,14 @@ yalnız çevresindeki metni yazsın.
   script çalıştıramadığı için Düşük. Doğru desen zaten `ej.js:483`'te var.
 - **Artık dev fonksiyonları** — `paytr-callback-test` ve `chat-sim` prod'da ACTIVE;
   ikisi de zaten `410` döndürecek şekilde etkisizleştirilmiş. Silinmeli.
+  **AÇIK — repoda kod yok, yalnız Supabase'de deploy edilmiş durumdalar.**
+  Silme yeri: Supabase Dashboard → Edge Functions → ilgili fonksiyon → Delete.
+
+### Bu turda kapatılanlar (2026-07-21, ikinci tur)
+
+`O-1` + sabit zamanlı karşılaştırma + localhost bayrağı + sürüm sabitleme
+yukarıdaki özet tablosunda işaretlendi. `chat` fonksiyonu `jsr:@supabase/supabase-js@2`
+ile hâlâ sabitlenmemiş — ayrı deploy zinciri olduğu için bu turda dokunulmadı.
 
 ---
 

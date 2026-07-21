@@ -20,7 +20,7 @@
 //
 //  SUPABASE_URL ve SUPABASE_SERVICE_ROLE_KEY platform tarafından gelir.
 // ============================================================
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.110.7";
 import { createLogger } from "../_shared/log.ts";
 import { checkRateLimit, recordRateLimit } from "../_shared/rate-limit.ts";
 import { clientIp, isValidOrderNo, normPhone } from "../_shared/util.ts";
