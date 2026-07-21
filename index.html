@@ -57,7 +57,7 @@
 <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M5kng.woff2">
   <link rel="preload" as="font" type="font/woff2" crossorigin href="https://fonts.gstatic.com/s/spectral/v15/rnCr-xNNww_2s0amA9M3knj-SA.woff2">
   <link href="https://fonts.googleapis.com/css2?family=Spectral:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="ej.css?v=11">
+<link rel="stylesheet" href="ej.css?v=12">
 <style>
 /* ---------- hero — üç varyasyon ---------- */
 .hero-block{display:none}
@@ -117,20 +117,6 @@ body[data-hero="center"] .hero-center{display:flex}
 .hero-full .label,.hero-full .hero-h1,
 .hero-center .label,.hero-center .hero-h1,
 .hero-split .txt .label,.hero-split .txt .hero-h1,.hero-split .txt p{display:none}
-
-/* chat butonu: hero ekrandayken gizli, hero çıkınca gelir */
-.chat-fab{transition:opacity .3s ease,transform .3s ease,visibility .3s}
-body:not(.scrolled) .chat-fab{opacity:0;visibility:hidden;pointer-events:none;transform:translateY(12px)}
-
-/* chat onay ekranı */
-.ej-confirm{position:absolute;inset:0;background:rgba(255,255,255,.97);display:none;flex-direction:column;align-items:center;justify-content:center;padding:32px 28px;text-align:center;z-index:10;backdrop-filter:blur(4px)}
-.ej-confirm.show{display:flex}
-.ej-confirm p{font-family:var(--serif);font-weight:300;font-size:19px;line-height:1.45;color:var(--ink);margin-bottom:28px;max-width:230px}
-.ej-confirm-btns{display:flex;flex-direction:column;gap:10px;width:100%}
-.ej-confirm-btns button{font-family:var(--sans);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;padding:14px;border:1px solid var(--ink);background:none;color:var(--ink);cursor:pointer;transition:background .25s,color .25s}
-.ej-confirm-btns button.yes{background:var(--ink);color:#fff;border-color:var(--ink)}
-.ej-confirm-btns button.yes:hover{background:#333}
-.ej-confirm-btns button.no:hover{background:var(--ink);color:#fff}
 
 /* tam ekran hero: görsel ekranın tepesinden başlar, header şeffaf üstüne biner */
 body[data-hero="full"] .header{position:fixed;left:0;right:0;top:0;transition:background .35s ease,box-shadow .35s ease,border-color .35s ease}
@@ -336,32 +322,7 @@ body[data-hero="full"].scrolled .header{background:#FFFFFF}
   </div>
 </footer>
 
-<!-- chat -->
-<button class="chat-fab" id="chatFab" aria-label="Sohbeti aç"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7A8.38 8.38 0 0 1 4 11.5 8.5 8.5 0 0 1 12.5 3 8.38 8.38 0 0 1 21 11.5z"/></svg></button>
-<div class="ej-chat" id="ejChat">
-  <div class="ej-head">
-    <div class="ej-ava">EJ</div>
-    <div class="ej-head-info"><b>Esse Jeffe Destek</b><span><i class="ej-dot"></i> Çevrimiçi · WhatsApp ile hızlı yanıt</span></div>
-    <button class="ej-close" id="chatClose">&times;</button>
-  </div>
-  <div class="ej-body">
-    <div class="ej-msg bot">Merhaba, ben Esse Jeffe asistanı. Size nasıl yardımcı olabilirim?</div>
-    <div class="ej-msg user">Hangi bedeni seçmeliyim?</div>
-    <div class="ej-msg bot">Beden rehberimizden ölçülerinize bakabilir, emin olamazsanız WhatsApp'tan birebir yardım alabilirsiniz. Kapıda ödeme ve kolay değişim de mevcut.</div>
-  </div>
-  <div class="ej-quick"><button>Beden</button><button>Kargo</button><button>Değişim</button><button>Kapıda Ödeme</button></div>
-  <div class="ej-foot">
-    <input placeholder="Mesajınızı yazın...">
-    <button class="ej-send" aria-label="Gönder"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
-  </div>
-  <div class="ej-confirm" id="ejConfirm">
-    <p>Konuşmayı sonlandırmak istediğinizden emin misiniz?</p>
-    <div class="ej-confirm-btns">
-      <button class="yes" id="confirmYes">Evet, sonlandır</button>
-      <button class="no" id="confirmNo">İptal</button>
-    </div>
-  </div>
-</div>
+<!-- sohbet: gerçek widget ej-chat.js tarafından enjekte edilir (statik demo kaldırıldı) -->
 
 <!-- çerez onay bandı (KVKK) -->
 <div class="cookiebar" id="cookiebar" role="dialog" aria-label="Çerez bildirimi">
@@ -378,26 +339,6 @@ body[data-hero="full"].scrolled .header{background:#FFFFFF}
 <script defer src="_ds/esse-jeffe-5a82027e-f168-4fd3-9d92-d0200641bb97/_ds_bundle.js"></script>
 
 <!-- çerez onayı: bağlama ej-analytics.js'te (onaya bağlı ölçüm yüklemesiyle birlikte) -->
-
-<!-- chat toggle -->
-<script>
-(function(){
-  var fab=document.getElementById('chatFab'),
-      chat=document.getElementById('ejChat'),
-      close=document.getElementById('chatClose'),
-      confirm=document.getElementById('ejConfirm'),
-      confirmYes=document.getElementById('confirmYes'),
-      confirmNo=document.getElementById('confirmNo');
-  function open(){ chat.classList.add('open'); fab.style.display='none'; confirm.classList.remove('show'); }
-  function shut(){ chat.classList.remove('open'); fab.style.display='grid'; confirm.classList.remove('show'); }
-  function askConfirm(){ confirm.classList.add('show'); }
-  fab.addEventListener('click', open);
-  close.addEventListener('click', askConfirm);
-  confirmYes.addEventListener('click', shut);
-  confirmNo.addEventListener('click', function(){ confirm.classList.remove('show'); });
-})();
-</script>
-
 
 <script>
 (function(){
