@@ -57,7 +57,7 @@
   function cardHTML(p) {
     var tag = p.badge ? '<span class="tag">' + esc(p.badge) + '</span>' : '';
     var media = p.image
-      ? '<img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" loading="lazy" decoding="async" width="900" height="1200" style="width:100%;aspect-ratio:3/4;object-fit:cover;display:block">'
+      ? '<img src="' + esc(p.image) + '" alt="' + esc(p.name) + '" loading="lazy" decoding="async" width="900" height="1200" style="width:100%;height:auto;aspect-ratio:3/4;object-fit:cover;display:block">'
       : PH_SVG;
     var dots = p.colors.map(function (c) {
       return '<span style="background:' + esc(c.hex) + '" title="' + esc(c.name) + '"></span>';
@@ -710,6 +710,34 @@
     return m || 'Bir hata oluştu, tekrar deneyin.';
   }
 
+  // Sızmış şifre kontrolü — HaveIBeenPwned k-anonimlik API'si.
+  // Supabase'in kendi HIBP koruması Pro plana özel olduğundan aynı kontrol burada.
+  // Ağa yalnız SHA-1 hash'in ilk 5 karakteri çıkar (şifrenin kendisi asla çıkmaz);
+  // Add-Padding yanıt boyutundan sızıntıyı da engeller. API'ye ulaşılamazsa akış
+  // ENGELLENMEZ (fail-open) — bu bir ek katman, zorunlu kapı değil.
+  function pwnedCount(pass) {
+    if (!(window.crypto && window.crypto.subtle && window.TextEncoder && window.fetch)) return Promise.resolve(0);
+    return crypto.subtle.digest('SHA-1', new TextEncoder().encode(pass)).then(function (buf) {
+      var bytes = new Uint8Array(buf), hex = '';
+      for (var i = 0; i < bytes.length; i++) hex += ('0' + bytes[i].toString(16)).slice(-2);
+      hex = hex.toUpperCase();
+      var ctl = window.AbortController ? new AbortController() : null;
+      if (ctl) setTimeout(function () { ctl.abort(); }, 4000);
+      return fetch('https://api.pwnedpasswords.com/range/' + hex.slice(0, 5), {
+        headers: { 'Add-Padding': 'true' },
+        signal: ctl ? ctl.signal : undefined
+      }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (txt) {
+        var suffix = hex.slice(5), lines = txt.split(/\r?\n/);
+        for (var j = 0; j < lines.length; j++) {
+          var p = lines[j].split(':');
+          if (p[0] === suffix) return parseInt(p[1], 10) || 0;
+        }
+        return 0;
+      });
+    }).catch(function () { return 0; });
+  }
+  var PWNED_MSG = 'Bu şifre bilinen veri sızıntılarında geçiyor. Lütfen daha önce hiçbir yerde kullanmadığınız farklı bir şifre seçin.';
+
   function handleRegister(e) {
     e.preventDefault();
     var name = aVal('regName'), email = aVal('regEmail'), pass = aVal('regPass');
@@ -719,12 +747,15 @@
     if (pass.length < 8) return authMsg('Şifre en az 8 karakter olmalı.', true);
     if (kvkk && !kvkk.checked) return authMsg('Devam etmek için Gizlilik Politikası onayı gerekli.', true);
     var btn = e.target.querySelector('button[type="submit"]'); setBtn(btn, true, 'Kaydediliyor...');
-    EJData.auth.signUp(name, email, pass, phone).then(function (data) {
-      if (data.session) { location.href = 'hesap.html'; }     // e-posta onayı kapalıysa otomatik giriş
-      else {
-        authMsg('Hesabınız oluşturuldu! E-postanıza gönderdiğimiz doğrulama linkine tıklayın, sonra giriş yapın.', false);
-        setBtn(btn, false);
-      }
+    pwnedCount(pass).then(function (n) {
+      if (n > 0) { authMsg(PWNED_MSG, true); setBtn(btn, false); return; }
+      return EJData.auth.signUp(name, email, pass, phone).then(function (data) {
+        if (data.session) { location.href = 'hesap.html'; }     // e-posta onayı kapalıysa otomatik giriş
+        else {
+          authMsg('Hesabınız oluşturuldu! E-postanıza gönderdiğimiz doğrulama linkine tıklayın, sonra giriş yapın.', false);
+          setBtn(btn, false);
+        }
+      });
     }).catch(function (err) { authMsg(authErr(err), true); setBtn(btn, false); });
   }
 
@@ -762,12 +793,15 @@
     if (pass.length < 8) return authMsg('Şifre en az 8 karakter olmalı.', true);
     if (pass !== pass2) return authMsg('Şifreler birbiriyle uyuşmuyor.', true);
     var btn = e.target.querySelector('button[type="submit"]'); setBtn(btn, true, 'Kaydediliyor...');
-    EJData.auth.session().then(function (s) {
-      if (!s) { var err = new Error('Auth session missing'); throw err; }
-      return EJData.auth.updatePassword(pass);
-    }).then(function () {
-      authMsg('Şifreniz güncellendi. Hesabınıza yönlendiriliyorsunuz...', false);
-      setTimeout(function () { location.href = 'hesap.html'; }, 1500);
+    pwnedCount(pass).then(function (n) {
+      if (n > 0) { authMsg(PWNED_MSG, true); setBtn(btn, false); return; }
+      return EJData.auth.session().then(function (s) {
+        if (!s) { var err = new Error('Auth session missing'); throw err; }
+        return EJData.auth.updatePassword(pass);
+      }).then(function () {
+        authMsg('Şifreniz güncellendi. Hesabınıza yönlendiriliyorsunuz...', false);
+        setTimeout(function () { location.href = 'hesap.html'; }, 1500);
+      });
     }).catch(function (err) { authMsg(authErr(err), true); setBtn(btn, false); });
   }
 
