@@ -269,9 +269,14 @@ export const UNBACKED_GUARDS: UnbackedGuard[] = [
 
 // Metinde, bu turda gereken tool BAŞARILI olmadan yapılmış bir başarı/kart
 // iddiası varsa ilgili guard'ı döner (iade/kupon deseninin genellemesi).
-export function findUnbackedClaim(text: string, succeeded: Iterable<string>): UnbackedGuard | null {
+// succeeded: tool-anahtar listesi YA DA Y-2a outcomes haritası (anahtar =
+// tool anahtarı) — Map verilirse yalnız anahtarları kullanılır.
+export function findUnbackedClaim(
+  text: string,
+  succeeded: Iterable<string> | Map<string, unknown>,
+): UnbackedGuard | null {
   if (!text) return null;
-  const have = new Set(succeeded);
+  const have = new Set<string>(succeeded instanceof Map ? succeeded.keys() : succeeded);
   const lo = text.toLocaleLowerCase("tr");
   const lo2 = text.toLowerCase();
   for (const g of UNBACKED_GUARDS) {

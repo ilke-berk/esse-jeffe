@@ -31,7 +31,7 @@ $work = "C:\temp\ej-chat-deploy"
 if (Test-Path $work) { Remove-Item -Recurse -Force $work }
 New-Item -ItemType Directory -Force $work | Out-Null
 
-$files = @("index.ts","order-email.ts","guards.ts","exchange.ts","order-info.ts","discount.ts","cod-risk.ts")
+$files = @("index.ts","order-email.ts","guards.ts","exchange.ts","order-info.ts","discount.ts","cod-risk.ts","outcomes.ts")
 foreach ($f in $files) {
   Copy-Item (Join-Path $src $f) (Join-Path $work $f)
 }
